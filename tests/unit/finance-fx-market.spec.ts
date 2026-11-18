@@ -7,6 +7,7 @@ import {
   displayMarketTotals,
   groupMarket,
   MARKET_RATE_WINDOW_DAYS,
+  marketQuoteCurrency,
   measureChain,
   measureIntakeItem,
   overpaymentOf,
@@ -40,8 +41,11 @@ const PRECISIONS = new Map([
   ['USDT', 6],
 ])
 
-function ctx(series: FxRate[]): MarketContext {
-  return { series, precisions: PRECISIONS }
+function ctx(
+  series: FxRate[],
+  precisions: ReadonlyMap<string, number> = PRECISIONS,
+): MarketContext {
+  return { series, precisions }
 }
 
 const USD_92 = ctx([rate('USD', FRIDAY, '92.0000'), rate('EUR', FRIDAY, '100.0000')])
@@ -129,6 +133,20 @@ describe('the measured set (EARS-557)', () => {
     ).toBe('—')
     expect(measureIntakeItem(fact(), USD_92)?.route).toBe('Карта RUB · RUB → USD')
   })
+
+  it('EARS-565: a route whose debit currency is not known yet names its source and the document currency, never a «?»', () => {
+    const pending = {
+      status: 'submitted',
+      paidAmount: null,
+      paidCurrency: null,
+      accountName: null,
+      accountCurrency: null,
+    }
+    expect(measureIntakeItem(fact({ ...pending, personalFunds: true }), USD_92)?.route).toBe(
+      'свои средства → USD',
+    )
+    expect(measureIntakeItem(fact(pending), USD_92)?.route).toBe('счёт не указан → USD')
+  })
 })
 
 describe('the market rate (EARS-558)', () => {
@@ -156,6 +174,21 @@ describe('the market rate (EARS-558)', () => {
     })
     const v = measured(
       measureIntakeItem(fact({ amount: 100_000_000n, currency: 'USDT' }), USD_92), // 100 USDT
+    )
+    expect(v.overpayment.marketRub).toBe(920_000n)
+  })
+
+  it('EARS-558: a USDC document is valued at the USD rate too — the same peg, the same rule as USDT (lead ruling on #559)', () => {
+    expect(marketQuoteCurrency('USDC')).toBe('USD')
+    expect(pickMarketRate(USD_92.series, 'USDC', FRIDAY)).toMatchObject({
+      currency: 'USD',
+      valueRub: '92.0000',
+    })
+    const v = measured(
+      measureIntakeItem(
+        fact({ amount: 10_000n, currency: 'USDC' }),
+        ctx([...USD_92.series], new Map([...PRECISIONS, ['USDC', 2]])),
+      ),
     )
     expect(v.overpayment.marketRub).toBe(920_000n)
   })
@@ -415,10 +448,11 @@ describe('amount-weighted aggregates (EARS-562)', () => {
     })
     const entries = [a, b, c].map((f) => measureIntakeItem(f, AT_100)!)
     const byMonth = groupMarket(entries, 'month')
-    expect(byMonth.map((g) => g.key)).toEqual(['2026-10', '2026-11'])
+    // Newest month first (review of #563).
+    expect(byMonth.map((g) => g.key)).toEqual(['2026-11', '2026-10'])
     // October: Факт 10 100 + 1 000 = 11 100, Рынок 10 000 + 1 100 = 11 100 → 0,0 %.
-    expect(byMonth[0].totals.overpayment).toMatchObject({ amount: 0n, percentTenths: 0n })
-    expect(byMonth[1].totals.overpayment).toMatchObject({ amount: -10_000n, percentTenths: -91n })
+    expect(byMonth[1].totals.overpayment).toMatchObject({ amount: 0n, percentTenths: 0n })
+    expect(byMonth[0].totals.overpayment).toMatchObject({ amount: -10_000n, percentTenths: -91n })
 
     const byPayee = groupMarket(entries, 'payee_route')
     const anthropic = byPayee.find((g) => g.payee === 'Anthropic')!

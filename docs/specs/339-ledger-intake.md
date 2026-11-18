@@ -178,7 +178,9 @@ recorded as decisions 37–40 on #115):
   the amount, not only the percentage) and Факт / Рынок − 1 as %; in the
   request's details sheet and in a «Курс против рынка» report on
   `/p/finance`. USDT is valued as USD at the CBR rate (no crypto price
-  source), in the §I queue display too (EARS-551 revised, §J Q4 closed). Product logic adopted from the owner's personal budgeting app
+  source), in the §I queue display too (EARS-551 revised, §J Q4 closed);
+  the lead extended the rule to USDC, the other USD-pegged stablecoin
+  (2026-11-18, #559). Product logic adopted from the owner's personal budgeting app
   («Мой курс против рынка»), not its code (§J). It also answers §I Q2:
   cross-currency backlog requests take their actual debited amount per item,
   and the market side is computed — an estimated actual would make the
@@ -1004,9 +1006,10 @@ the corpus's «потерялась в канале» case).
   date money moved, never `posted_at`).
   Cross-currency pairs go through RUB. Amounts are bigint minor units and the
   arithmetic is decimal; no floating-point value enters it.
-- **EARS-551.** A USDT request shall be converted at the CBR rate of USD
-  (CBR does not quote USDT; decision 41), the same rule as the §J market
-  side (EARS-558). IF no CBR rate exists on or before the needed date for a
+- **EARS-551.** A request in a USD-pegged stablecoin — USDT or USDC —
+  shall be converted at the CBR rate of USD (CBR quotes neither; decision 41
+  for USDT, extended to USDC by the lead's decision on #559), the same rule
+  as the §J market side (EARS-558). IF no CBR rate exists on or before the needed date for a
   currency (CBR does not quote it, or the date precedes the stored series),
   THEN the row shall show the original amount with «нет курса», and every
   sum that leaves it out shall say «без N заявок» — never a silent zero and
@@ -1020,6 +1023,12 @@ the corpus's «потерялась в канале» case).
   shall show the original amount with «нет курса», and every sum that leaves
   it out shall say «без N заявок» — never a silent zero and never a
   wrong-currency addition.»_
+
+  _Revised again 2026-11-18 (lead's decision on #559, extending the owner's
+  decision 41: USDC is pegged to USD as USDT is, so it takes the same rule).
+  The previous version opened: «A USDT request shall be converted at the CBR
+  rate of USD (CBR does not quote USDT; decision 41), the same rule as the §J
+  market side (EARS-558).» — USDC then had no CBR rate and read «нет курса»._
 
 - **EARS-552.** The finance module shall keep the Bank of Russia daily rates
   in `finance_fx_rate`, fetched from cbr.ru by an idempotent sync job that
@@ -1072,7 +1081,8 @@ the percentage; the rouble amount is the owner's addition. The CBR rate is
 the market because it is the rate Russian accounting itself uses for a
 foreign-currency operation on its date (ПБУ 3/2006 п. 4–5) — the same
 justification as §I, so no owner question was spent on the source. USDT has
-no CBR quote and is valued as USD (decision 41).
+no CBR quote and is valued as USD (decision 41); so is USDC, the other
+USD-pegged stablecoin (lead's decision on #559).
 
 - **EARS-557.** The system shall treat as a **foreign-currency payment**
   every posted intake item of kind `expense` — from any source,
@@ -1092,8 +1102,16 @@ no CBR quote and is valued as USD (decision 41).
   `paid_currency` (one for RUB). The rate of a date shall be the stored rate
   on that date or the nearest previous one (EARS-552's lookup), at most 14
   days older than the payment date and never a later one; cross pairs go
-  through RUB; USDT shall be valued at the USD rate. IF either side has no
-  such rate, THEN the payment shall be «без курса».
+  through RUB; the USD-pegged stablecoins USDT and USDC shall be valued at
+  the USD rate. IF either side has no such rate, THEN the payment shall be
+  «без курса».
+
+  _Revised 2026-11-18 (lead's decision on #559, extending the owner's
+  decision 41 from USDT to USDC — the same peg, so the same rule). The
+  previous version read «…cross pairs go through RUB; USDT shall be valued at
+  the USD rate. IF either side has no such rate, THEN the payment shall be
+  «без курса».»_
+
 - **EARS-559.** The system shall show for a measured payment **Переплата** =
   Факт − Рынок in roubles, as a money amount, and **Переплата, %** = Факт /
   Рынок − 1; a positive value shall read «хуже рынка на X,X%», a negative one
@@ -1377,7 +1395,8 @@ missing-fact / missing-rate exclusions and weighted aggregates
   balances, the F1b current-money card, F3 period totals — (EARS-553); the
   current-money valuation stays on recorded rates (#425). Display (§I) and
   comparison (§J) are the only readers.
-- A crypto price source — USDT is valued as USD (decision 41); a holding's
+- A crypto price source — USDT and USDC are valued as USD (decision 41,
+  extended to USDC on #559); a holding's
   gain or loss between purchase and disposal is not separated from the
   exchange cost (a chain is one operation with one date, EARS-561).
 - Running the EARS-547 bulk act on production by an agent — it is the

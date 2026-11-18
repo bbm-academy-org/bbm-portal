@@ -12,7 +12,12 @@ import {
   recordOperation,
   reverseOperation,
 } from '@/lib/finance'
-import { loadMarketEntries, marketEntryForItem } from '@/lib/finance/fx/market-valuation'
+import {
+  loadMarketEntries,
+  loadMarketValuation,
+  marketEntryForItem,
+} from '@/lib/finance/fx/market-valuation'
+import { marketChainFacts, marketIntakeFacts } from '@/lib/finance/market-facts'
 import { syncCbrRates } from '@/lib/finance/fx/store'
 import { closePlatformDb } from '@/lib/platform/db/client'
 
@@ -26,7 +31,7 @@ import {
   seedMember,
   truncateFinanceTables,
 } from './finance-helpers'
-import { truncateAsFixture } from './privilege-helpers'
+import { asMigrator, truncateAsFixture } from './privilege-helpers'
 
 /**
  * The §J market valuation against the really-migrated ledger (spec
@@ -212,7 +217,7 @@ describe('«факт не внесён», read from the intake (EARS-560)', () =
       date: '2026-11-02',
       personalFunds: true,
       payee: 'Entry Clerk',
-      route: 'свои средства · ? → USD',
+      route: 'свои средства → USD',
       fact: null,
       valuation: { status: 'not_posted', statedPaidAmount: null },
     })
@@ -297,5 +302,197 @@ describe('conversion chains, read from the ledger (EARS-561)', () => {
       ],
     })
     expect(await loadMarketEntries()).toEqual([])
+  })
+})
+
+describe('the report reads (#559)', () => {
+  it('EARS-561: a chain whose exchange step carries a real fee on the source account has that fee inside Факт', async () => {
+    const refs = await seedLedger()
+    const chain = await recordConversion(APPROVER, {
+      occurredOn: DAY,
+      sourceAccountId: refs.rubId,
+      targetAccountId: refs.usdId,
+      steps: [
+        {
+          fromCurrency: 'RUB',
+          toCurrency: 'USD',
+          fromAmount: 930_000n,
+          toAmount: 10_000n,
+          rate: '0.0107526882',
+          fee: { amount: 5_000n, currency: 'RUB' },
+        },
+      ],
+    })
+    const [entry] = await loadMarketEntries()
+    expect(entry).toMatchObject({
+      subject: 'chain',
+      operationId: chain.id,
+      route: 'RUB → USD',
+      source: { amount: 935_000n, currency: 'RUB', fee: 5_000n, account: 'Карта RUB' },
+      target: { amount: 10_000n, currency: 'USD', fee: 0n, account: 'Счёт USD' },
+      valuation: {
+        status: 'measured',
+        // Факт 9 300 + 50 ₽ fee against Рынок 100 USD × 92,00 = 9 200 ₽.
+        overpayment: {
+          factRub: 935_000n,
+          marketRub: 920_000n,
+          amount: 15_000n,
+          percentTenths: 16n,
+        },
+      },
+    })
+  })
+
+  it('EARS-561: an intake item of kind = conversion, once posted, is measured as a chain', async () => {
+    const refs = await seedLedger()
+    const item = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'conversion',
+      occurredOn: DAY,
+      accountId: refs.rubId,
+      counterAccountId: refs.usdId,
+      amount: 930_000n,
+      currency: 'RUB',
+      paidAmount: 10_000n,
+      paidCurrency: 'USD',
+      projectId: refs.projectId,
+    })
+    await readyToPost(item.id, refs)
+    const posted = await postIntakeItem(APPROVER, item.id)
+    const entries = await loadMarketEntries()
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      subject: 'chain',
+      operationId: posted.operationId,
+      route: 'RUB → USD',
+      valuation: {
+        status: 'measured',
+        overpayment: {
+          factRub: 930_000n,
+          marketRub: 920_000n,
+          amount: 10_000n,
+          wording: 'хуже рынка на 1,1%',
+        },
+      },
+    })
+  })
+
+  it('EARS-564: the period bounds both reads in SQL — a chain and a «факт не внесён» request outside it are not loaded', async () => {
+    const refs = await seedLedger()
+    await recordConversion(APPROVER, {
+      occurredOn: DAY,
+      sourceAccountId: refs.rubId,
+      targetAccountId: refs.usdId,
+      steps: [
+        {
+          fromCurrency: 'RUB',
+          toCurrency: 'USD',
+          fromAmount: 920_000n,
+          toAmount: 10_000n,
+          rate: '0.0108',
+        },
+      ],
+    })
+    const pending = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'expense',
+      alreadyPaid: true,
+      occurredOn: '2026-11-02',
+      accountId: refs.rubId,
+      amount: 10_000n,
+      currency: 'USD',
+      purposeId: refs.purposeId,
+      projectId: refs.projectId,
+      counterpartyId: refs.counterpartyId,
+    })
+    await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item
+           set status = 'submitted', account_id = null, personal_funds = true,
+               member_id = ${refs.entryMemberId}
+         where id = ${pending.id}
+      `),
+    )
+    expect(
+      (await marketChainFacts({ period: { from: '2026-11-14' } })).map((f) => f.occurredOn),
+    ).toEqual([])
+    expect(await marketChainFacts({ period: { from: DAY, to: DAY } })).toHaveLength(1)
+    expect(await marketIntakeFacts({ period: { to: '2026-11-01' } })).toEqual([])
+    expect(
+      (await marketIntakeFacts({ period: { from: '2026-11-02', to: '2026-11-02' } })).map(
+        (f) => f.itemId,
+      ),
+    ).toEqual([pending.id])
+    const { entries, excludedChains } = await loadMarketValuation({
+      from: '2026-11-02',
+      to: '2026-11-02',
+    })
+    expect(entries.map((e) => e.subject)).toEqual(['payment'])
+    expect(excludedChains).toEqual([])
+  })
+
+  it('EARS-560: the Moscow submission day is read near UTC midnight — 22:30 UTC on 1 November is 2 November — and an already-paid request cannot lose its occurred_on, so that day never stands in for a payment date', async () => {
+    const refs = await seedLedger()
+    const pending = await createIntakeItem(ENTRY, {
+      source: 'manual',
+      kind: 'expense',
+      alreadyPaid: true,
+      occurredOn: '2026-11-02',
+      accountId: refs.rubId,
+      amount: 10_000n,
+      currency: 'USD',
+      purposeId: refs.purposeId,
+      projectId: refs.projectId,
+      counterpartyId: refs.counterpartyId,
+    })
+    await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item
+           set status = 'submitted', account_id = null, personal_funds = true,
+               member_id = ${refs.entryMemberId}
+         where id = ${pending.id}
+      `),
+    )
+    // `created_at` is immutable (`0016` §3), so the fixture claims its submission
+    // moment through the migrating connection with user triggers off.
+    await asMigrator(async (client) => {
+      await client.query('alter table core.finance_intake_item disable trigger user')
+      try {
+        await client.query(
+          `update core.finance_intake_item
+              set created_at = timestamptz '2026-11-01 22:30:00+00'
+            where id = $1`,
+          [pending.id],
+        )
+      } finally {
+        await client.query('alter table core.finance_intake_item enable trigger user')
+      }
+    })
+    // The UTC date is 1 November; the Moscow date (UTC+3) is 2 November.
+    const [row] = await marketIntakeFacts({ itemId: pending.id })
+    expect(row).toMatchObject({ occurredOn: '2026-11-02', submittedOn: '2026-11-02' })
+    // The `coalesce(occurred_on, Moscow submission day)` fallback of the period
+    // filter and of EARS-560's date has no row to act on: `0015`'s money-facts
+    // check refuses an already-paid request without occurred_on.
+    const refused = await fixtureWrite((tx) =>
+      tx.execute(sql`
+        update core.finance_intake_item set occurred_on = null where id = ${pending.id}
+      `),
+    ).then(
+      () => null,
+      (error: { cause?: { constraint?: string } }) => error.cause?.constraint ?? null,
+    )
+    expect(refused).toBe('finance_intake_item_money_facts')
+    expect(await marketIntakeFacts({ period: { from: '2026-11-01', to: '2026-11-01' } })).toEqual(
+      [],
+    )
+    const { entries } = await loadMarketValuation({ from: '2026-11-02', to: '2026-11-02' })
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      subject: 'payment',
+      date: '2026-11-02',
+      month: '2026-11',
+      valuation: { status: 'not_posted' },
+    })
   })
 })

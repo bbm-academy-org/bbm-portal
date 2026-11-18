@@ -16,7 +16,7 @@
  * is not reversed, and no intake expense posted it» (EARS-561) is a statement
  * about the ledger's shape, so it is the query.
  */
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 
 import { getPlatformDb } from '@/lib/platform/db/client'
 
@@ -68,19 +68,40 @@ export type MarketChainFact = {
   moneyLegs: MarketChainLeg[]
 }
 
+/**
+ * A period of payment dates, inclusive at both ends; an open end is unbounded.
+ * The §J read model's `MarketPeriod` is this same shape — declared here because
+ * the ledger side never imports from `./fx/` (EARS-553).
+ */
+export type MarketFactsPeriod = { from?: string; to?: string }
+
 type Row = Record<string, unknown>
+
+/** `and <date> between …` for the bounds that are set; nothing for an open end. */
+function periodClause(date: SQL, period: MarketFactsPeriod | undefined): SQL {
+  const from = period?.from === undefined ? sql`` : sql`and ${date} >= ${period.from}::date`
+  const to = period?.to === undefined ? sql`` : sql`and ${date} <= ${period.to}::date`
+  return sql`${from} ${to}`
+}
 
 const nullableBigint = (value: unknown) => (value === null ? null : BigInt(String(value)))
 const nullableText = (value: unknown) => (value === null ? null : String(value))
 
 /**
  * Posted intake expenses and already-paid pending ones — the candidates of
- * EARS-557 and EARS-560. `itemId` narrows to one request (the details sheet).
+ * EARS-557 and EARS-560. `itemId` narrows to one request (the details sheet);
+ * `period` bounds the payment date IN THE QUERY — `occurred_on`, else the
+ * Moscow submission date (EARS-560) — so a report reads its period, not the
+ * whole history (lead review of #561).
  */
 export async function marketIntakeFacts(
-  options: { itemId?: number } = {},
+  options: { itemId?: number; period?: MarketFactsPeriod } = {},
 ): Promise<MarketIntakeFact[]> {
   const only = options.itemId === undefined ? sql`` : sql`and i.id = ${options.itemId}`
+  const within = periodClause(
+    sql`coalesce(i.occurred_on, (i.created_at at time zone 'Europe/Moscow')::date)`,
+    options.period,
+  )
   const result = await getPlatformDb().execute(sql`
     select i.id, i.kind, i.status, i.already_paid, i.personal_funds,
            i.occurred_on::text as occurred_on,
@@ -100,6 +121,7 @@ export async function marketIntakeFacts(
      where i.kind = 'expense'
        and (i.status = 'posted' or (i.already_paid and i.status in ('submitted', 'approved')))
        ${only}
+       ${within}
      order by i.id
   `)
   return (result.rows as Row[]).map((row) => ({
@@ -125,9 +147,15 @@ export async function marketIntakeFacts(
   }))
 }
 
-/** Every conversion chain of the ledger (EARS-561), with its steps and money legs. */
-export async function marketChainFacts(): Promise<MarketChainFact[]> {
+/**
+ * Every conversion chain of the ledger (EARS-561) whose `occurred_on` is in
+ * `period` (bounded in the query), with its steps and money legs.
+ */
+export async function marketChainFacts(
+  options: { period?: MarketFactsPeriod } = {},
+): Promise<MarketChainFact[]> {
   const db = getPlatformDb()
+  const within = periodClause(sql`o.occurred_on`, options.period)
   const chains = await db.execute(sql`
     select o.id, o.occurred_on::text as occurred_on
       from core.finance_operation o
@@ -139,6 +167,7 @@ export async function marketChainFacts(): Promise<MarketChainFact[]> {
          select 1 from core.finance_intake_item i
           where i.operation_id = o.id and i.kind = 'expense'
        )
+       ${within}
      order by o.id
   `)
   const facts = new Map<number, MarketChainFact>()

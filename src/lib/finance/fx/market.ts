@@ -28,9 +28,17 @@ import {
 /** EARS-558: a rate older than this many days before the payment date is no rate. */
 export const MARKET_RATE_WINDOW_DAYS = 14
 
-/** CBR does not quote USDT; decision 41 values it as USD (EARS-558). */
+/**
+ * The USD-pegged stablecoins CBR does not quote, valued at the USD rate
+ * (EARS-551/558): USDT by decision 41, USDC by the lead's decision on #559
+ * (2026-11-18) — the same peg, so the same rule, here and in the queue display
+ * that imports it.
+ */
+const USD_PEGGED = new Set(['USDT', 'USDC'])
+
+/** The CBR currency that quotes `currency` (EARS-558): a USD-pegged coin asks for USD. */
 export function marketQuoteCurrency(currency: string): string {
-  return currency === 'USDT' ? 'USD' : currency
+  return USD_PEGGED.has(currency) ? 'USD' : currency
 }
 
 /**
@@ -159,7 +167,8 @@ function reduce({ numerator, denominator }: ExactAmount): ExactAmount {
   return { numerator: (sign * numerator) / g, denominator: (sign * denominator) / g }
 }
 
-function add(a: ExactAmount, b: ExactAmount): ExactAmount {
+/** Exact sum of two fractions, reduced — what every aggregate adds with. */
+export function addExact(a: ExactAmount, b: ExactAmount): ExactAmount {
   return reduce({
     numerator: a.numerator * b.denominator + b.numerator * a.denominator,
     denominator: a.denominator * b.denominator,
@@ -167,7 +176,7 @@ function add(a: ExactAmount, b: ExactAmount): ExactAmount {
 }
 
 function sub(a: ExactAmount, b: ExactAmount): ExactAmount {
-  return add(a, { numerator: -b.numerator, denominator: b.denominator })
+  return addExact(a, { numerator: -b.numerator, denominator: b.denominator })
 }
 
 function precisionOf(ctx: MarketContext, currency: string): number {
@@ -236,7 +245,7 @@ function measuredValuation(
     const quote = pickMarketRate(ctx.series, part.currency, date)
     if (quote === null) return { status: 'no_rate', currency: part.currency, date }
     factRate ??= quote
-    factRub = add(factRub, rubValue(ctx, part.amount, part.currency, quote))
+    factRub = addExact(factRub, rubValue(ctx, part.amount, part.currency, quote))
   }
   const marketRub = rubValue(ctx, market.amount, market.currency, marketRate)
   return {
@@ -254,11 +263,16 @@ function payeeOf(fact: MarketIntakeFact): string {
   return fact.counterpartyName ?? fact.memberName ?? '—'
 }
 
-/** A payment's route (EARS-565): the paying account or «свои средства», and the pair. */
+/**
+ * A payment's route (EARS-565): the paying account or «свои средства», and the
+ * pair. While the debit currency is not known yet (an already-paid request not
+ * posted), the route names its source and the document currency only — never a
+ * «?» standing in for the missing side (review of #563).
+ */
 function paymentRoute(fact: MarketIntakeFact): string {
-  const via = fact.personalFunds ? 'свои средства' : (fact.accountName ?? '—')
-  const debit = fact.accountCurrency ?? fact.paidCurrency ?? '?'
-  return `${via} · ${debit} → ${fact.currency}`
+  const via = fact.personalFunds ? 'свои средства' : (fact.accountName ?? 'счёт не указан')
+  const debit = fact.accountCurrency ?? fact.paidCurrency
+  return debit === null ? `${via} → ${fact.currency}` : `${via} · ${debit} → ${fact.currency}`
 }
 
 /** One intake item valued — or `null` when it is not in the §J set. */
@@ -310,6 +324,36 @@ export function measureIntakeItem(
   }
 }
 
+/** A chain whose money legs do not have the two ends EARS-561 reads. */
+export class MalformedChainError extends Error {
+  constructor(readonly operationId: number) {
+    super(`market valuation: operation ${operationId} has no two chain ends`)
+    this.name = 'MalformedChainError'
+  }
+}
+
+/**
+ * Every chain valued, a malformed one left out and NAMED rather than taking
+ * the whole report down with it (lead review of #561, for #559): the report
+ * counts the excluded operations instead of summing them.
+ */
+export function measureChains(
+  facts: readonly MarketChainFact[],
+  ctx: MarketContext,
+): { entries: MarketChainEntry[]; excluded: number[] } {
+  const entries: MarketChainEntry[] = []
+  const excluded: number[] = []
+  for (const fact of facts) {
+    try {
+      entries.push(measureChain(fact, ctx))
+    } catch (error) {
+      if (!(error instanceof MalformedChainError)) throw error
+      excluded.push(error.operationId)
+    }
+  }
+  return { entries, excluded }
+}
+
 /**
  * One conversion chain valued (EARS-561). The two ends are the money-account
  * postings with no step link; a step-linked money-account posting is a fee,
@@ -321,7 +365,7 @@ export function measureChain(fact: MarketChainFact, ctx: MarketContext): MarketC
   const sourceEnd = ends.find((leg) => leg.amount < 0n)
   const targetEnd = ends.find((leg) => leg.amount > 0n)
   if (sourceEnd === undefined || targetEnd === undefined) {
-    throw new Error(`market valuation: operation ${fact.operationId} has no two chain ends`)
+    throw new MalformedChainError(fact.operationId)
   }
   let sourceFee = 0n
   let targetFee = 0n
@@ -397,8 +441,8 @@ export function aggregateMarket(entries: readonly MarketEntry[]): MarketTotals {
     const kind = entry.subject === 'payment' ? 'payments' : 'chains'
     const v = entry.valuation
     if (v.status === 'measured') {
-      fact = add(fact, v.factRub)
-      market = add(market, v.marketRub)
+      fact = addExact(fact, v.factRub)
+      market = addExact(market, v.marketRub)
       measured[kind] += 1
     } else if (v.status === 'no_rate') {
       noRate[kind] += 1
@@ -428,9 +472,11 @@ export type MarketGroup = {
 }
 
 /**
- * The report's breakdowns (EARS-562/565): by `month`, ascending; or by
- * `payee_route` — payments by payee and route first, then chains by route —
- * each row weighted on its own entries, so a table sums to the period total.
+ * The report's breakdowns (EARS-562/565): by `month`, newest first; or by
+ * `payee_route` — payment rows by payee and route, chain rows by route — the
+ * largest rouble Переплата first and the rows with nothing measured last, so
+ * «на чём переплатили» is the top of the table (review of #563). Each row is
+ * weighted on its own entries, so a table sums to the period total.
  */
 export function groupMarket(
   entries: readonly MarketEntry[],
@@ -457,9 +503,19 @@ export function groupMarket(
     }
     group.entries.push(entry)
   }
-  return [...groups.entries()]
+  const byKey = [...groups.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([, group]) => ({ ...group, totals: aggregateMarket(group.entries) }))
+  if (by === 'month') return byKey.reverse()
+  // A stable sort: equal Переплата keeps the key order above.
+  return byKey.sort((a, b) => {
+    const left = a.totals.overpayment?.amount
+    const right = b.totals.overpayment?.amount
+    if (left === undefined || right === undefined) {
+      return left === right ? 0 : left === undefined ? 1 : -1
+    }
+    return left === right ? 0 : left > right ? -1 : 1
+  })
 }
 
 // ── the display currency ─────────────────────────────────────────────────────
@@ -478,6 +534,38 @@ export type DisplayMarketTotals = {
 }
 
 /**
+ * One measured entry's exact rouble Факт and Рынок in `displayCurrency`, at the
+ * CBR rate of the entry's own payment date (EARS-566) — or `null` when that
+ * currency has no rate there, or the ledger does not register it (no known
+ * precision: like one CBR does not quote, it converts nothing — the
+ * `convertForDisplay` rule).
+ */
+export function displayEntryExact(
+  entry: MarketEntry,
+  displayCurrency: string,
+  ctx: MarketContext,
+): { fact: ExactAmount; market: ExactAmount } | null {
+  const v = entry.valuation
+  if (v.status !== 'measured') return null
+  const precision = ctx.precisions.get(displayCurrency)
+  if (precision === undefined) return null
+  const quote =
+    displayCurrency === 'RUB'
+      ? { ...RUB_RATE, rateDate: entry.date }
+      : pickMarketRate(ctx.series, displayCurrency, entry.date)
+  if (quote === null) return null
+  const rubPrecision = precisionOf(ctx, 'RUB')
+  const toDisplay = (value: ExactAmount): ExactAmount => {
+    const converted = convertAtRubRates(value.numerator, RUB_RATE, quote, rubPrecision, precision)
+    return reduce({
+      numerator: converted.exact.numerator,
+      denominator: converted.exact.denominator * value.denominator,
+    })
+  }
+  return { fact: toDisplay(v.factRub), market: toDisplay(v.marketRub) }
+}
+
+/**
  * The measured entries' sums in a display currency (EARS-566): each item's
  * rouble figures are converted at the CBR rate of ITS payment date (EARS-558's
  * rule) before any sum, and an item without such a rate leaves the displayed
@@ -490,35 +578,18 @@ export function displayMarketTotals(
   ctx: MarketContext,
 ): DisplayMarketTotals {
   const rub = aggregateMarket(entries)
-  // A currency the ledger does not register has no known precision: like one
-  // CBR does not quote, it converts nothing (the `convertForDisplay` rule).
-  const precision = ctx.precisions.get(displayCurrency)
-  const rubPrecision = precisionOf(ctx, 'RUB')
   let fact = ZERO
   let market = ZERO
   let noDisplayRate = 0
   for (const entry of entries) {
-    const v = entry.valuation
-    if (v.status !== 'measured') continue
-    const quote =
-      precision === undefined
-        ? null
-        : displayCurrency === 'RUB'
-          ? { ...RUB_RATE, rateDate: entry.date }
-          : pickMarketRate(ctx.series, displayCurrency, entry.date)
-    if (quote === null || precision === undefined) {
+    if (entry.valuation.status !== 'measured') continue
+    const converted = displayEntryExact(entry, displayCurrency, ctx)
+    if (converted === null) {
       noDisplayRate += 1
       continue
     }
-    const toDisplay = (value: ExactAmount): ExactAmount => {
-      const converted = convertAtRubRates(value.numerator, RUB_RATE, quote, rubPrecision, precision)
-      return reduce({
-        numerator: converted.exact.numerator,
-        denominator: converted.exact.denominator * value.denominator,
-      })
-    }
-    fact = add(fact, toDisplay(v.factRub))
-    market = add(market, toDisplay(v.marketRub))
+    fact = addExact(fact, converted.fact)
+    market = addExact(market, converted.market)
   }
   return {
     currency: displayCurrency,

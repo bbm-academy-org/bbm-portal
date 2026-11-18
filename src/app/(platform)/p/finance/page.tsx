@@ -51,9 +51,16 @@ export default async function FinancePage({
         {/* The overview answers «сколько денег»; the board answers «что с ними
             собираются сделать». One is never read without reaching for the
             other, so the link lives at the title's right edge (#388). */}
-        <Button asChild variant="outline">
-          <Link href="/p/finance/requests">Заявки</Link>
-        </Button>
+        {/* «Курс против рынка» sits beside «Заявки» (spec 339 EARS-564, #559)
+            until F3 (#340) gives the reports their own navigation. */}
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/p/finance/reports/market-rate">Курс против рынка</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/p/finance/requests">Заявки</Link>
+          </Button>
+        </div>
       </div>
 
       <Card role="group" aria-label="Итого" className="bg-primary text-primary-foreground">

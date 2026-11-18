@@ -218,11 +218,23 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
     'loadMarketValuation',
     'loadMarketContext',
     'marketQuoteCurrency',
+    'MARKET_RATE_WINDOW_DAYS',
+    'addExact',
+    // §J — the «Курс против рынка» report (EARS-564…566, #559).
+    'measureChains',
+    'displayEntryExact',
+    'buildMarketReport',
+    'marketReportPeriod',
+    'parseMarketReportPeriod',
+    'splitByLargestRemainder',
+    'MARKET_REPORT_PERIODS',
+    'DEFAULT_MARKET_REPORT_PERIOD',
   ]
   const FX_CONSUMERS_ALLOWED = [
     FX_DIR,
     'src/lib/finance/index.ts',
     'src/app/(platform)/p/finance/requests/',
+    'src/app/(platform)/p/finance/reports/market-rate/',
     'tools/platform/finance-fx-sync.ts',
   ]
   const isAllowedConsumer = (path: string) =>

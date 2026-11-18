@@ -185,9 +185,9 @@ const DEFERRALS_BY_ISSUE = {
       'spec 339 §I (#547): the details sheet with «как оплатить» and the «без чека» marker, in the sheet and in the queue rows, and the §J «Курс против рынка» block (EARS-563, added 2026-11-18); #551 writes the tests.',
   },
   559: {
-    ids: ['EARS-564', 'EARS-565', 'EARS-566'],
+    ids: [],
     reason:
-      'spec 339 §J (#547): the «Курс против рынка» report on /p/finance/reports/market-rate — period totals, the month and payee / route breakdowns and the display currency; #559 writes the tests.',
+      'spec 339 §J (#547): the «Курс против рынка» report on /p/finance/reports/market-rate. The list is EMPTY because #559 landed: EARS-564/565/566 are asserted in tests/unit/finance-fx-market-report.spec.ts, finance-market-rate-report-ui.spec.ts and finance-overview-page.spec.ts.',
   },
 }
 

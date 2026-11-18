@@ -461,9 +461,9 @@ const LIFECYCLE_REQUESTS: readonly DevSeedRequest[] = (() => {
 
 /**
  * The currencies the payment queue's display switch has to be seen working on
- * (spec 339 §I, EARS-549/551; #550): EUR is a display currency, USDT is quoted
- * as USD (decision 41), and USDC is one the Bank of Russia does not quote at
- * all — the row a stand needs to show «нет курса» and «без N заявок».
+ * (spec 339 §I, EARS-549/551; #550): EUR is a display currency, and USDT and
+ * USDC are quoted as USD (decision 41; USDC by the lead's ruling on #559). A
+ * stand shows «нет курса» on a date before the stored CBR series.
  */
 export const DEV_SEED_CURRENCIES: readonly { code: string; name: string; precision: number }[] = [
   { code: 'EUR', name: 'Евро', precision: 2 },
