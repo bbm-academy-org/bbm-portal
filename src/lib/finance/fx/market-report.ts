@@ -86,7 +86,7 @@ export function marketReportPeriod(key: MarketReportPeriodKey, today: string): M
  * up by one unit — down for all, then one more unit to each of the rows with
  * the largest remainders (ties to the earlier row), until the sum is reached.
  */
-export function allocateLargestRemainder(values: readonly ExactAmount[]): bigint[] {
+export function splitByLargestRemainder(values: readonly ExactAmount[]): bigint[] {
   const normalized = values.map(({ numerator, denominator }) =>
     denominator < 0n
       ? { numerator: -numerator, denominator: -denominator }
@@ -296,8 +296,8 @@ function table(
   }))
   for (const currency of currencies) {
     const exact = groups.map((group) => exactFigures(group.entries, currency, ctx))
-    const facts = allocateLargestRemainder(exact.map((row) => row.fact))
-    const markets = allocateLargestRemainder(exact.map((row) => row.market))
+    const facts = splitByLargestRemainder(exact.map((row) => row.fact))
+    const markets = splitByLargestRemainder(exact.map((row) => row.market))
     rows.forEach((row, index) => {
       row.figures[currency] = figures(facts[index], markets[index], exact[index].noDisplayRate)
     })

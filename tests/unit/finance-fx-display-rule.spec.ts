@@ -226,7 +226,7 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
     'buildMarketReport',
     'marketReportPeriod',
     'parseMarketReportPeriod',
-    'allocateLargestRemainder',
+    'splitByLargestRemainder',
     'MARKET_REPORT_PERIODS',
     'DEFAULT_MARKET_REPORT_PERIOD',
   ]

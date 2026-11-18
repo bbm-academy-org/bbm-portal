@@ -9,7 +9,7 @@ import {
   type MarketEntry,
 } from '@/lib/finance/fx/market'
 import {
-  allocateLargestRemainder,
+  splitByLargestRemainder,
   buildMarketReport,
   DEFAULT_MARKET_REPORT_PERIOD,
   marketReportPeriod,
@@ -308,11 +308,11 @@ describe('the breakdowns (EARS-565)', () => {
       { numerator: -7n, denominator: 2n }, // −3,5
       { numerator: 0n, denominator: 1n },
     ]
-    const out = allocateLargestRemainder(values)
+    const out = splitByLargestRemainder(values)
     // Σ = 10 − 3,5 = 6,5 → 7 (half away from zero).
     expect(out.reduce((a, b) => a + b, 0n)).toBe(7n)
     expect(out).toEqual([4n, 3n, 3n, -3n, 0n])
-    expect(allocateLargestRemainder([])).toEqual([])
+    expect(splitByLargestRemainder([])).toEqual([])
   })
 })
 
