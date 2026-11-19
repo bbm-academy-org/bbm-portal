@@ -589,13 +589,13 @@ export function evaluateStaged(modules) {
   }
 }
 
-/** `git` in `root`, stdout or null. Never throws: a git that cannot answer is a skip. */
+/**
+ * `git` in `root`, stdout or null. Never throws: a git that cannot answer is a skip.
+ * No shell on any platform: git is a real `.exe` on Windows, and cmd.exe would
+ * split an argument with a space — a module path in a `git grep -e` needle (#570).
+ */
 function git(root, args) {
-  const res = spawnSync('git', args, {
-    cwd: root,
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-  })
+  const res = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
   return res.status === 0 ? res.stdout : null
 }
 
