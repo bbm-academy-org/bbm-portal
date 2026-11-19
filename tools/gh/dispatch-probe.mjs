@@ -98,18 +98,24 @@ export function formatAge(seconds) {
 }
 
 /**
- * The working-tree path out of one `git status --porcelain` line: `XY <path>`,
- * and for a rename `XY <orig> -> <path>` — the destination is the live file to
- * stat. Git quotes paths with special characters; the quotes are dropped.
- * @param {string} line
- * @returns {string}
+ * The working-tree paths out of `git status --porcelain -z`. Each entry is
+ * `XY <path>` NUL-terminated and never quoted, so a non-ASCII path arrives
+ * verbatim (#577 — the line form octal-escaped it, and stripping the quotes left
+ * an escape that names no file). A rename or copy is `XY <dest>\0<orig>\0`: the
+ * destination is the live file to stat, the origin field is skipped.
+ * @param {string} out
+ * @returns {string[]}
  */
-export function parsePorcelainPath(line) {
-  let p = String(line ?? '').slice(3)
-  const arrow = p.indexOf(' -> ')
-  if (arrow !== -1) p = p.slice(arrow + 4)
-  if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1)
-  return p
+export function parsePorcelainZ(out) {
+  const fields = String(out ?? '').split('\0')
+  const paths = []
+  for (let i = 0; i < fields.length; i++) {
+    const entry = fields[i]
+    if (entry.length < 4) continue
+    paths.push(entry.slice(3))
+    if (/[RC]/.test(entry.slice(0, 2))) i++
+  }
+  return paths
 }
 
 /**
@@ -126,14 +132,8 @@ export function gatherEvidence({ worktreePath, runner, statMtime, nowMs }) {
   if (rl.status === 0) commitCount = Number(rl.stdout.trim()) || 0
 
   // Dirty files (modified / staged / untracked).
-  const st = runner.git(worktreePath, ['status', '--porcelain'])
-  const dirtyPaths =
-    st.status === 0
-      ? st.stdout
-          .split(/\r?\n/)
-          .filter((l) => l.trim().length > 0)
-          .map(parsePorcelainPath)
-      : []
+  const st = runner.git(worktreePath, ['status', '--porcelain', '-z'])
+  const dirtyPaths = st.status === 0 ? parsePorcelainZ(st.stdout) : []
   const dirtyCount = dirtyPaths.length
 
   // Last activity → age. A failed git call degrades to "just now" rather than
@@ -182,7 +182,9 @@ export function formatLine(n, evidence, decision) {
 export function defaultRunner() {
   return {
     git: (tree, args) => {
-      const res = spawnSync('git', ['-C', tree, ...args], {
+      // `core.quotepath=false` (#577): git's default octal-escapes a non-ASCII
+      // path, and a dirty file stat-ed under its escape does not exist.
+      const res = spawnSync('git', ['-C', tree, '-c', 'core.quotepath=false', ...args], {
         encoding: 'utf8',
         maxBuffer: MAX_BUFFER,
       })

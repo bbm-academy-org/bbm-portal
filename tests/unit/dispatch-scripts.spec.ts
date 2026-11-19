@@ -26,7 +26,7 @@ import {
   formatAge,
   formatLine,
   gatherEvidence,
-  parsePorcelainPath,
+  parsePorcelainZ,
 } from '../../tools/gh/dispatch-probe.mjs'
 
 /**
@@ -154,7 +154,7 @@ describe('dispatch:brief — gatherState', () => {
       git: (args: string[]) => {
         if (!args.includes('diff')) return { status: 0, stdout: 'C:/repo/.git\n', stderr: '' }
         expect(args.slice(0, 2)).toEqual(['-C', 'C:/repo/.claude/worktrees/134'])
-        return { status: 0, stdout: 'tools/gh/a.mjs\ntests/unit/a.spec.ts\n', stderr: '' }
+        return { status: 0, stdout: 'tools/gh/a.mjs\0tests/unit/a.spec.ts\0', stderr: '' }
       },
     }
     const state = gatherState({
@@ -488,10 +488,21 @@ describe('dispatch:probe — formatting seams', () => {
     expect(formatAge(-5)).toBe('0s')
   })
 
-  it('reads the destination path of a porcelain line, including renames and quotes', () => {
-    expect(parsePorcelainPath(' M tools/gh/dispatch-probe.mjs')).toBe('tools/gh/dispatch-probe.mjs')
-    expect(parsePorcelainPath('R  old/a.mjs -> new/b.mjs')).toBe('new/b.mjs')
-    expect(parsePorcelainPath('?? "with space.md"')).toBe('with space.md')
+  it('reads the live paths of `status --porcelain -z`, rename destinations, verbatim', () => {
+    const out = [
+      ' M tools/gh/dispatch-probe.mjs',
+      'R  new/b.mjs',
+      'old/a.mjs',
+      '?? with space.md',
+      '',
+    ]
+    expect(parsePorcelainZ(out.join('\0'))).toEqual([
+      'tools/gh/dispatch-probe.mjs',
+      'new/b.mjs',
+      'with space.md',
+    ])
+    expect(parsePorcelainZ('?? заявка.md\0')).toEqual(['заявка.md'])
+    expect(parsePorcelainZ('')).toEqual([])
   })
 
   it('appends the kill advice only when it is advised', () => {
@@ -516,7 +527,7 @@ describe('dispatch:probe — gatherEvidence', () => {
         seen.push(args)
         expect(tree).toBe('/wt/134')
         if (args[0] === 'rev-list') return { status: 0, stdout: '3\n', stderr: '' }
-        if (args[0] === 'status') return { status: 0, stdout: ' M a.ts\n?? b.ts\n', stderr: '' }
+        if (args[0] === 'status') return { status: 0, stdout: ' M a.ts\0?? b.ts\0', stderr: '' }
         return { status: 0, stdout: `${NOW / 1000 - 120}\n`, stderr: '' }
       },
     }
@@ -535,7 +546,7 @@ describe('dispatch:probe — gatherEvidence', () => {
       git: (_tree: string, args: string[]) =>
         args[0] === 'rev-list'
           ? { status: 0, stdout: '0\n', stderr: '' }
-          : { status: 0, stdout: ' M a.ts\n M b.ts\n', stderr: '' },
+          : { status: 0, stdout: ' M a.ts\0 M b.ts\0', stderr: '' },
     }
     const mtimes: Record<string, number> = {
       [join('/wt/134', 'a.ts')]: NOW - 300_000,
