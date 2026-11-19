@@ -193,6 +193,9 @@ export async function createConsentFromLeaders(
   if (!poll) return fail('Голосование не найдено.')
   if (poll.kind !== 'rating') return fail('Согласие создаётся только из рейтинга.')
   if (poll.status !== 'closed') return fail('Сначала закройте рейтинг.')
+  if ((await listPolls()).some((p) => p.sourcePollId === poll.id)) {
+    return fail('Согласие по лидерам этого рейтинга уже создано.')
+  }
 
   const leaders = topTwoLeaders(tallyRating(poll.options, await listBallots(poll.id)))
   if (leaders.status !== 'ok') return fail(leaders.message)
