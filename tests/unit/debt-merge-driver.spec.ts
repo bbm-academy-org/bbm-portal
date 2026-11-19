@@ -1,9 +1,10 @@
-import { spawnSync } from 'node:child_process'
+// @vitest-environment node
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 type GitResult = {
   status: number | null
@@ -11,10 +12,31 @@ type GitResult = {
   stdout: string
 }
 
+/**
+ * Identity and line-ending config for the throwaway repos, passed to every git
+ * call through git's `GIT_CONFIG_*` environment instead of three `git config`
+ * spawns per repo (#579). The effect is the same repo-local override; the
+ * scratch repos are the only place it applies — the shipped-ledger check runs
+ * git against this checkout with the caller's environment untouched.
+ */
+const scratchRepoEnv = {
+  ...process.env,
+  GIT_CONFIG_COUNT: '3',
+  GIT_CONFIG_KEY_0: 'user.email',
+  GIT_CONFIG_VALUE_0: 'codex@example.invalid',
+  GIT_CONFIG_KEY_1: 'user.name',
+  GIT_CONFIG_VALUE_1: 'Codex Test',
+  GIT_CONFIG_KEY_2: 'core.autocrlf',
+  GIT_CONFIG_VALUE_2: 'false',
+}
+
+const scratchRepos = new Set<string>()
+
 const runGit = (cwd: string, args: string[]): GitResult => {
   const result = spawnSync('git', args, {
     cwd,
     encoding: 'utf8',
+    env: scratchRepos.has(cwd) ? scratchRepoEnv : process.env,
     windowsHide: true,
   })
 
@@ -25,9 +47,34 @@ const runGit = (cwd: string, args: string[]): GitResult => {
   }
 }
 
+const expectGitOk = (args: string[], result: GitResult) =>
+  expect(result.status, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`).toBe(0)
+
 const git = (cwd: string, args: string[]) => {
   const result = runGit(cwd, args)
-  expect(result.status, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`).toBe(0)
+  expectGitOk(args, result)
+  return result
+}
+
+/** The same git call without blocking the worker, so independent repos run side by side. */
+const runGitAsync = (cwd: string, args: string[]) =>
+  new Promise<GitResult>((resolveResult, reject) => {
+    const child = spawn('git', args, {
+      cwd,
+      env: scratchRepos.has(cwd) ? scratchRepoEnv : process.env,
+      windowsHide: true,
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
+    child.on('error', reject)
+    child.on('close', (status) => resolveResult({ status, stderr, stdout }))
+  })
+
+const gitAsync = async (cwd: string, args: string[]) => {
+  const result = await runGitAsync(cwd, args)
+  expectGitOk(args, result)
   return result
 }
 
@@ -156,13 +203,11 @@ const assertAppendMarkerContract = (text: string) => {
   expect(text.slice(appendStart)).not.toContain('\n- [ ] ')
 }
 
-const makeRepo = (initialDebt: string) => {
+const makeRepo = async (initialDebt: string) => {
   const root = mkdtempSync(join(tmpdir(), 'bbm-debt-merge-'))
+  scratchRepos.add(root)
 
-  git(root, ['init', '--initial-branch=main'])
-  git(root, ['config', 'user.email', 'codex@example.invalid'])
-  git(root, ['config', 'user.name', 'Codex Test'])
-  git(root, ['config', 'core.autocrlf', 'false'])
+  await gitAsync(root, ['init', '--initial-branch=main'])
 
   writeFileSync(
     join(root, '.gitattributes'),
@@ -171,56 +216,59 @@ const makeRepo = (initialDebt: string) => {
   )
   writeFileSync(join(root, 'DEBT.md'), initialDebt, 'utf8')
 
-  git(root, ['add', '.gitattributes', 'DEBT.md'])
-  git(root, ['commit', '-m', 'base'])
+  await gitAsync(root, ['add', '.gitattributes', 'DEBT.md'])
+  await gitAsync(root, ['commit', '-m', 'base'])
 
   return root
 }
 
-const mergeBothOrders = ({
-  branchA,
-  branchAContent,
-  branchB,
-  branchBContent,
-  initialDebt,
-}: {
+type MergeScenario = {
   branchA: string
   branchAContent: string
   branchB: string
   branchBContent: string
   initialDebt: string
-}) => {
+}
+
+const mergeBothOrders = async ({
+  branchA,
+  branchAContent,
+  branchB,
+  branchBContent,
+  initialDebt,
+}: MergeScenario) => {
+  // One repo carries both branches; each merge order runs on its own branch cut
+  // from the untouched `main` base — the same two merges as two fresh repos,
+  // at half the git spawns (#579: 28 → 13 per scenario).
+  const root = await makeRepo(initialDebt)
   const results: string[] = []
 
-  for (const order of [
-    [branchA, branchB],
-    [branchB, branchA],
-  ]) {
-    const root = makeRepo(initialDebt)
+  try {
+    await gitAsync(root, ['checkout', '-b', branchA])
+    writeFileSync(join(root, 'DEBT.md'), branchAContent, 'utf8')
+    await gitAsync(root, ['commit', '-am', `${branchA} debt change`])
 
-    try {
-      git(root, ['checkout', '-b', branchA])
-      writeFileSync(join(root, 'DEBT.md'), branchAContent, 'utf8')
-      git(root, ['commit', '-am', `${branchA} debt change`])
+    await gitAsync(root, ['checkout', '-b', branchB, 'main'])
+    writeFileSync(join(root, 'DEBT.md'), branchBContent, 'utf8')
+    await gitAsync(root, ['commit', '-am', `${branchB} debt change`])
 
-      git(root, ['checkout', 'main'])
-      git(root, ['checkout', '-b', branchB])
-      writeFileSync(join(root, 'DEBT.md'), branchBContent, 'utf8')
-      git(root, ['commit', '-am', `${branchB} debt change`])
+    for (const [index, order] of [
+      [branchA, branchB],
+      [branchB, branchA],
+    ].entries()) {
+      await gitAsync(root, ['checkout', '-b', `merge-order-${index}`, 'main'])
+      await gitAsync(root, ['merge', '--no-edit', order[0]!])
 
-      git(root, ['checkout', 'main'])
-      git(root, ['merge', '--no-edit', order[0]!])
-
-      const secondMerge = runGit(root, ['merge', '--no-edit', order[1]!])
+      const secondMerge = await runGitAsync(root, ['merge', '--no-edit', order[1]!])
       expect(
         secondMerge.status,
         `${order.join(' then ')} should not conflict\n${secondMerge.stdout}\n${secondMerge.stderr}`,
       ).toBe(0)
 
       results.push(readFileSync(join(root, 'DEBT.md'), 'utf8'))
-    } finally {
-      rmSync(root, { force: true, recursive: true })
     }
+  } finally {
+    rmSync(root, { force: true, recursive: true })
   }
 
   return results
@@ -307,18 +355,70 @@ const collectAddedDebtAnchorIds = (cwd: string) => {
 const missingHistoricalAnchors = (cwd: string, debt: string) =>
   collectAddedDebtAnchorIds(cwd).filter((id) => lineCount(debt, endAnchor(id)) !== 1)
 
+const appendsScenario = (): MergeScenario => {
+  const initialDebt = renderDebt([activeBlock(baseBody, 'base-entry')])
+  const alphaBlock = activeBlock(alphaBody, 'alpha-entry')
+  const betaBlock = activeBlock(betaBody, 'beta-entry')
+
+  return {
+    branchA: 'alpha',
+    branchAContent: insertBeforeAppendMarker(initialDebt, alphaBlock),
+    branchB: 'beta',
+    branchBContent: insertBeforeAppendMarker(initialDebt, betaBlock),
+    initialDebt,
+  }
+}
+
+const removedId = 'removed-entry'
+
+const sweepScenario = (): MergeScenario => {
+  const initialDebt = renderDebt([
+    activeBlock(keptBody, 'kept-entry'),
+    activeBlock(removedBody, removedId),
+  ])
+  const sweepDebt = renderDebt(
+    [activeBlock(keptBody, 'kept-entry'), endAnchor(removedId)],
+    [historicalNote, sweepPromotionNote],
+  )
+  const appendDebt = insertBeforeAppendMarker(
+    initialDebt,
+    activeBlock(appendedBody, 'append-entry'),
+  )
+
+  return {
+    branchA: 'sweep',
+    branchAContent: sweepDebt,
+    branchB: 'append',
+    branchBContent: appendDebt,
+    initialDebt,
+  }
+}
+
 describe('DEBT.md merge protocol', () => {
-  it('keeps two concurrent active appends in both merge orders', () => {
-    const initialDebt = renderDebt([activeBlock(baseBody, 'base-entry')])
-    const alphaBlock = activeBlock(alphaBody, 'alpha-entry')
-    const betaBlock = activeBlock(betaBody, 'beta-entry')
-    const results = mergeBothOrders({
-      branchA: 'alpha',
-      branchAContent: insertBeforeAppendMarker(initialDebt, alphaBlock),
-      branchB: 'beta',
-      branchBContent: insertBeforeAppendMarker(initialDebt, betaBlock),
-      initialDebt,
-    })
+  /**
+   * Each merge scenario is a chain of 13 real git spawns in its own throwaway
+   * repo. The two chains are independent, so they run side by side once per
+   * file and each case below awaits its own settled merges, so a failing
+   * scenario fails its case and skips none of the others (#579). Measured
+   * 2026-11-19 on the Windows dev box (16 cores, shared): a git spawn costs
+   * 80–225 ms (a bare `git --version` ≈ 80 ms, a merge 150–225 ms), one chain
+   * 1.6–2.6 s alone, and the full `pnpm test:unit` load stretched the old
+   * 28-spawn cases past Vitest's 5 s default. The 30 s hook timeout leaves that
+   * load room and still fails a hung git.
+   */
+  let merged: Record<'appends' | 'sweep', Promise<string[]>>
+
+  beforeAll(async () => {
+    merged = {
+      appends: mergeBothOrders(appendsScenario()),
+      sweep: mergeBothOrders(sweepScenario()),
+    }
+    await Promise.allSettled(Object.values(merged))
+  }, 30_000)
+
+  it('keeps two concurrent active appends in both merge orders', async () => {
+    const results = await merged.appends
+    expect(results).toHaveLength(2)
 
     for (const mergedDebt of results) {
       noConflict(mergedDebt)
@@ -330,27 +430,9 @@ describe('DEBT.md merge protocol', () => {
     }
   })
 
-  it('keeps a swept last-entry body deleted while preserving its anchor and a concurrent append', () => {
-    const removedId = 'removed-entry'
-    const initialDebt = renderDebt([
-      activeBlock(keptBody, 'kept-entry'),
-      activeBlock(removedBody, removedId),
-    ])
-    const sweepDebt = renderDebt(
-      [activeBlock(keptBody, 'kept-entry'), endAnchor(removedId)],
-      [historicalNote, sweepPromotionNote],
-    )
-    const appendDebt = insertBeforeAppendMarker(
-      initialDebt,
-      activeBlock(appendedBody, 'append-entry'),
-    )
-    const results = mergeBothOrders({
-      branchA: 'sweep',
-      branchAContent: sweepDebt,
-      branchB: 'append',
-      branchBContent: appendDebt,
-      initialDebt,
-    })
+  it('keeps a swept last-entry body deleted while preserving its anchor and a concurrent append', async () => {
+    const results = await merged.sweep
+    expect(results).toHaveLength(2)
 
     for (const mergedDebt of results) {
       noConflict(mergedDebt)
@@ -458,8 +540,8 @@ describe('DEBT.md merge protocol', () => {
     ).toThrow('DEBT.md active text after anchor must start a new bullet')
   })
 
-  it('detects a sweep that deletes an anchor together with its body from repository history', () => {
-    const root = makeRepo(renderDebt([activeBlock(baseBody, 'lost-anchor')]))
+  it('detects a sweep that deletes an anchor together with its body from repository history', async () => {
+    const root = await makeRepo(renderDebt([activeBlock(baseBody, 'lost-anchor')]))
     const withoutBodyOrAnchor = renderDebt([])
 
     try {
@@ -474,8 +556,8 @@ describe('DEBT.md merge protocol', () => {
     }
   })
 
-  it('keeps the root-only merge attribute scoped to the root ledger', () => {
-    const root = makeRepo(renderDebt([activeBlock(baseBody, 'base-entry')]))
+  it('keeps the root-only merge attribute scoped to the root ledger', async () => {
+    const root = await makeRepo(renderDebt([activeBlock(baseBody, 'base-entry')]))
     mkdirSync(join(root, 'nested'))
     writeFileSync(join(root, 'nested', 'DEBT.md'), '# nested debt is not the root ledger\n', 'utf8')
 
