@@ -235,12 +235,19 @@ export function isRenameOrCopy(status) {
  * Parse `git diff --name-status --find-renames`. Rename/copy lines carry two
  * paths (`R100\told\tnew`); every other status carries one.
  *
+ * The real diff is read with `-z` (#577): every field — status and each path —
+ * is NUL-terminated and never quoted, so a non-ASCII path arrives verbatim. Text
+ * holding a NUL is parsed that way; the tab form stays for the canned
+ * `LINT_DIFF_NAMESTATUS_FILE` fixtures.
+ *
  * @param {string} text
  * @returns {{status: string, path: string, oldPath?: string}[]}
  */
 export function parseNameStatus(text) {
+  const src = String(text ?? '')
+  if (src.includes('\0')) return parseNameStatusZ(src)
   const out = []
-  for (const raw of String(text ?? '').split(/\r?\n/)) {
+  for (const raw of src.split(/\r?\n/)) {
     const line = raw.trimEnd()
     if (!line) continue
     const parts = line.split('\t')
@@ -250,6 +257,25 @@ export function parseNameStatus(text) {
       if (parts.length >= 3) out.push({ status, oldPath: parts[1], path: parts[2] })
     } else if (parts.length >= 2) {
       out.push({ status, path: parts[1] })
+    }
+  }
+  return out
+}
+
+/** The `-z` form: `<status>\0<path>\0`, or `<R|C><score>\0<old>\0<new>\0`. */
+function parseNameStatusZ(src) {
+  const fields = src.split('\0')
+  const out = []
+  for (let i = 0; i < fields.length;) {
+    const status = fields[i++].trim()
+    if (!status) continue
+    if (isRenameOrCopy(status)) {
+      const oldPath = fields[i++]
+      const path = fields[i++]
+      if (oldPath && path) out.push({ status, oldPath, path })
+    } else {
+      const path = fields[i++]
+      if (path) out.push({ status, path })
     }
   }
   return out
@@ -304,10 +330,23 @@ function readNameStatus(root) {
   const seam = process.env.LINT_DIFF_NAMESTATUS_FILE
   if (seam) return readFileSync(resolve(seam), 'utf8')
   const base = process.env.LINT_DIFF_BASE ?? 'origin/main'
-  return execFileSync('git', ['diff', '--name-status', '--find-renames', `${base}...HEAD`], {
-    cwd: root,
-    encoding: 'utf8',
-  })
+  // `core.quotepath=false` + `-z` (#577): git's default octal-escapes a
+  // non-ASCII path (`"docs/specs/\321\201..."`), which never matched a
+  // decision-record path, so a deleted Cyrillic spec passed. `-z` output is
+  // verbatim under any config; paths are UTF-8 bytes on every platform.
+  return execFileSync(
+    'git',
+    [
+      '-c',
+      'core.quotepath=false',
+      'diff',
+      '--name-status',
+      '-z',
+      '--find-renames',
+      `${base}...HEAD`,
+    ],
+    { cwd: root, encoding: 'utf8' },
+  )
 }
 
 /**

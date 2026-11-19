@@ -91,7 +91,9 @@ export function defaultRunner() {
   }
   return {
     gh: (args) => run('gh', args, { shell: process.platform === 'win32' }),
-    git: (args) => run('git', args),
+    // `core.quotepath=false` (#577): git's default octal-escapes a non-ASCII
+    // path, so the worktree scope seed listed escapes instead of paths.
+    git: (args) => run('git', ['-c', 'core.quotepath=false', ...args]),
   }
 }
 
@@ -179,13 +181,9 @@ export function gatherState({ issueNumber, runner, exists = existsSync, cwd = pr
   let worktreeChanged = []
   const wtAbs = repoRoot ? `${repoRoot}/${worktreeRelPath(issueNumber)}` : null
   if (wtAbs && exists(wtAbs)) {
-    const d = runner.git(['-C', wtAbs, 'diff', '--name-only', 'origin/main...HEAD'])
-    if (d.status === 0) {
-      worktreeChanged = d.stdout
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-    }
+    // `-z`: NUL-terminated, never-quoted paths — verbatim under any config (#577).
+    const d = runner.git(['-C', wtAbs, 'diff', '--name-only', '-z', 'origin/main...HEAD'])
+    if (d.status === 0) worktreeChanged = d.stdout.split('\0').filter(Boolean)
   }
 
   return { title, body, issueType, milestone, seededFiles, worktreeChanged, repoRoot }
