@@ -937,6 +937,25 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     expect(res.stderr).toContain(TEST)
   })
 
+  // #570: on Windows the guard ran git through cmd.exe, which split an argument
+  // with a space — the `git grep -e '<module path>'` needle came apart, no test
+  // was found citing the module, and the MIXED commit passed as an advisory.
+  it.each([
+    ['a directory', 'src/lib/lead forms/intake.ts', '@/lib/lead forms/intake'],
+    ['a file name', 'src/lib/leads/lead intake.ts', '@/lib/leads/lead intake'],
+  ])('exits 1 on a MIXED commit whose module path has a space in %s', (_, module, cite) => {
+    const spacedTest = 'tests/unit/lead forms.spec.ts'
+    const root = repo((r) => {
+      put(r, module, 'export const intake = () => true\n')
+      put(r, spacedTest, `import { intake } from '${cite}'\nit('reds', () => intake())\n`)
+      git(r, 'add', '.')
+    })
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain(module)
+    expect(res.stderr).toContain(spacedTest)
+  })
+
   it('exits 0 when nothing new lands under the platform-module scope', () => {
     const root = repo((r) => {
       put(r, 'docs/notes.md', 'prose\n')
