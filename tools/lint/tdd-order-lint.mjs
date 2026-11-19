@@ -619,10 +619,16 @@ function mergeHeads(root) {
 
 /**
  * The squashed side of a `git merge --squash` in progress (#569), or `[]`.
- * A squash writes no MERGE_HEAD; its only trace is SQUASH_MSG, which lists every
- * squashed commit as a column-0 `commit <sha>` line (message bodies are indented,
- * so a body can never forge one). Git deletes the file on commit and on reset, so
- * a present file belongs to the squash being concluded. Shas that do not resolve
+ * A squash writes no MERGE_HEAD; its only trace is SQUASH_MSG, which opens with
+ * the header `Squashed commit of the following:` and lists every squashed commit
+ * as a column-0 `commit <sha>` line, message bodies indented beneath it. The
+ * header is REQUIRED: `git rebase -i` writes SQUASH_MSG too, on a squash-step
+ * conflict, with the messages UNINDENTED (`# This is a combination of …`), so a
+ * message line `commit <sha>` there would otherwise forge a squashed side. Git
+ * deletes the file on commit and on reset, so a present file normally belongs to
+ * the squash being concluded (an abandoned squash cleared by `restore`/`clean`
+ * instead leaves it for the next commit — a narrow false PASS the CI plane still
+ * judges, see docs/ci-guardrails.md §5). Shas that do not resolve
  * to a commit are dropped — an unreadable file leaves the plain-commit reading —
  * and `merge-base --independent` reduces the list to the branch TIP(s), which
  * stand in for the parents a real merge would have recorded.
@@ -632,9 +638,9 @@ function squashHeads(root) {
   if (rel === null) return []
   const file = resolve(root, rel.trim())
   if (!existsSync(file)) return []
-  const listed = [
-    ...readFileSync(file, 'utf8').matchAll(/^commit ([0-9a-f]{40}|[0-9a-f]{64})\s*$/gm),
-  ].map((m) => m[1])
+  const text = readFileSync(file, 'utf8')
+  if (!/^Squashed commit of the following:\r?\n/.test(text)) return []
+  const listed = [...text.matchAll(/^commit ([0-9a-f]{40}|[0-9a-f]{64})\s*$/gm)].map((m) => m[1])
   const commits = [...new Set(listed)].filter(
     (sha) => git(root, ['rev-parse', '--verify', '-q', `${sha}^{commit}`]) !== null,
   )
