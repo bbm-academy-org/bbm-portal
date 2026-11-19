@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -1212,5 +1212,46 @@ describe('tdd-order --staged during a merge (#565)', () => {
     const res = staged(root)
     expect(res.code).toBe(1)
     expect(res.stderr).toContain(MODULE)
+  })
+
+  it('a `rebase -i` squash-step conflict is NOT a squash merge, even if a message cites a sha (#569)', () => {
+    // `rebase -i` also writes SQUASH_MSG on a squash-step conflict, but with the
+    // commit messages UNINDENTED — so a message line `commit <sha of main>` must not
+    // make main's module+test (copied in by hand) read as the squashed side.
+    const root = diverged()
+    const mainSha = git(root, 'rev-parse', 'main').trim()
+    git(root, 'branch', 'other', 'main~2')
+    git(root, 'checkout', '-q', 'other')
+    put(root, 'shared.md', 'other\n')
+    git(root, 'commit', '-qam', 'other')
+    git(root, 'checkout', '-q', 'feature')
+    put(root, 'docs/second.md', 'prose\n')
+    git(root, 'add', '.')
+    git(root, 'commit', '-qm', `docs: second\n\ncommit ${mainSha}`)
+    // Reorder so the clean commit is picked first and the conflicting one squashed onto it.
+    const todo = [
+      `pick ${git(root, 'rev-parse', 'HEAD').trim()} second`,
+      `squash ${git(root, 'rev-parse', 'HEAD~1').trim()} feature`,
+      '',
+    ].join('\n')
+    const todoFile = join(root, '..', `${root.split(/[\\/]/).pop()}-todo`)
+    repos.push(todoFile)
+    writeFileSync(todoFile, todo)
+    const editor = `node -e "require('fs').copyFileSync(process.argv[1], process.argv[2])" ${JSON.stringify(todoFile.replace(/\\/g, '/'))}`
+    const rebase = spawnSync('git', ['rebase', '-i', '--onto', 'other', 'main~2'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_SEQUENCE_EDITOR: editor, GIT_EDITOR: 'true' },
+    })
+    expect(rebase.status).not.toBe(0) // the squash step conflicts on shared.md
+    const rel = git(root, 'rev-parse', '--git-path', 'SQUASH_MSG').trim()
+    expect(readFileSync(join(root, rel), 'utf8')).toContain(`\ncommit ${mainSha}`)
+    put(root, 'shared.md', 'resolved\n')
+    git(root, 'checkout', 'main', '--', 'src', 'tests')
+    git(root, 'add', '.')
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain(MODULE)
+    expect(res.stdout).not.toContain('squash merge in progress')
   })
 })
