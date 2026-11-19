@@ -956,6 +956,48 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     expect(res.stderr).toContain(spacedTest)
   })
 
+  // #573: with git's default `core.quotepath=true`, `git diff --name-only` and
+  // `git grep -l` print a non-ASCII path as a quoted octal escape
+  // (`"src/lib/\320\273..."`), which never matched a module path — a MIXED
+  // commit under a Cyrillic path passed with exit 0. The repo pins the default
+  // locally so a machine-wide `quotepath=false` cannot hide the bug.
+  const cyrillic = (build: (root: string) => void) =>
+    repo((r) => {
+      git(r, 'config', 'core.quotepath', 'true')
+      build(r)
+    })
+
+  it.each([
+    ['a directory', 'src/lib/лиды/intake.ts', '@/lib/лиды/intake', 'tests/unit/leads.spec.ts'],
+    ['a file name', 'src/lib/leads/заявка.ts', '@/lib/leads/заявка', 'tests/unit/leads.spec.ts'],
+    ['the test path too', 'src/lib/лиды/intake.ts', '@/lib/лиды/intake', 'tests/unit/лиды.spec.ts'],
+  ])('exits 1 on a MIXED commit whose path is non-ASCII in %s', (_, mod, cite, test) => {
+    const root = cyrillic((r) => {
+      put(r, mod, 'export const intake = () => true\n')
+      put(r, test, `import { intake } from '${cite}'\nit('reds', () => intake())\n`)
+      git(r, 'add', '.')
+    })
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain(mod)
+    expect(res.stderr).toContain(test)
+  })
+
+  it('exits 0 when the non-ASCII test is already committed — the ritual followed', () => {
+    const mod = 'src/lib/лиды/intake.ts'
+    const test = 'tests/unit/лиды.spec.ts'
+    const root = cyrillic((r) => {
+      put(r, test, "import { intake } from '@/lib/лиды/intake'\nit('reds', () => intake())\n")
+      git(r, 'add', '.')
+      git(r, 'commit', '-qm', 'test(leads): RED')
+      put(r, mod, 'export const intake = () => true\n')
+      git(r, 'add', mod)
+    })
+    const res = staged(root)
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('PASS')
+  })
+
   it('exits 0 when nothing new lands under the platform-module scope', () => {
     const root = repo((r) => {
       put(r, 'docs/notes.md', 'prose\n')

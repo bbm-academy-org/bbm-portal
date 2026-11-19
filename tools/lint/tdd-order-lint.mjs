@@ -595,9 +595,16 @@ export function evaluateStaged(modules) {
  * `git` in `root`, stdout or null. Never throws: a git that cannot answer is a skip.
  * No shell on any platform: git is a real `.exe` on Windows, and cmd.exe would
  * split an argument with a space — a module path in a `git grep -e` needle (#570).
+ * `core.quotepath=false`: git's default octal-escapes a non-ASCII path
+ * (`"src/lib/\320\273..."`), which never matches a module path (#573). The
+ * path-list calls also read `-z` output, verbatim under any config. Paths are
+ * UTF-8 bytes on every platform, Windows included, hence `utf8`.
  */
 function git(root, args) {
-  const res = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+  const res = spawnSync('git', ['-c', 'core.quotepath=false', ...args], {
+    cwd: root,
+    encoding: 'utf8',
+  })
   return res.status === 0 ? res.stdout : null
 }
 
@@ -660,11 +667,11 @@ function squashHeads(root) {
  * TDD obligation.
  */
 function additionsAgainst(root, rev) {
-  const args = ['diff', '--cached', '--name-only', '--diff-filter=A', '-M']
+  const args = ['diff', '--cached', '--name-only', '-z', '--diff-filter=A', '-M']
   if (rev) args.push(rev)
   const out = git(root, args)
   if (out === null) return null
-  return out.split(/\r?\n/).filter(Boolean).map(toPosix)
+  return out.split('\0').filter(Boolean).map(toPosix)
 }
 
 /**
@@ -704,7 +711,7 @@ function stagedAdditions(root, parents) {
  * blob is read into node and an empty tree is simply no matches.
  */
 function testsMatching(root, rev, needles) {
-  const args = ['grep', '-l', '-F', '-I']
+  const args = ['grep', '-l', '-z', '-F', '-I']
   for (const n of needles) args.push('-e', n)
   args.push(rev, '--')
   const out = git(root, args)
@@ -712,7 +719,7 @@ function testsMatching(root, rev, needles) {
   // `git grep <rev>` prefixes each hit with `<rev>:`; `--cached` prints bare paths.
   const prefix = rev === '--cached' ? '' : `${rev}:`
   return out
-    .split(/\r?\n/)
+    .split('\0')
     .filter(Boolean)
     .map((line) => toPosix(prefix && line.startsWith(prefix) ? line.slice(prefix.length) : line))
     .filter((p) => isTestSource(p))
