@@ -4,6 +4,7 @@ import { memberWorkspaceEntry } from '@/lib/member'
 import { okrWorkspaceEntry } from '@/lib/okr'
 import { pathMapWorkspaceEntry } from '@/lib/path-map'
 import { processesWorkspaceEntry } from '@/lib/processes'
+import { voteWorkspaceEntry } from '@/lib/vote'
 
 import type { PlannedWorkspaceEntry, WorkspaceEntry } from './contract'
 
@@ -48,6 +49,7 @@ export const WORKSPACE_REGISTRY: readonly WorkspaceEntry[] = [
   financeWorkspaceEntry,
   pathMapWorkspaceEntry,
   processesWorkspaceEntry,
+  voteWorkspaceEntry,
 
   // Cabinet-only modules live in the same composition root but render no tile.
   memberWorkspaceEntry,

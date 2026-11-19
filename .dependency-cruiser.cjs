@@ -161,6 +161,41 @@ module.exports = {
       },
     },
     {
+      name: 'vote-must-not-import-cms',
+      comment:
+        'ADR-002 (#575): the vote module (src/lib/vote + src/modules/vote) must not import CMS ' +
+        'internals. Its polls and ballots are platform data in `core` (ADR-004 §1).',
+      severity: 'error',
+      from: { path: '^src/(lib/vote|modules/vote)' },
+      to: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations)|^src/payload\\.config|^src/payload-types',
+      },
+    },
+    {
+      name: 'cms-must-not-import-vote-internals',
+      comment:
+        'ADR-002/ADR-003 (#575): the mirror. Only the (platform) route group mounts the vote ' +
+        'surfaces (/p/vote, /p/admin/vote) — it is absent from this from-set, as in every rule above.',
+      severity: 'error',
+      from: {
+        path: '^src/(collections|globals|endpoints|hooks|fields|admin|seed|migrations|app/\\(payload\\)|app/\\(frontend\\))|^src/payload\\.config',
+      },
+      to: { path: '^src/(lib/vote|modules/vote)' },
+    },
+    {
+      name: 'vote-must-import-member-only-via-api',
+      comment:
+        'The same shape as `hours-must-import-member-only-via-api` (#575): the vote module shows ' +
+        "voters by name, and it reads the names through the member module's public API " +
+        '(src/lib/member/index.ts) only — never its repository or tables.',
+      severity: 'error',
+      from: { path: '^src/(lib/vote|modules/vote)' },
+      to: {
+        path: '^src/lib/member/',
+        pathNot: '^src/lib/member/index\\.ts$',
+      },
+    },
+    {
       name: 'cms-must-not-import-path-map-internals',
       comment:
         'ADR-002/ADR-003 (#530): the CMS side may not reach into path-map internals. Only the ' +
