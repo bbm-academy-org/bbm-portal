@@ -45,6 +45,7 @@ beforeEach(() => {
   for (const fn of Object.values(store)) fn.mockReset()
   store.upsertBallot.mockResolvedValue('saved')
   store.updatePollStatus.mockResolvedValue(true)
+  store.listPolls.mockResolvedValue([])
 })
 
 describe('submitBallot', () => {
@@ -238,6 +239,22 @@ describe('createConsentFromLeaders', () => {
     expect(result).toEqual({
       ok: false,
       error: 'Ничья за второе место — создайте согласие вручную',
+    })
+    expect(store.insertPolls).not.toHaveBeenCalled()
+  })
+
+  it('refuses a second run once consent drafts from this rating exist', async () => {
+    store.getPoll.mockResolvedValue(poll({ status: 'closed' }))
+    store.listPolls.mockResolvedValue([
+      {
+        ...poll({ id: 8, kind: 'consent', options: [], status: 'draft', sourcePollId: 7 }),
+        ballotCount: 0,
+      },
+    ])
+    const result = await service.createConsentFromLeaders(admin, 7)
+    expect(result).toEqual({
+      ok: false,
+      error: 'Согласие по лидерам этого рейтинга уже создано.',
     })
     expect(store.insertPolls).not.toHaveBeenCalled()
   })
