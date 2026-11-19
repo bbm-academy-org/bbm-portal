@@ -168,7 +168,9 @@
 // false BLOCK, which pushed agents into rebases and once into `--no-verify`
 // (PR #564). Only a path new against all parents is the resolution's own
 // authorship, and a test committed on any parent is already committed. See
-// `stagedAdditions`.
+// `stagedAdditions`. A `git merge --squash` (#569) leaves no MERGE_HEAD, only
+// SQUASH_MSG; its squashed branch tips are read from there and stand in for the
+// parents — see `squashHeads`.
 //
 // TWO SEVERITIES, and the split is the design rather than a compromise. The
 // staged plane reads only the local tree and index through git plumbing — no
@@ -616,6 +618,42 @@ function mergeHeads(root) {
 }
 
 /**
+ * The squashed side of a `git merge --squash` in progress (#569), or `[]`.
+ * A squash writes no MERGE_HEAD; its only trace is SQUASH_MSG, which opens with
+ * the header `Squashed commit of the following:` and lists every squashed commit
+ * as a column-0 `commit <sha>` line, message bodies indented beneath it. The
+ * header is REQUIRED: `git rebase -i` writes SQUASH_MSG too, on a squash-step
+ * conflict, with the messages UNINDENTED (`# This is a combination of …`), so a
+ * message line `commit <sha>` there would otherwise forge a squashed side. Git
+ * deletes the file on commit and on reset, so a present file normally belongs to
+ * the squash being concluded (an abandoned squash cleared by `restore`/`clean`
+ * instead leaves it for the next commit — a narrow false PASS the CI plane still
+ * judges, see docs/ci-guardrails.md §5). Shas that do not resolve
+ * to a commit are dropped — an unreadable file leaves the plain-commit reading —
+ * and `merge-base --independent` reduces the list to the branch TIP(s), which
+ * stand in for the parents a real merge would have recorded.
+ */
+function squashHeads(root) {
+  const rel = git(root, ['rev-parse', '--git-path', 'SQUASH_MSG'])
+  if (rel === null) return []
+  const file = resolve(root, rel.trim())
+  if (!existsSync(file)) return []
+  const text = readFileSync(file, 'utf8')
+  if (!/^Squashed commit of the following:\r?\n/.test(text)) return []
+  const listed = [...text.matchAll(/^commit ([0-9a-f]{40}|[0-9a-f]{64})\s*$/gm)].map((m) => m[1])
+  const commits = [...new Set(listed)].filter(
+    (sha) => git(root, ['rev-parse', '--verify', '-q', `${sha}^{commit}`]) !== null,
+  )
+  if (commits.length === 0) return []
+  const tips = git(root, ['merge-base', '--independent', ...commits])
+  if (tips === null) return []
+  return tips
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+}
+
+/**
  * Files the INDEX adds outright against `rev` (HEAD when absent), as
  * repo-relative paths. `-M` keeps rename detection on, so a moved module
  * reports `R` and never reaches this list: relocating tracked code re-opens no
@@ -682,16 +720,24 @@ function testsMatching(root, rev, needles) {
 
 /** The pre-commit plane: read the index, never the network. */
 function runStaged(out, root) {
-  const parents = mergeHeads(root)
+  // A real merge wins; only without MERGE_HEAD can a squash be in progress
+  // (`git merge --squash` refuses to start while a merge is unconcluded).
+  const merged = mergeHeads(root)
+  const squashed = merged.length > 0 ? [] : squashHeads(root)
+  const squashing = squashed.length > 0
+  const parents = squashing ? squashed : merged
   const merging = parents.length > 0
+  const kind = squashing ? 'squash merge' : 'merge'
+  const side = squashing ? 'the squashed branch' : 'a merged parent'
   const additions = stagedAdditions(root, parents)
   if (additions === null) {
     out.ok('not a git working tree (or git is unavailable), nothing to check')
   }
   if (merging) {
     out.info(
-      `merge in progress: judging only what the resolution adds against HEAD and ` +
-        `${parents.length} merged parent(s); files arriving from a parent are not this commit's authorship`,
+      `${kind} in progress: judging only what the resolution adds against HEAD and ` +
+        `${parents.length} merged ${squashing ? 'tip' : 'parent'}(s); files arriving from ` +
+        `${squashing ? 'the squashed branch' : 'a parent'} are not this commit's authorship`,
     )
   }
 
@@ -746,12 +792,12 @@ function runStaged(out, root) {
   // agent shown «the escape hatch is --no-verify» used it (PR #564, #565).
   out.fail(
     `${mixed.length} new platform module(s) staged together with their own tests` +
-      (merging ? ', introduced by this merge resolution itself (not by a merged parent). ' : '. ') +
+      (merging ? `, introduced by this ${kind} resolution itself (not by ${side}). ` : '. ') +
       'task-cycle stage 3: commit the failing test first, then the implementation on top of it — ' +
       'two commits, in that order, so the RED run is a real artifact rather than a claim. ' +
       'How to proceed without `--no-verify`: unstage the module (`git restore --staged <file>`; ' +
       'the file stays in your working tree), ' +
-      (merging ? 'conclude the merge with the test alone, ' : 'commit the test alone, ') +
+      (merging ? `conclude the ${kind} with the test alone, ` : 'commit the test alone, ') +
       'then `git add` the module and commit it on top. No hook bypass is needed — ' +
       '`--no-verify` / `SKIP_SIMPLE_GIT_HOOKS=1` would skip EVERY pre-commit check, not just ' +
       'this one. Canon: docs/ci-guardrails.md §5.',
