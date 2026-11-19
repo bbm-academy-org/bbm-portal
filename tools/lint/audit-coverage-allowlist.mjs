@@ -212,6 +212,11 @@ const DOMAIN_VALUE_WHITELIST = {
   // The Bank of Russia display rates (spec 339 §I, #548): public reference
   // data written only by the sync job — every column by value.
   finance_fx_rate: ['id', 'source', 'currency', 'rate_date', 'nominal', 'value_rub'],
+  // The vote module (#575, migration `0020_vote`). Non-anonymous by design — the
+  // facilitator shows who voted for what — so the voter and the answer are
+  // recorded by value, which is what makes a re-vote visible in the journal.
+  vote_poll: ['id', 'title', 'kind', 'options', 'status', 'source_poll_id'],
+  vote_ballot: ['id', 'poll_id', 'voter_email', 'choices', 'consent_answer', 'comment'],
   finance_counterparty: ['id', 'name', 'created_by', 'created_at'],
   finance_purpose_proposal: [
     'id',

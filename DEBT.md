@@ -983,6 +983,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-16-388-money-sort-as-string -->
 
+- [ ] 2026-11-19 The vote module (#575) shipped under a hard deadline (facilitated session 2026-11-20, 10:00 MSK) with three small deviations from the module pattern, recorded together: (1) no light spec in `docs/specs/` — scope and acceptance live in issue #575 and the organiser's plan, per the issue's «no spec» line; (2) the consent ballot's three answers are kit `Button`s in a `role="radiogroup"` with `role="radio"` / `aria-checked`, because `src/ui` vendors no `radio-group` and adding one is a kit change the deadline did not leave room for; (3) the cabinet resource `vote.polls` declares a zod record schema the cabinet data provider never fetches — the screens are server components posting Server Actions, like `/p/hours`, not Refine resource screens over `/api/p/vote` — return condition: the values session (the next use of this module named in #575), or the first change to the vote screens after 2026-11-20, whichever comes first; at that point the module gets its spec, the kit gets `radio-group`, and the cabinet resource either moves onto the data provider or the schema is documented as declaration-only.
+
+<!-- debt-entry-end: 2026-11-19-575-vote-deadline-deviations -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
