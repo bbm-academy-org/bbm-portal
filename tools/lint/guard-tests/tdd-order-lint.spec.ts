@@ -1147,4 +1147,70 @@ describe('tdd-order --staged during a merge (#565)', () => {
     git(root, 'add', 'shared.md')
     expect(staged(root).code).toBe(0)
   })
+
+  // ── `git merge --squash` (#569) ──────────────────────────────────────────────
+  // A squash writes no MERGE_HEAD, only SQUASH_MSG listing the squashed commits,
+  // so before #569 the index was read against HEAD alone and main's module+test
+  // looked like this commit's MIXED authorship.
+
+  it('exits 0 concluding a squash merge of main that brings a module and its test (#569)', () => {
+    const root = diverged()
+    expect(gitTry(root, 'merge', '--squash', 'main')).not.toBe(0)
+    put(root, 'shared.md', 'resolved\n')
+    git(root, 'add', 'shared.md')
+    const res = staged(root)
+    expect(res.stderr).toBe('')
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('squash')
+  })
+
+  it('exits 0 for a squash merge when main itself landed module and test in one commit (#569)', () => {
+    const root = diverged({ mainMixed: true })
+    expect(gitTry(root, 'merge', '--squash', 'main')).not.toBe(0)
+    put(root, 'shared.md', 'resolved\n')
+    git(root, 'add', 'shared.md')
+    expect(staged(root).code).toBe(0)
+  })
+
+  it('exits 0 for a squash merge concluded from a LINKED worktree, whose .git is a file (#569)', () => {
+    const root = diverged()
+    const wt = mkdtempSync(join(tmpdir(), 'tdd-order-squash-wt-'))
+    repos.push(wt)
+    git(root, 'checkout', '-q', '--detach')
+    git(root, 'worktree', 'add', '-q', wt, 'feature')
+    expect(gitTry(wt, 'merge', '--squash', 'main')).not.toBe(0)
+    put(wt, 'shared.md', 'resolved\n')
+    git(wt, 'add', 'shared.md')
+    expect(staged(wt).code).toBe(0)
+  })
+
+  it('still BLOCKS a squash resolution that itself introduces a module with its test (#569)', () => {
+    const root = diverged()
+    gitTry(root, 'merge', '--squash', 'main')
+    put(root, 'shared.md', 'resolved\n')
+    put(root, 'src/lib/evil/merge.ts', 'export const evil = () => true\n')
+    put(root, 'tests/unit/evil-merge.spec.ts', "import { evil } from '@/lib/evil/merge'\n")
+    git(root, 'add', '.')
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain('src/lib/evil/merge.ts')
+    expect(res.stderr).not.toContain(MODULE)
+    expect(res.stderr).toContain('squash')
+    expect(res.stderr).toContain('without `--no-verify`')
+  })
+
+  it('a SQUASH_MSG naming no readable commit leaves the plain rule in force (#569)', () => {
+    const root = diverged()
+    const rel = git(root, 'rev-parse', '--git-path', 'SQUASH_MSG').trim()
+    writeFileSync(
+      join(root, rel),
+      `Squashed commit of the following:\n\ncommit ${'0'.repeat(40)}\n`,
+    )
+    put(root, MODULE, 'export const intake = () => true\n')
+    put(root, TEST, testBody)
+    git(root, 'add', '.')
+    const res = staged(root)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toContain(MODULE)
+  })
 })
