@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   RETIREABLE_PATH_RE,
@@ -133,6 +137,25 @@ describe('parseNameStatus', () => {
       { status: 'M', path: 'docs/specs/010-x.md' },
       { status: 'D', path: 'docs/specs/011-y.md' },
       { status: 'R100', oldPath: 'docs/specs/a.md', path: 'docs/specs/b.md' },
+    ])
+  })
+
+  // #577: the real diff is read with `-z` — NUL-terminated fields, never
+  // quoted, a rename's two paths as two fields.
+  it('parses the NUL-terminated `-z` form, paths verbatim', () => {
+    const fields = [
+      'M',
+      'docs/specs/010-x.md',
+      'D',
+      'docs/specs/011-спека.md',
+      'R100',
+      'docs/adr/a.md',
+      'docs/adr/решения/b.md',
+    ]
+    expect(parseNameStatus(fields.map((f) => `${f}\0`).join(''))).toEqual([
+      { status: 'M', path: 'docs/specs/010-x.md' },
+      { status: 'D', path: 'docs/specs/011-спека.md' },
+      { status: 'R100', oldPath: 'docs/adr/a.md', path: 'docs/adr/решения/b.md' },
     ])
   })
 })
@@ -372,6 +395,86 @@ describe('spec-deletion (spawned)', () => {
     const res = runGuard('spec-deletion-lint.mjs', caseDir('spec-deletion', 'no-specs'))
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('no spec files')
+  })
+
+  /**
+   * #577: with git's default `core.quotepath=true`, `git diff --name-status`
+   * printed a non-ASCII path as a quoted octal escape
+   * (`"docs/specs/010-\321\201..."`), which never matched the decision-record
+   * pattern — a spec deleted under a Cyrillic path passed with exit 0. These run
+   * the real diff in a throwaway repo that pins `quotepath=true` locally, so a
+   * machine-wide `false` (the owner's checkout) cannot hide the bug.
+   */
+  describe('against a real git diff (non-ASCII paths)', () => {
+    const repos: string[] = []
+    afterAll(() => {
+      for (const dir of repos) rmSync(dir, { recursive: true, force: true })
+    })
+
+    const git = (cwd: string, ...args: string[]) => {
+      const res = spawnSync('git', args, { cwd, encoding: 'utf8' })
+      if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`)
+      return res.stdout
+    }
+    const put = (root: string, rel: string, text: string) => {
+      mkdirSync(dirname(join(root, rel)), { recursive: true })
+      writeFileSync(join(root, rel), text)
+    }
+    const spec = (status: string, n: number) =>
+      ['---', `status: ${status}`, `issue: ${n}`, '---', '', `# Spec ${n}`, ''].join('\n')
+
+    /** Branch `base` holds the given specs; HEAD is `base` plus one `change` commit. */
+    const repo = (specs: string[], change: (root: string) => void) => {
+      const root = mkdtempSync(join(tmpdir(), 'spec-deletion-'))
+      repos.push(root)
+      git(root, 'init', '-q')
+      git(root, 'config', 'core.quotepath', 'true')
+      git(root, 'config', 'user.email', 'guard@test.local')
+      git(root, 'config', 'user.name', 'guard test')
+      put(root, 'docs/specs/001-keep.md', spec('Shipped', 1))
+      specs.forEach((rel, i) => put(root, rel, spec('Shipped', i + 10)))
+      git(root, 'add', '.')
+      git(root, 'commit', '-qm', 'base')
+      git(root, 'branch', 'base')
+      change(root)
+      git(root, 'add', '-A')
+      git(root, 'commit', '-qm', 'change')
+      return root
+    }
+    const run = (root: string) =>
+      runGuard('spec-deletion-lint.mjs', root, {
+        env: { ...prEnv(ghDir('spec-deletion', 'deleted-bare')), LINT_DIFF_BASE: 'base' },
+      })
+
+    it.each([
+      ['an ASCII path (control)', 'docs/specs/010-thing.md'],
+      ['a non-ASCII file name', 'docs/specs/010-спека.md'],
+      ['a non-ASCII directory', 'docs/adr/решения/010-thing.md'],
+    ])('exits 1 and names the spec deleted under %s', (_, deleted) => {
+      const root = repo([deleted], (r) => unlinkSync(join(r, deleted)))
+      const res = run(root)
+      expect(res.code).toBe(1)
+      expect(res.stderr).toContain(deleted)
+    })
+
+    it('exits 0 on a rename under a non-ASCII path — a rename is not a deletion', () => {
+      const from = 'docs/specs/010-спека.md'
+      const root = repo([from], (r) => git(r, 'mv', from, 'docs/specs/010-новая.md'))
+      const res = run(root)
+      expect(res.code).toBe(0)
+    })
+
+    it('exits 0 when the same PR retires a spec whose path is non-ASCII', () => {
+      const gone = 'docs/specs/010-thing.md'
+      const retired = 'docs/specs/011-спека.md'
+      const root = repo([gone, retired], (r) => {
+        unlinkSync(join(r, gone))
+        put(r, retired, spec('Retired', 11))
+      })
+      const res = run(root)
+      expect(res.code).toBe(0)
+      expect(res.stdout).toContain('superseded-transition')
+    })
   })
 
   it('exits 0 on the real repo tree — the sweep must be green at merge', () => {
