@@ -351,15 +351,12 @@ describe('canonicalPath — junction escape', () => {
 /** The 8.3 form of an existing path through cmd's `%~s`, or "" when unavailable. */
 function shortNameOf(p: string): string {
   if (process.platform !== 'win32') return ''
-  try {
-    return execFileSync('cmd.exe', ['/d', '/c', `for %I in ("${p}") do @echo %~sI`], {
-      encoding: 'utf8',
-      windowsVerbatimArguments: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim()
-  } catch {
-    return ''
-  }
+  const r = spawnSync('cmd.exe', ['/d', '/c', `for %I in ("${p}") do @echo %~sI`], {
+    encoding: 'utf8',
+    windowsVerbatimArguments: true,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  return r.status === 0 ? String(r.stdout).trim() : ''
 }
 
 /**
