@@ -200,7 +200,7 @@ describe('ears-naming: the register is the single source for the promotion windo
   const registerRow = canon.split('\n').find((l) => l.startsWith('| **ears-naming**')) ?? ''
 
   it('leaves no second copy of the register prose in ci.yml', () => {
-    // CLAUDE.md, «Path is the contract»: a paraphrase of the §5 row in the
+    // AGENTS.md, «Path is the contract»: a paraphrase of the §5 row in the
     // workflow is a second source of truth, and the copy is the one that
     // drifts — it did, the moment #447 closed the class it declared open.
     expect(jobBlock).not.toMatch(/unresolved FALSE-BLOCK/i)

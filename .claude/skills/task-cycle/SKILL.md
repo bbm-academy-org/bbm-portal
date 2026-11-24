@@ -20,6 +20,13 @@ mark which). Classify against the spec gate: a new platform module or new
 user-facing behavior → the task needs a spec (stage 1a); CMS-contract upkeep
 and chore/fix work → no spec.
 
+**Scope gate — what is not a tracked task.** An answer, an analysis, a review
+of something that exists, an export or a report changes no repository file and
+runs directly: no issue, no worktree, no `pnpm install`, no repo checks. The
+cycle starts at the first repository change; a request whose deliverable lives
+entirely in issues or the board follows `task-canon` §4 (claim without a
+worktree).
+
 ## Stage 1 — orient & plan (no implementation)
 
 The session's first reply is a "Session plan": task type; 1–3 deliverables;
@@ -246,7 +253,10 @@ inference («скорее всего, момент загрузки») is not an
 **6. The invitation.** Its FIRST line is the live URL (memory
 `proverit-glazami-is-live-ui-only`); login and where to get the password follow
 on the next line; the screenshots are attached as eyes-on evidence and never
-lead or substitute. An unanswered design/visual question = merge stays blocked.
+lead or substitute. The owner is never handed a test script («scenario 1: add a
+member…»): the invitation carries the agent's own per-scenario evidence
+(scenario → driven → result → capture) and asks only «принято?». An unanswered
+design/visual question = merge stays blocked.
 
 Invisible changes (internals, refactoring, docs, backend without UI) skip this
 stage — no screenshot ceremony on backend work — but the PR still records

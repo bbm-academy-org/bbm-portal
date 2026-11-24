@@ -1,80 +1,32 @@
-# Parallel sessions — worktrees and ports
+# Parallel sessions — worktrees, ports, the shared box
 
-Несколько сессий Claude работают в одном репо одновременно. Общий чекаут — это
-один HEAD и один набор незакоммиченных изменений на всех, а порт 3000 — один на
-машину. Четыре инцидента за неделю (force-push по ветке чужой сессии с
-воскрешением удалённой; субагент переключил ветку под живым стендом приёмки;
-чекаут уехал на `feat/81` посреди приёмки владельца — «ссылка не работает»)
-пришли ровно отсюда. Правила ниже структурные, а не «быть внимательнее».
+Several agent sessions work in this repo at once, on one machine. The shared checkout is one HEAD and one set of uncommitted changes for everyone, port 3000 is one per machine, and RAM is shared. Four incidents in one week (a force-push over another session's branch that resurrected a deleted one; a subagent switching the branch under a live acceptance stand; the checkout moving to `feat/81` in the middle of the owner's acceptance — «the link does not work») came from exactly here. The rules below are structural, not "be more careful".
 
-## Ветки и worktree
+## Branches and worktrees
 
-- **Рабочая ветка сессии живёт ТОЛЬКО в отдельном worktree.** Создавать одной
-  командой: `pnpm task:worktree <N>` → `.claude/worktrees/<N>` на ветке
-  `<type>/<N>-<slug>` от свежего `origin/main`. Никаких `git checkout -b` в
-  общем чекауте.
-- **Основной чекаут `C:\Users\sidor\repos\bbm-portal` держится на `main`** и
-  принадлежит лиду и живым стендам. Он не переключает ветку ради задачи —
-  переключение под запущенным стендом ломает чужую приёмку, а не только сборку.
-- **Write-субагенты запускаются только в изолированном worktree**
-  (`isolation: "worktree"` или заранее созданный `task:worktree`). Read-агентам
-  общий чекаут можно.
-- **Не трогать чужой worktree и чужую ветку.** `git push --force` допустим
-  только по своей ветке этой сессии; ветка, которой нет в твоём worktree, —
-  чужая по умолчанию.
-- **Разбирать за собой:** `pnpm worktree:teardown <N>`. Несмерженную ветку он
-  оставляет и предупреждает — это защита, а не сбой.
-- Свежий worktree пуст: **`pnpm install` (~42 с) обязателен до первого
-  коммита** — без `node_modules` нет ни pre-commit хука, ни тестов.
+- **A session's work branch lives ONLY in its own worktree.** One command: `pnpm task:worktree <N>` → `.claude/worktrees/<N>` on `<type>/<N>-<slug>` off a fresh `origin/main`. No `git checkout -b` in the shared checkout.
+- **The main checkout `C:\Users\sidor\repos\bbm-portal` stays on `main`** and belongs to the lead and the live stands. It never switches branch for a task — switching under a running stand breaks someone else's acceptance, not just a build.
+- **Write subagents run only in an isolated worktree** (`isolation: "worktree"` or a `task:worktree` made beforehand). Read agents may use the shared checkout.
+- **Never touch another session's worktree or branch.** `git push --force` only on this session's own branch; a branch that is not in your worktree is someone else's by default.
+- **Clean up after yourself:** `pnpm worktree:teardown <N>`. It keeps an unmerged branch and warns — that is the protection, not a failure.
+- A fresh worktree is empty: **`pnpm install` (~42 s) before the first commit** — no `node_modules`, no tests. Its `ENOTDIR … .git\hooks` line is expected: a linked worktree's `.git` is a file, so `simple-git-hooks` cannot write there and `pnpm install` still exits 0. The pre-commit hook is installed once from the MAIN checkout and is shared by every worktree (git resolves hooks through `commondir`).
 
-## Порты
+## Ports
 
-- **Probe, don't reuse.** Порт берётся через `pnpm dev:ports` (bind-and-release
-  по 3000–3009, шаг 1) — не биндить 3000 вслепую. Запуск: `PORT=<n> pnpm dev`
-  (форма `pnpm dev -- -p <n>` в этом репо не работает: `--` доезжает до Next как
-  путь).
-- **Never kill a listener you did not start.** Чужой listener почти наверняка —
-  стенд приёмки другой сессии, ждущий вердикта владельца; убить его значит
-  сорвать чужую приёмку. Это правило **переопределяет** односессионную привычку
-  «сначала прибей stale-процессы»: она применима только к своим процессам на
-  своём порту.
-- **e2e-сюита тоже берёт порт явно:** `E2E_PORT=<n> pnpm test:e2e` (или
-  `E2E_BASE_URL=<origin>`); резолв — `tests/helpers/base-url.ts`. Политика
-  двусторонняя. Без названного порта сюита поднимает СВОЙ стенд на 3000, а если
-  3000 занят — падает с подсказкой, но к чужому стенду не цепляется. Названный
-  порт — это утверждение «стенд мой», и он переиспользуется как есть: назвал
-  чужой — сам и сломал чужую приёмку, потому что сюита сеет и удаляет
-  пользователей в общей dev-БД (#169).
-- **Выбранный порт фиксируется** в handoff и в комментарии issue — владелец
-  откроет правильную ссылку, следующая сессия увидит занятый слот.
-- **TaskStop не убивает node-детей.** Свой стенд гасится явно, по своему порту:
-  `Get-NetTCPConnection -LocalPort <n> | Select-Object -Expand OwningProcess |
-ForEach-Object { Stop-Process -Id $_ -Force }`. Свой — тот, который запустила
-  эта сессия.
+- **Probe, don't reuse.** The port comes from `pnpm dev:ports` (bind-and-release over 3000–3009) — never bind 3000 blind. Start: `PORT=<n> pnpm dev` (the form `pnpm dev -- -p <n>` does not work here: the `--` reaches Next as a path).
+- **Never kill a listener you did not start.** A foreign listener is almost certainly another session's acceptance stand waiting for the owner's verdict. This **overrides** the single-session habit "kill stale processes first": that habit applies only to your own processes on your own port.
+- **The e2e suite names its port too:** `E2E_PORT=<n> pnpm test:e2e` (or `E2E_BASE_URL=<origin>`); resolution in `tests/helpers/base-url.ts`. Unnamed, the suite boots ITS OWN stand on 3000 and fails with a hint when 3000 is taken — it never attaches to a foreign stand. A named port is the claim "this stand is mine" and is reused as is: name a foreign one and you break that acceptance, because the suite seeds and deletes users in the shared dev DB (#169).
+- **The chosen port is recorded** in the handoff and in an issue comment — the owner opens the right link, the next session sees the slot is taken.
+- **TaskStop does not kill node children.** Stop your own stand by its port: `Get-NetTCPConnection -LocalPort <n> | Select-Object -Expand OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force }` — only a stand this session started.
 
-## Platform database
+## The workstation runs no full regression
 
-- **Branch, don't share.** A numeric task worktree gets its own platform DB:
-  `pnpm dev:db:branch` inside `.claude/worktrees/<N>` creates `platform_<N>`,
-  writes the local worktree `.env` marker
-  `PLATFORM_DATABASE_URL=…/platform_<N>`, prints the connection string, and then
-  **migrates and seeds it** — one command from an empty worktree to a stand with
-  representative data (#436). Nothing has to remind anyone to seed. An
-  already-branched DB is refreshed by `pnpm dev:seed` alone; `--no-migrate` /
-  `--no-seed` decline a step deliberately. What the seed puts there, and what it
-  refuses to write to: [`src/lib/platform/db/README.md`](../../src/lib/platform/db/README.md)
-  → Commands.
-- **Two roles since #278.** `dev:db:branch` writes `PLATFORM_MIGRATE_DATABASE_URL`
-  alongside `PLATFORM_DATABASE_URL` when the base stand is split, and creates the
-  branch DB through the MIGRATING one — the application role is `NOCREATEDB` by
-  design. A stand that has never been split has no migrating variable, the tools
-  fall back to the application string and say so on stderr, and splitting it is one
-  supervised command (`pnpm platform:roles:ensure`, superuser). Roles are CLUSTER
-  objects: splitting the stand affects every session's branch DB on that box, which
-  is safe (it only adds roles) but is not a per-worktree act. Canon:
-  [`src/lib/platform/db/README.md`](../../src/lib/platform/db/README.md) → Commands.
-- **Teardown removes only proven branch DBs.** `pnpm worktree:teardown <N>`
-  drops `platform_<N>` before removing the worktree only when that worktree's
-  local `.env` names exactly `platform_<N>`. Without that marker it skips DB
-  cleanup and says why; if the marker exists and the drop fails, teardown stops
-  rather than claiming a clean teardown while leaking a database.
+Full Playwright runs and parallel builds on this shared machine run it out of memory and take other sessions' stands down with it (ds-platform #4202). The full `pnpm test:e2e` suite runs only in CI on the PR head. A local Playwright run executes only the spec(s) the change edits or the journey it drives, with one worker (`--workers=1`, narrowed with `--grep` or a spec path). A session runs one production build at a time, never alongside another build or a Playwright run.
+
+## Platform database and the shared stand
+
+- **Branch, don't share.** A numeric task worktree gets its own platform DB: `pnpm dev:db:branch` inside `.claude/worktrees/<N>` creates `platform_<N>`, writes the worktree `.env` marker `PLATFORM_DATABASE_URL=…/platform_<N>`, prints the connection string, and **migrates and seeds it** (#436). An already-branched DB is refreshed by `pnpm dev:seed` alone; `--no-migrate` / `--no-seed` decline a step deliberately. What the seed writes and what it refuses to touch: [`src/lib/platform/db/README.md`](../../src/lib/platform/db/README.md) → Commands.
+- **Two roles since #278.** `dev:db:branch` writes `PLATFORM_MIGRATE_DATABASE_URL` alongside `PLATFORM_DATABASE_URL` when the base stand is split, and creates the branch DB through the MIGRATING role — the application role is `NOCREATEDB` by design. An unsplit stand has no migrating variable; the tools fall back to the application string and say so on stderr. Splitting is one supervised command (`pnpm platform:roles:ensure`, superuser) and affects every session's branch DB on the box (it only adds roles). Canon: the same README → Commands.
+- **One migration in flight, repo-wide.** Before `pnpm migrate:create` or `pnpm platform:migrate:generate`, check `gh pr list` for another open PR that adds a migration (`src/migrations/**`, `src/lib/platform/db/**`); if one exists, agree the order with that session — two generated migrations off the same base collide on numbering and snapshot.
+- **A stand-capable brief carries an ops log.** A subagent that may touch the shared stand (base Postgres cluster, dev Zitadel, a seed) is told what it must not run (dropping or resetting a database it did not create, `provision.sh`, ad-hoc `psql` writes outside its branch DB) and to append every state-changing command to `<scratchpad>/stand-ops-<N>.log`. The lead reads that log on return, and breakage the session caused is restored in the same session.
+- **Teardown removes only proven branch DBs.** `pnpm worktree:teardown <N>` drops `platform_<N>` only when that worktree's `.env` names exactly `platform_<N>`. Without that marker it skips DB cleanup and says why; if the marker exists and the drop fails, teardown stops rather than claim a clean teardown while leaking a database.
