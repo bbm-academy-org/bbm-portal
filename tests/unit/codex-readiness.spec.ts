@@ -17,17 +17,16 @@ type HookCoverageEntry = {
   status: 'mapped' | 'intentional-difference'
   codexEvent?: string
   codexPath?: string
-  codexArgs?: string
   rationale?: string
 }
 
-const command = (path: string, args = '') => ({
+const command = (path: string) => ({
   type: 'command',
-  command: `node ${path}${args}`,
-  commandWindows: `node ${path}${args}`,
+  command: `node ${path}`,
+  commandWindows: `node ${path}`,
 })
-const config = (event: string, path: string, args = '') => ({
-  hooks: { [event]: [{ hooks: [command(path, args)] }] },
+const config = (event: string, path: string) => ({
+  hooks: { [event]: [{ hooks: [command(path)] }] },
 })
 
 describe('Codex hook coverage inventory', () => {
@@ -83,30 +82,6 @@ describe('Codex hook coverage inventory', () => {
       ),
     ).toEqual([])
   })
-
-  it.each([
-    ['alpha-gate.mjs', 'alpha'],
-    ['beta-gate.mjs', 'beta'],
-    ['gamma-gate.mjs', 'gamma'],
-  ])('distinguishes the %s adapter mode', (claudeScript, requiredMode) => {
-    const inventory: HookCoverageEntry[] = [
-      {
-        claudeEvent: 'Stop',
-        claudePath: `tools/hooks/${claudeScript}`,
-        status: 'mapped',
-        codexEvent: 'Stop',
-        codexPath: 'tools/hooks/example-stop-adapter.mjs',
-        codexArgs: requiredMode,
-      },
-    ]
-    expect(
-      auditHookCoverage(
-        config('Stop', `tools/hooks/${claudeScript}`),
-        config('Stop', 'tools/hooks/example-stop-adapter.mjs', ' wrong-mode'),
-        inventory,
-      ),
-    ).toEqual([expect.objectContaining({ kind: 'missing-codex-registration' })])
-  })
 })
 
 describe('Codex readiness inspection', () => {
@@ -117,17 +92,16 @@ describe('Codex readiness inspection', () => {
           {
             kind: 'missing-codex-registration',
             entry: {
-              claudeEvent: 'Stop',
-              claudePath: 'tools/hooks/beta-gate.mjs',
-              codexEvent: 'Stop',
-              codexPath: 'tools/hooks/example-stop-adapter.mjs',
-              codexArgs: 'beta',
+              claudeEvent: 'PreToolUse',
+              claudePath: 'tools/hooks/guard.mjs',
+              codexEvent: 'PreToolUse',
+              codexPath: 'tools/hooks/guard.mjs',
             },
           },
         ],
         unverified: [],
       }),
-    ).toContain('Stop tools/hooks/beta-gate.mjs')
+    ).toContain('PreToolUse tools/hooks/guard.mjs')
   })
 
   it('keeps tracked Codex hook config in the staged formatting policy', () => {
@@ -209,18 +183,18 @@ describe('Codex readiness inspection', () => {
     }
   })
 
-  it('rejects an existing Windows command with a different path or adapter mode', () => {
+  it('rejects an existing Windows command with a different path', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'bbm-codex-readiness-'))
     try {
       mkdirSync(resolve(root, '.claude'), { recursive: true })
       mkdirSync(resolve(root, '.codex'), { recursive: true })
       mkdirSync(resolve(root, 'tools', 'hooks'), { recursive: true })
-      writeFileSync(resolve(root, 'tools', 'hooks', 'example-stop-adapter.mjs'), '')
+      writeFileSync(resolve(root, 'tools', 'hooks', 'guard.mjs'), '')
       writeFileSync(resolve(root, 'tools', 'hooks', 'other.mjs'), '')
       writeFileSync(resolve(root, '.claude', 'settings.json'), JSON.stringify({ hooks: {} }))
 
-      const codex = config('Stop', 'tools/hooks/example-stop-adapter.mjs', ' alpha')
-      codex.hooks.Stop[0].hooks[0].commandWindows = 'node tools/hooks/other.mjs beta'
+      const codex = config('PreToolUse', 'tools/hooks/guard.mjs')
+      codex.hooks.PreToolUse[0].hooks[0].commandWindows = 'node tools/hooks/other.mjs'
       writeFileSync(resolve(root, '.codex', 'hooks.json'), JSON.stringify(codex))
 
       expect(
@@ -231,7 +205,7 @@ describe('Codex readiness inspection', () => {
       ).toContainEqual(
         expect.objectContaining({
           kind: 'command-platform-mismatch',
-          event: 'Stop',
+          event: 'PreToolUse',
         }),
       )
     } finally {
@@ -239,23 +213,27 @@ describe('Codex readiness inspection', () => {
     }
   })
 
-  it('extracts matching modes from the exact repository Stop command forms', () => {
+  it('extracts matching paths from the exact repository command forms', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'bbm-codex-readiness-'))
     try {
       mkdirSync(resolve(root, '.claude'), { recursive: true })
       mkdirSync(resolve(root, '.codex'), { recursive: true })
       const realCodex = JSON.parse(readFileSync(resolve('.codex', 'hooks.json'), 'utf8'))
       writeFileSync(resolve(root, '.claude', 'settings.json'), JSON.stringify({ hooks: {} }))
-      writeFileSync(
-        resolve(root, '.codex', 'hooks.json'),
-        JSON.stringify({ hooks: { Stop: realCodex.hooks.Stop } }),
-      )
+      writeFileSync(resolve(root, '.codex', 'hooks.json'), JSON.stringify(realCodex))
 
-      const findings = inspectCodexReadiness(root, {
+      const result = inspectCodexReadiness(root, {
         inventory: [],
         gitPath: () => resolve(root, 'pre-commit'),
-      }).findings
-      expect(findings.filter(({ kind }) => kind === 'command-platform-mismatch')).toEqual([])
+      })
+      expect(result.registrations).toBeGreaterThan(0)
+      const { findings } = result
+      expect(
+        findings.filter(
+          ({ kind }) =>
+            kind === 'command-platform-mismatch' || kind === 'unrecognized-command-registration',
+        ),
+      ).toEqual([])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
