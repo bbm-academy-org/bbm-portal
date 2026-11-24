@@ -72,10 +72,12 @@ Canonical skills and `.claude/agents/*.md` name Claude-specific profiles and
 model ids. Codex preserves their role, independence, and explicit-model rule,
 but uses an available Codex model instead of passing an unsupported Claude id:
 
-| Canonical role                                  | Claude wording                             | Codex mapping   |
-| ----------------------------------------------- | ------------------------------------------ | --------------- |
-| Mechanical search and inventory                 | `bbm-explorer` / Sonnet                    | `gpt-5.6-terra` |
-| Implementation, architecture, gates, and review | `general-purpose` or `bbm-reviewer` / Opus | `gpt-5.6-sol`   |
+| Canonical role                                                                                     | Claude wording           | Codex mapping   |
+| -------------------------------------------------------------------------------------------------- | ------------------------ | --------------- |
+| Mechanical search and inventory                                                                    | `bbm-explorer` / Sonnet  | `gpt-5.6-terra` |
+| Implementation (task-cycle stage 3)                                                                | `bbm-implementer` / Opus | `gpt-5.6-sol`   |
+| PR review (task-cycle stage 4)                                                                     | `bbm-reviewer` / Opus    | `gpt-5.6-sol`   |
+| Architecture, gates, any other judgment — and the fallback for a role whose profile is unavailable | `general-purpose` / Opus | `gpt-5.6-sol`   |
 
 Pass the canonical agent brief in the Codex dispatch message. A full-history
 fork (`fork_turns` omitted or `"all"`) inherits the parent model and must not
@@ -90,11 +92,11 @@ when the role names one; the skills bridge exposes skills, not executable Claude
 agent profiles. Preserve the profile's return contract and read/write limits in
 the Codex brief. Translate harness vocabulary as follows:
 
-| Canonical wording           | Codex operation                                                         |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `Agent` / `general-purpose` | `spawn_agent` with the model mapping above                              |
-| `AskUserQuestion`           | the supported asynchronous user-input tool; plain chat when unavailable |
-| `WebFetch`                  | Codex web open/search over the cited primary source                     |
+| Canonical wording                               | Codex operation                                                         |
+| ----------------------------------------------- | ----------------------------------------------------------------------- |
+| `Agent` / `bbm-implementer` / `general-purpose` | `spawn_agent` with the model mapping above                              |
+| `AskUserQuestion`                               | the supported asynchronous user-input tool; plain chat when unavailable |
+| `WebFetch`                                      | Codex web open/search over the cited primary source                     |
 
 ## Browser acceptance
 

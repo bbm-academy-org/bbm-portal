@@ -259,10 +259,10 @@ also carries the agent's `UX-record:` block, checked by
 
 APPROVE + green CI (check the actual check-run statuses — not "probably
 passed") + for visible changes the recorded stage-5 "принято" → the agent
-merges itself: `gh pr merge --squash --delete-branch` (memory:
-`agent-merges-prs-after-review`). Never merge on a stale base: run
-`git fetch origin && git log --oneline HEAD..origin/main` first — if main moved
-under someone else's commits, read what landed before merging. After the deploy
+merges itself with `pnpm pr:land <PR>`, never a raw `gh pr merge` — the gate,
+its exit codes and the base-freshness check are
+[`merge-when-green`](../merge-when-green/SKILL.md) (memory:
+`agent-merges-prs-after-review`). After the deploy
 — **postcheck: the commit deployed on prod == `origin/main` HEAD** (recipe in
 `deploy/README.md`); on a mismatch, finish shipping it, don't just report it.
 

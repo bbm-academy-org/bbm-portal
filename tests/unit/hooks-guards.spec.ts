@@ -5,7 +5,10 @@ import { dirname, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { decideAgentModel } from '../../tools/hooks/agent-model-guard.mjs'
+import {
+  blockMessage as agentModelBlockMessage,
+  decideAgentModel,
+} from '../../tools/hooks/agent-model-guard.mjs'
 import { decideStaging } from '../../tools/hooks/dispatch-guard.mjs'
 import {
   decideSecretEcho,
@@ -55,6 +58,13 @@ describe('agent-model-guard', () => {
       decideAgentModel({ toolName: 'Agent', toolInput: { subagent_type: 'fork' } }).block,
     ).toBe(false)
     expect(decideAgentModel({ toolName: 'Bash', toolInput: {} }).block).toBe(false)
+  })
+
+  it('сообщение блока ведёт имплементацию в bbm-implementer, general-purpose+opus — фолбэк (#588)', () => {
+    const text = agentModelBlockMessage('missing')
+    expect(text).toContain('`bbm-implementer`')
+    expect(text).toContain('`bbm-reviewer`')
+    expect(text).toMatch(/general-purpose[^\n]*opus/)
   })
 
   it('пустой model считается отсутствующим', () => {

@@ -63,6 +63,12 @@
   },
   {
     "claudeEvent": "PreToolUse",
+    "claudePath": "tools/hooks/subagent-context-budget.mjs",
+    "status": "intentional-difference",
+    "rationale": "A Codex child shares the parent session_id and exposes no transcript the hook can attribute to it; the child budget is not wired for Codex (#588)."
+  },
+  {
+    "claudeEvent": "PreToolUse",
     "claudePath": "tools/hooks/askuserquestion-context-guard.mjs",
     "status": "mapped",
     "codexEvent": "PreToolUse",

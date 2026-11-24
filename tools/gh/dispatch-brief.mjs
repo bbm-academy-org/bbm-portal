@@ -49,6 +49,10 @@ import {
   slugifyTitle,
   worktreeRelPath,
 } from '../dev/task-worktree.mjs'
+import {
+  HARD_THRESHOLD as SUBAGENT_HARD_THRESHOLD,
+  SOFT_THRESHOLD as SUBAGENT_SOFT_THRESHOLD,
+} from '../hooks/subagent-context-budget.mjs'
 import { extractPathTokens } from './dispatch-brief-check.mjs'
 import { REPO, branchTypeFromIssueType } from './lib/gh.mjs'
 
@@ -249,6 +253,7 @@ DIRECT-APPLY: edit the files in the worktree yourself and commit them. Handing t
 
 ## Research budget
 EDIT-FIRST: ≤15 tool calls before your first edit. The recon facts below are DONE — do not re-verify handed facts. Hitting the cap with no edit = STOP and return a partial verdict naming what blocked you.
+CONTEXT BUDGET: \`tools/hooks/subagent-context-budget.mjs\` rotates you at ${Math.round(SUBAGENT_SOFT_THRESHOLD / 1000)}K (WIP-commit, write the checkpoint it names, return with \`ROTATE: <path>\` as line 1) and denies every non-git tool at ${Math.round(SUBAGENT_HARD_THRESHOLD / 1000)}K — plan the slice to finish under ${Math.round(SUBAGENT_SOFT_THRESHOLD / 1000)}K.
 
 ## Recon facts (authoritative — do not re-verify)
 - <fill: the facts the implementer needs as facts — sibling files to mirror, exact wiring points, decisions already taken by the owner. Never "re-read the cited files yourself".>

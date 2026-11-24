@@ -606,7 +606,9 @@ their results can be accepted, and every non-dispatch tool call is unaffected. I
 from day 0**, and per §2.2 it blocks through the permission plane (exit 0 +
 `permissionDecision: "deny"`), not through an exit code. The tier numbers themselves are
 owner-tunable constants in the hook (`SOFT_THRESHOLD` / `HARD_THRESHOLD`) and are not
-restated here; today they are 150K soft / 160K hard.
+restated here — the hook file is their only home. Above the hard tier a **closeout**
+dispatch (`CLOSEOUT_SUBAGENT_TYPES` in the same file: `bbm-reviewer`) still passes, with an
+advisory: closing the wave in flight frees lead context rather than spending it.
 
 **The mandate, on record:** owner Антон, 2026-09-03, in session, filed the same day as
 [#457](https://github.com/bbm-academy-org/bbm-portal/issues/457): «at 150–160K the lead stops
@@ -640,6 +642,35 @@ marker is removed by `/wrap`. Owner-only by convention, gitignored by constructi
 Demotion to WARN per §4 on one confirmed false block that the marker did not adequately
 answer — §3's class-3 paragraph names the same condition. The thresholds are the substantive
 rule for §4's clock: changing them restarts it, changing the message text does not.
+
+**Amendment — owner decision, Anton, 2026-11-24 (#588).** In session, the owner recorded that
+the context budget «was raised to 400K long ago» and that this repo is brought in line with
+ds-platform, which moved to the current tiers on 2026-09-25 (their `#2373`: a restart below
+the soft tier saves neither money nor subscription usage). The tiers in the hook were raised
+accordingly; the #457 mandate quoted above is kept as the history of the first tiers, not as
+the current numbers. The same amendment adds the closeout exemption above, and the change of
+thresholds restarts §4's clock from 2026-11-24. The operator advisory `context-budget.mjs`
+(§3 class-3 is not engaged: it never addresses the model) moved to the same tiers, which its
+own constants hold.
+
+**`subagent-context-budget` — the subagent-side half of the same budget: a BLOCK at the hard
+tier by owner mandate (#588, the amendment above).**
+[`tools/hooks/subagent-context-budget.mjs`](../tools/hooks/subagent-context-budget.mjs) is a
+`PreToolUse` guard on `.*` that acts only inside a subagent (`agent_id` present) and measures
+that subagent's OWN transcript — never the lead's. At the soft tier it injects a ROTATE
+directive (WIP-commit, write the checkpoint file it names, return with `ROTATE: <path>` as the
+first line), re-emitted per repeat step; at the hard tier it denies every tool call through
+the permission plane (§2.2) except the hand-back allow-list — git inspect / add / commit /
+push written in a plain ASCII alphabet with no quoting, escaping or shell operator, and
+writing the agent's own checkpoint. The tiers and the step are constants in
+the hook and are not restated here. Ported from ds-platform (their `#1374` / `#1376`); the
+contract an agent honours is [`.claude/agents/bbm-implementer.md`](../.claude/agents/bbm-implementer.md).
+Clause (d), read for this plane: there is no owner hatch, because the deny never strands work
+— the allow-list IS the way out of a blocked session (commit, push, checkpoint, return), and
+the lead re-dispatches a fresh agent from the checkpoint. Fail-open (silent) on every hook
+error and whenever the subagent's own transcript cannot be established; Codex is not wired
+(`tools/codex/hook-coverage.json`). Demotion to WARN per §4 on one confirmed false block whose
+allow-list did not let the agent hand back.
 
 ### 6.1 CLI guards (§2.3) — severity per finding class
 
