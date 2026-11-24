@@ -1199,8 +1199,9 @@ the corpus's «потерялась в канале» case).
   EARS-552 lookup and through RUB as in EARS-550. No figure is converted at
   a rate fetched for the day of reading. The conversion is display only: the
   figures are computed in the budget currency by spec 338 §D, every converted
-  value is computed at read time, shown and never stored, and no figure of spec 338 EARS-340…345,
-  no posting, conversion step, balance or stored amount is computed from it.
+  value is computed at read time, shown and never stored, and no figure of
+  spec 338 EARS-340…345, no posting, conversion step, balance or stored
+  amount is computed from it.
   The dashboard route is then one more allowlisted reader beside the barrel,
   the sync CLI, the queue, the §J route and the §D budget read model; #586
   adds it to the isolation test and keeps the other lines as they are._

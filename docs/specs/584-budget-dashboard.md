@@ -590,8 +590,12 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
    differ.
    - **A — the Bank of Russia rate of each operation's own date, frozen
      (recommended).** The limit converts at the rate of the budget's start
-     date. € and $ are always available, and past months never move with the
-     market, which keeps decision 18 and US-18. Totals and the reconciliation
+     date. € and $ are available whenever at least one item can be converted
+     to them; a figure whose item's date has no stored Bank of Russia rate is
+     withheld with that date. Past months do not move with the market, which
+     keeps decision 18 and US-18; a figure changes only when the ledger
+     changes or when a rate is newly stored for a date whose lookup had fallen
+     back to an earlier one. Totals and the reconciliation
      add up exactly in $ or €. The cost: cash at cost in $ is the sum of BBM's
      movements at their own dates' rates, not today's balance at one rate, and
      the page says so; and it needs a display-only narrowing of spec 339
