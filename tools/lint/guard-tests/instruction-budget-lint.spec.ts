@@ -287,6 +287,35 @@ describe('isPathScoped', () => {
     expect(isPathScoped(doc('---', '# paths: x', '---'))).toBe(false)
     expect(isPathScoped(doc('# Rule', '', 'paths: src/**'))).toBe(false)
   })
+
+  /*
+   * A `paths:` key that scopes the file to nothing — or to everything — is not a
+   * lazy rule (#596 review). An empty list may load unconditionally, and a
+   * match-all glob fires on every file the session touches; either way the file
+   * is effectively always-on and stays on the total.
+   */
+  it('keeps an empty paths list on the total', () => {
+    expect(isPathScoped(doc('---', 'paths:', '---', '# Rule'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: []', '---', '# Rule'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', '  -', '---', '# Rule'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: ""', '---', '# Rule'))).toBe(false)
+  })
+
+  it('keeps a match-all glob on the total, in every YAML form', () => {
+    expect(isPathScoped(doc('---', "paths: ['**']", '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: ["**/*"]', '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: "**"', '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', "  - '**'", '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', '  - **/*', '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', "  - 'src/**'", "  - './**'", '---'))).toBe(false)
+  })
+
+  it('still treats a narrow glob list as lazy, in every YAML form', () => {
+    expect(isPathScoped(doc('---', "paths: ['src/**', 'docs/*.md']", '---'))).toBe(true)
+    expect(isPathScoped(doc('---', 'paths: src/**', '---'))).toBe(true)
+    expect(isPathScoped(doc('---', 'paths:', "  - 'src/**' # the view layer", '---'))).toBe(true)
+    expect(isPathScoped(doc('---', 'paths:', '  - "**/*.tsx"', 'other: 1', '---'))).toBe(true)
+  })
 })
 
 describe('runBudgetLint', () => {
