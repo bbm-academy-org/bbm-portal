@@ -14,20 +14,13 @@ paths:
   - 'src/lib/platform/db/**'
 ---
 
-<!-- READ-ON-DEMAND (`paths:` frontmatter, so not always-on). The frontmatter must stay the first bytes of the file. Indexed in AGENTS.md §0, which also carries its two every-session facts. -->
+<!-- READ-ON-DEMAND (`paths:` frontmatter, so not always-on). The frontmatter must stay the first bytes of the file. Indexed in AGENTS.md §0; its two every-session facts (Node 22, `git -C`) are owned by AGENTS.md §4. -->
 
 # Dev env — this Windows box
 
-- **Node 22 is mandatory** (`engines: ^22.22.1`, engine-strict). The system Node
-  here is newer. Prepend the portable build from `%LOCALAPPDATA%\node22`:
-  PowerShell `$env:PATH = "$env:LOCALAPPDATA\node22;$env:PATH"`; Bash
-  `export PATH="$LOCALAPPDATA/node22:$PATH"`; then run `node --version`. On
-  Node 23/24 the Payload tsx loader breaks
-  (`node:crypto?tsx-namespace` ENOENT), and `pnpm patch-commit` refuses to work
-  at all.
-- **Git — only as `git -C <absolute root>`.** Do not depend on a shell tool's
-  previous `Set-Location`: cwd can drift between calls, and the command can end
-  up in someone else's worktree. Every git command names its own tree explicitly.
+- **Node 22 in every shell and git only as `git -C <absolute root>`** are
+  every-session rules, so they are owned by the always-on `AGENTS.md` §4 — read
+  them there.
 - **Remote commands with quotes go through Bash, not PowerShell.** PowerShell
   5.1 strips nested quotes when it calls native `ssh.exe`, so `psql -c "…"`, JSON
   bodies and pipes arrive split on the remote side. If `ssh` reports

@@ -11,7 +11,7 @@ The shared constitution for every agent harness in this repo. Claude Code loads 
 These rule files are `paths:`-scoped: Claude Code loads them only when a session touches a matching file, and Codex does not load them at all. Read the file in full before its action, once per session and again after compaction.
 
 - `.claude/rules/design-process.md` — before any UI work (`*.tsx` view layer, `*.css`, `design-source/`), and before opening ANY PR: §2 owns the `Stage-B:` line every PR carries, plus `UX-sanity:` / `UX-record:`.
-- `.claude/rules/dev-env.md` — before starting a dev stand, touching the dev IdP, `infra/`, a remote box, or the dev-stand credentials. Its two every-session facts: Node 22 first in every shell (`export PATH="$LOCALAPPDATA/node22:$PATH"`), git only as `git -C <abs root>`.
+- `.claude/rules/dev-env.md` — before starting a dev stand, touching the dev IdP, `infra/`, a remote box, or the dev-stand credentials. Its two every-session facts — Node 22 and `git -C` — are owned by §4 here.
 - `.claude/rules/cms-content-contract.md` — before touching a Payload collection, global, field, endpoint, hook or migration.
 - `.claude/rules/okr-module.md` — before touching the OKR module.
 
@@ -58,6 +58,10 @@ Task kind → the skill that runs it:
 
 ## 4. Hard rules
 
+- **Node 22 first in every shell** (`engines: ^22.22.1`, engine-strict; pinned in `.nvmrc`, the Dockerfile and CI). The system Node on the dev box is newer: prepend the portable build from `%LOCALAPPDATA%
+ode22` — Bash `export PATH="$LOCALAPPDATA/node22:$PATH"`, PowerShell `$env:PATH = "$env:LOCALAPPDATA
+ode22;$env:PATH"` — then check `node --version`. On Node 23/24 the Payload tsx loader breaks (`node:crypto?tsx-namespace` ENOENT), Payload's migrate CLI fails, and `pnpm patch-commit` refuses to run.
+- **Git only as `git -C <absolute root>`.** Never depend on a previous `cd` / `Set-Location`: cwd drifts between tool calls, and the command lands in someone else's worktree. Every git command names its own tree.
 - **Root cause, not workarounds** (task-cycle stage 3). A blocker holds only the actions that depend on it; independent work continues.
 - **Live-infra destructive actions — pre-flight, don't thrash.** Before any irreversible or state-changing call on live infra (prod VPS, prod or dev IdP, a provider API: reinstall, replace, delete, network change, a write action): (1) confirm the action and its parameters in the provider's docs or schema — firing an unknown action to read the error is banned; (2) rule out the previous hypothesis with read-only evidence before the next state change — a reboot or recreate is not a free probe; (3) the blast radius is the failing resource only — a fix that also mutates a working box is a stop-and-confirm signal; (4) anything irreversible needs the owner's explicit go, and a rhetorical owner question is not consent.
 - **Remote scripts run from a pinned revision.** A repo script sent to a remote box comes from `git -C <repo> show origin/main:<path>` after a fetch (piped to `ssh <box> bash -s`, or a file extracted that way with the SHA in its name) — never from the working tree: `git fetch` moves refs, not files (2026-08-07, a stale `provision.sh` collapsed the dev IdP's logout URIs).
@@ -95,4 +99,4 @@ pnpm migrate                  # `push: false`, so migrate before dev
 PORT=<n> pnpm dev             # port from `pnpm dev:ports`, never assumed 3000
 ```
 
-**Node 22** is pinned (`.nvmrc`, Dockerfile, CI): Payload's migrate CLI breaks on Node 23/24. Postgres `cms` is a dedicated DB + `payload` role; where its container runs is a per-machine recipe (README → Database).
+Node 22 first in the shell (§4). Postgres `cms` is a dedicated DB + `payload` role; where its container runs is a per-machine recipe (README → Database).

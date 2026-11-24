@@ -358,7 +358,7 @@ export function shellCommand(input) {
  * command visibly reaches a protected checkout.
  *
  * bbm adaptation: the read/checkpoint fast path also accepts `git -C <path> …`,
- * the form `.claude/rules/dev-env.md` mandates, so a commit message that merely
+ * the form `AGENTS.md` §4 mandates, so a commit message that merely
  * mentions `rm` is not mistaken for a write.
  */
 export function shellMutationPaths(input, cwd) {
