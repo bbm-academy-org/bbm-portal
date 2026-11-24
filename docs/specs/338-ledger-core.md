@@ -21,8 +21,9 @@ updated: 2026-11-24
   native issue graph rather than in prose.
 - **Issues (§D, budget and funding, 2026-11-24):** #581 (this amendment) under
   #587 «project budget burn dashboard», a sub-issue of epic #115. #581 blocks
-  #582, #583 and #584; the implementation of §D is filed separately once the
-  owner accepts the amended text (#581 scope).
+  #582, #583 and #584. The implementation of §D is #593 (sub-issue of #587,
+  blocked by #581; #583 is blocked by #593), built once the owner accepts the
+  amended text.
 
 ## Why
 
@@ -508,29 +509,36 @@ hundred-block, **EARS-301…** (spec 311 holds 401–499).
 
 ### D. Budget and funding (2026-11-24, #581)
 
-_New 2026-11-24 — owner decisions, Антон, recorded on #581 (parent #587, epic
-#115). The clause text below is the lead's encoding of those decisions and waits
-for the owner's acceptance on its PR; anything marked «proposal» is the lead's
-own call and is confirmed or overridden at that acceptance._
+_New 2026-11-24 (#581, parent #587, epic #115). The clause text is the lead's
+encoding and waits for the owner's acceptance on its PR. Each rule below is
+labelled by where it comes from: **owner** — said by the owner, Антон, on
+2026-11-24 (on #581 or in session); **lead reading, pending owner go** —
+derived by the lead from those decisions or from research, and confirmed or
+overridden at that acceptance._
 
-The owner's model, in his order: **BBM is the umbrella** — the existing fund row
-«Фонд BBM» (EARS-304), with Doctor School and the other projects one flat level
-under it (decision 16); BBM's own infrastructure is spend of the fund row itself,
-kept apart from the Doctor School project. A **fixed initial budget** is
-allocated to BBM for its launch and the Doctor School pilot, and every project's
-expense draws on it. The budget is a **limit**: money is brought onto the
-company account **as needed**, not deposited up front. So the ledger carries two
-different facts, and they never stand in for each other:
+**What the owner decided (owner, 2026-11-24):**
 
-- **the limit** — a budget record (EARS-338). It is plan, not money, and posts
-  nothing;
-- **the contributions** — each inflow onto a company money account, on its own
-  date, as an ordinary operation (EARS-336).
+- BBM is the umbrella — the existing fund row «Фонд BBM» (EARS-304) — and
+  Doctor School is a project done inside it, its first pilot. BBM's own
+  infrastructure is kept apart from the Doctor School project, so it is spend of
+  the fund row itself.
+- A fixed initial budget is allocated to BBM for its launch and the Doctor
+  School pilot; in the owner's words, the budget allocated to BBM goes to Doctor
+  School too. It funds Doctor School's spend and BBM's own spend.
+- The budget is a **limit**; the money is brought onto the company account
+  **as needed**, not deposited up front. The model carries two separate facts:
+  the limit, and the actual contributions, each with its date.
+- An expense paid from a member's personal card is reimbursed to that member
+  (owner-confirmed in session, 2026-11-24). It counts against the budget on its
+  spend date like any other expense, and the reimbursement is a transfer that
+  settles the debt, not a second expense (recorded on #581 as the lead's
+  default and confirmed by the owner in session the same day).
 
-Recognition is **cash basis on the money date** (`occurred_on`): accrual stays
-deferred (decision 14), so an approved but unpaid request is not spending.
-Readings follow decisions 13 and 18: recorded rates only, never a market or
-read-time rate.
+**Lead readings, pending owner go:** that **every** project under the fund —
+not only Doctor School and the fund row — draws on the budget (see open
+question 1 of «Open questions — §D»); cash-basis recognition on the money date
+(decision 14 keeps accrual deferred, so an approved but unpaid request is not
+spending); everything in EARS-335…345 that the four bullets above do not say.
 
 **The company account that pays requests** is not a new concept: it is an
 ordinary money account (`bank`, EARS-301) created in the cabinet, and the
@@ -538,27 +546,29 @@ posting act names it (spec 339 EARS-533). A contribution lands on such an
 account; an expense paid from it is an outflow of company money.
 
 **Coexistence with #518 item 2** («who paid and from where»). #518 may add who
-owns an account (a legal entity, a person) and may rule some of today's payment
-sources BBM's and others personal. Nothing here depends on that answer:
-EARS-340 reads **expense postings**, which exist whichever account or personal
-card paid, so «spent» does not move with #518's ruling; «cash» and «paid out»
-(EARS-343) read money accounts **by kind** (EARS-325), so whatever #518 rules is
-a company account is counted, and whatever it rules personal stays
-`personal_funds` and appears as «owed to members» until reimbursed. This
-amendment adds no account-owner field and closes no #518 item.
+owns an account and may rule some of today's payment sources BBM's and others
+personal. Nothing here depends on that answer. The budget reading (EARS-340)
+reads money accounts **by kind** (EARS-325) and member-attributed liability
+postings: whatever #518 rules is a company account is counted as company money,
+and whatever it rules personal stays `personal_funds` and appears as «owed to
+members» until reimbursed. This amendment adds no account-owner field and closes
+no #518 item.
 
 **Coexistence with EARS-317** (no opening balances): see EARS-337. A
 contribution is a dated movement of money like an expense, not an asserted
 starting state.
 
 **Donor & benchmark pass:** the split «limit is plan, contributions are fact» is
-the owner's own (#581) and matches the budgetary-control practice of comparing a
-budget with actuals measured on the same basis (IPSAS 24, used for its reasoning
+the owner's (#581). It matches the budgetary-control practice of comparing a
+budget with actuals measured on one basis (IPSAS 24, cited for its reasoning
 only — no standard governs this internal register). Keeping a contribution out
 of income follows the IFRS Conceptual Framework's definition of income, which
-excludes contributions from holders of equity claims. Both are cited for their
-reasoning, never as authority over this ledger (see the scope note under «Prior
-decisions»). No owner question below asks what that research answers.
+excludes contributions from holders of equity claims. The cost basis of
+EARS-340 is the moving-average cost flow of ruling 3 and EARS-328, applied to
+every disposal — a spend included — rather than to conversions alone. All of
+these are cited for their reasoning, never as authority over this ledger (see the
+scope note under «Prior decisions»). No owner question below asks what that
+research answers.
 
 - **EARS-335.** The system shall carry a sixth system account kind, `equity` —
   the funds contributed to BBM — created by the module like every system kind
@@ -566,23 +576,27 @@ decisions»). No owner question below asks what that research answers.
   editing or retirement in the cabinet. An `equity` account shall never be a
   money account — never a cash tile, never part of the EARS-325 total — and
   shall be neither income nor expense, so no P&L reading includes it.
-- **EARS-336.** WHEN money is contributed to BBM — brought onto a company money
-  account to fund its spending — the system shall record it as ONE contribution
-  operation dated `occurred_on` = the day the money landed on that account: a
-  debit of the receiving money account and a credit of the system `equity`
-  account in the same currency for the same amount (EARS-311/312). The `equity`
-  posting shall name the fund project (the umbrella the budget belongs to) and
-  shall carry the contributor's `member_id` WHERE the contributor is a platform
-  member (EARS-322). A contribution shall never be recorded as income.
-- **EARS-337.** The system shall accept a posting on an `equity` account only
-  inside a contribution operation (EARS-336) or the reversal of one (EARS-314),
-  so the equity balance is exclusively the sum of dated contributions and no
-  path exists to assert it. This is how funding coexists with EARS-317: a
-  contribution is a real, dated, documented movement of money onto an account
-  that held what its postings say — not an opening balance — and every account
-  still starts at zero. Contributions made before the ledger existed are
-  reconstructed by the one-time history reconstruction (spec 339 §E) as dated
-  contributions, never as an opening figure.
+- **EARS-336.** An operation shall be a **contribution** exactly when it carries
+  a posting on an `equity` account, and the system shall accept it only in this
+  shape: one debit on a non-system money account and one credit on the system
+  `equity` account of the same currency, for the same amount (EARS-311/312); the
+  `equity` posting naming the fund project; no purpose, no product, no
+  conversion step and no other posting; `occurred_on` the day the money landed
+  on that account. The `equity` posting shall carry the contributor's
+  `member_id` WHERE the contributor is a platform member (EARS-322); a
+  contributor who is not a member is named only on the intake item (spec 339
+  EARS-567), so «who funded BBM» is a query over intake items, while the posting
+  answers it for members alone. A contribution shall never be recorded as
+  income.
+- **EARS-337.** IF an operation carries a posting on an `equity` account and is
+  neither an EARS-336 contribution nor the reversal of one (EARS-314), THEN the
+  system shall refuse it; the equity balance is therefore exclusively the sum of
+  dated contributions, and no path exists to assert it. This is how funding
+  coexists with EARS-317: a contribution is a real, dated, documented movement
+  of money onto an account — not an opening balance — and every account still
+  starts at zero. Contributions made before the ledger existed are reconstructed
+  by the one-time history reconstruction (spec 339 §E) as dated contributions,
+  never as an opening figure.
 - **EARS-338.** The finance module shall keep a budget as a record, never as
   postings: a `finance_budget` row naming its project, a name, the limit amount
   (`bigint`, minimal units) and currency, a `starts_on` date and `retired_at`. A
@@ -594,86 +608,132 @@ decisions»). No owner question below asks what that research answers.
   second unretired budget on the same project; the project column exists so a
   per-project budget is a later relaxation of that refusal rather than a
   migration.
-- **EARS-339.** The system shall refuse creating, editing (name, amount,
-  currency, `starts_on`) or retiring a budget for a session that does not hold
-  `finance-approve` _(proposal — a limit is an authorization ceiling on
-  spending, so it sits with the role that authorizes spend; the alternative is
-  reference administration, `platform-admin` or `finance-entry` per spec 339
-  EARS-529 — confirm at the go)_. Every such write shall run through
+- **EARS-339.** The budget shall be recorded on `/p/finance`, beside the reading
+  it governs, and not in `/p/admin/finance/*`: that cabinet section admits
+  reference administration (`platform-admin` or `finance-entry`, EARS-330 and
+  spec 339 EARS-529), and a limit is not a reference row. The module's own
+  handlers shall refuse creating, editing (name, amount, currency, `starts_on`)
+  or retiring a budget for a session that does not hold `finance-approve`,
+  however the URL or API is reached _(lead reading, pending owner go — a limit
+  is an authorization ceiling on spending, so it sits with the role that
+  authorizes spend, on the workspace surface where that role's other acts
+  already live, as the approve acts of `/p/finance/requests` do; widening the
+  cabinet section instead would show an approve-only holder every reference
+  resource only to refuse each write. The form itself is #584's surface and
+  passes the stage-1b design gate there)_. Every such write shall run through
   `platformTransaction` with the signed-in actor, so each change of the limit is
   recorded in `core.audit_event` (spec 201) and no budget history table exists;
   it shall validate through the module's zod schemas with readable refusals
   (EARS-326). A budget is retired, never deleted. Reading a budget and every
   figure of EARS-340…345 shall be open to every platform member (spec 339
   EARS-530, decision 32).
-- **EARS-340.** «Spent» against a budget shall be the sum, in the budget's
-  currency (EARS-341), of (a) every posting on a system `expense` account whose
-  operation's `occurred_on` is on or after the budget's `starts_on`, on every
-  project — the fund row and every project under it, retired ones included —
-  whatever source posted it, which includes an expense paid from a member's
-  personal funds, counted on its own `occurred_on` like any other (spec 339
-  EARS-513), and every fee, which is its own expense posting; and (b) the
-  postings on the fund's system `fx_result` accounts (EARS-328) over the same
-  window — a realized loss raises «spent» and a realized gain lowers it,
-  because that money is gone or gained exactly as an expense's is. «Spent»
-  shall exclude contributions (EARS-336), income, transfers between BBM's own
-  accounts, the exchange legs of conversions, the reimbursement transfer that
-  settles a personal-funds expense (spec 339 EARS-528 — the payment of a debt
-  already counted, never a second expense), and every unposted request,
-  approved or not (cash basis). A fully reversed pair shall be removed before
-  the sum by the chain walk EARS-325 uses, so a reversal dated on another day
-  moves no spend between dates; a vendor's refund lowers «spent» because it is
-  recorded on the expense side (reversal of the paid operation, plus a new
-  operation for any part kept), never as income.
-- **EARS-341.** The system shall value each posting counted by EARS-340 and
-  EARS-343 in the reading's currency `R` from recorded facts only, per posting:
-  (1) a posting in `R` counts as recorded; (2) otherwise, WHERE its own
-  operation carries a conversion step into the posting's currency — a
-  cross-currency payment (spec 339's worked example) — the amount is first
-  carried into that step's `from_currency` at the step's own recorded amounts
-  (disposed ÷ received), decision 18's «each operation's own actual rate»;
-  (3) an amount still not in `R` is valued at the recorded cost of its currency
-  in `R` as it stood immediately before the operation, in the chronological
-  pair-pool replay and over the shortest-path rules of EARS-325 — ruling 3's
-  «held at the recorded rate». Each posting's path ratio shall be multiplied
-  exactly and rounded half-away-from-zero once, then the rounded amounts
-  summed. WHERE an amount has no recorded path to `R` at that point, the system
-  shall withhold the `R` figure and name the unvalued currencies in ascending
-  code order rather than show a partial number (EARS-325's degraded-state
-  rule). No Bank of Russia rate (spec 339 EARS-553) and no market rate shall
-  enter any figure of EARS-340…345.
-- **EARS-342.** «Remaining» shall be the limit minus «spent», in the budget's
-  currency, and shall be shown negative when «spent» exceeds the limit, never
-  clipped to zero. Income shall not raise the limit, and a contribution shall
-  neither raise nor lower it: the limit is how much BBM may spend; the
-  contributions are when the money arrives.
-- **EARS-343.** «Contributed» shall be the sum of contribution operations
-  (EARS-336) with `occurred_on` on or after the budget's `starts_on`, valued per
-  EARS-341; «owed to members» shall be the liability balance of spec 339
-  EARS-527 — personal-funds spend not yet reimbursed; «cash» shall be the
-  current money-account holdings of EARS-325, the one cash figure the module
-  computes. The owner's relation «cash = contributed + income − paid out» shall
-  hold exactly per native currency as an identity over all postings: for every
-  currency `c`, the money-account balance in `c` equals contributions in `c` +
-  income in `c` − paid out in `c` + conversions into `c` − conversions out of
-  `c`, where «paid out» is every money-account outflow to outside BBM —
-  expense payments and their fees from company accounts, and reimbursement
-  transfers to members. In one currency, and when `starts_on` is on or before
-  BBM's first operation, the relation reads literally; across currencies each
-  figure is valued separately (EARS-341) and no second cash figure is derived
-  from the others.
-- **EARS-344.** Every figure of EARS-340…343 shall be a read model over postings
-  and the budget row, stored nowhere (the data-model rule: no table stores a
-  balance). The limit, «spent» and «remaining» shall be read in the budget's own
-  currency and shall not follow the reporting-currency switch of decision 13,
-  because converting the limit would need a rate no operation recorded;
-  «contributed», «owed to members» and «cash» shall follow the switch, valued per
-  EARS-341 and EARS-325.
-- **EARS-345.** The per-project breakdown of «spent» shall sum exactly to
-  «spent»: each expense posting carries exactly one project (EARS-321) and is
-  counted once, under it, and the realized FX result is counted under the fund
-  (EARS-328); because rounding is per posting (EARS-341), the rounded parts
-  add up to the rounded whole.
+- **EARS-340.** The budget figures shall be computed by one **budget cost-basis
+  replay** in the budget's currency `B`. It is separate from the EARS-325
+  pair-rate graph and from EARS-328's per-pair pool, and it reads no
+  `fx_result` posting: those pools are built from conversion steps alone, so a
+  spend out of a foreign holding never depletes them, and a holding bought
+  through one pair and sold through another recognises nothing there.
+  1. **Input.** Every operation from BBM's first one, whatever the budget's
+     `starts_on`, in `(occurred_on, operation_id)` order, after both members of
+     every fully reversed pair are removed by EARS-325's chain walk. The
+     `fx_result` postings and the non-step `conversion` postings that balance
+     them are skipped — they cancel per currency (EARS-328), and the replay
+     derives its own exchange result.
+  2. **State.** For every currency `X ≠ B`: a **holding pool** (quantity, cost in
+     `B`) mirroring the `X` balance of all company money accounts, and an
+     **owed pool** (quantity, carrying cost in `B`) mirroring the `X` balance of
+     liability postings that carry `member_id`. A pool's cost may be unknown.
+  3. **Supply and use.** Within one operation, per currency, every posting is a
+     supply or a use. Supply of `X`: the net decrease of company money accounts
+     in `X`, drawn from the holding pool at its moving-average cost; a credit on
+     a member liability, valued at the holding pool's current average cost
+     without drawing from it; a credit on `equity` or `income`, of unknown cost;
+     and each conversion step's received quantity of `X`. Use of `X`: the net
+     increase of company money accounts in `X`, added to the holding pool; a
+     debit on an `expense` account; a debit on a member liability, drawn from
+     the owed pool at its carrying cost; and each step's disposed quantity of
+     `X`. In `B` itself every supply and every use is worth its own amount.
+  4. **Steps, then allocation.** Conversion steps run in `step_no` order: a
+     step's disposed quantity takes its cost from the supply of its
+     `from_currency` available at that point in the operation (the non-step
+     supply plus earlier steps' receipts), at that supply's average cost, and
+     its received quantity carries exactly that cost — so a chain RUB → USDT →
+     THB carries the roubles' cost to the baht. Then each currency's remaining
+     supply cost is allocated to that currency's non-step uses in proportion to
+     quantity, rounded half away from zero per use in posting-id order, the last
+     use taking the remainder, so an operation's cost in equals its cost out
+     exactly. A cross-currency payment therefore costs exactly what the paying
+     side gave up — decision 18's «each operation's own actual rate».
+  5. **Exchange result.** WHERE a use's value is fixed independently of the cost
+     allocated to it — a use in `B`, worth its own amount, and an owed-pool draw,
+     worth its carrying cost — the allocated cost minus that value is the
+     operation's **exchange result**: positive is a loss, negative a gain.
+  6. **Rounding.** Each pool draw is rounded half away from zero once and reduces
+     the pool's cost by exactly the rounded amount, so no residue survives
+     anywhere.
+  7. **Unknown cost.** A cost drawn or allocated from an unknown cost is
+     unknown, and a holding pool with unknown cost stays unknown until its
+     quantity returns to zero (EARS-325's reset). The same applies to a draw
+     larger than the pool holds, a member-liability credit in a currency whose
+     holding pool is empty, a step disposing more than the operation has
+     supplied of that currency at that point, and a liability posting without
+     `member_id`. A figure that sums an unknown cost shall be withheld, with the
+     currencies that caused it named in ascending code order — never shown as a
+     partial number (EARS-325's degraded-state rule).
+
+  No Bank of Russia rate (spec 339 EARS-553) and no market rate shall enter the
+  replay or any figure of EARS-341…345.
+
+- **EARS-341.** «Spent» against a budget shall be the sum, in `B`, of (a) the
+  replayed cost of every debit on a system `expense` account whose operation's
+  `occurred_on` is on or after the budget's `starts_on`, and (b) the exchange
+  results (EARS-340 item 5) of the operations in that window. Part (a) covers
+  every project and every source: an expense paid from a member's personal funds
+  counts on its own `occurred_on` like any other (owner, 2026-11-24; spec 339
+  EARS-513), and every fee is its own expense posting. By construction «spent»
+  excludes contributions, income, transfers between BBM's own accounts, the
+  exchange legs of conversions, the reimbursement that settles a personal-funds
+  expense (spec 339 EARS-528 — the payment of a debt already counted), and every
+  unposted request, approved or not. A vendor's refund lowers «spent» because it
+  is recorded on the expense side (reversal of the paid operation, plus a new
+  operation for any part kept), never as income; because the reversal removes
+  the original from its date, a time series over this figure (#584's burn rate)
+  shall say so rather than show the refund as a dated event.
+- **EARS-342.** «Remaining» shall be the limit minus «spent», in `B`, and shall
+  be shown negative when «spent» exceeds the limit, never clipped to zero.
+  Income shall not raise the limit, and a contribution shall neither raise nor
+  lower it: the limit is how much BBM may spend; the contributions are when the
+  money arrives.
+- **EARS-343.** Beside the glass, the reading shall show three figures, all in
+  `B` from the same replay: «contributed» — minus the sum of `equity` postings
+  whose operation's `occurred_on` is on or after `starts_on`, both members of a
+  reversed pair removed as in EARS-340 item 1; «owed to members» — the `B`
+  balance of liability postings carrying `member_id` plus the carrying cost of
+  every owed pool, that is, personal-funds spend not yet reimbursed; and «cash at
+  cost» — the `B` balance of company money accounts plus the cost of every
+  holding pool. «Cash at cost» is the one cash figure of the budget reading. It
+  equals the EARS-325 card total whenever all money is in `B`; otherwise the two
+  differ, because the card values holdings through the recorded pair-rate graph
+  and this reading through the spend-aware cost basis, and the reading shall
+  label its figure «по себестоимости» rather than show a second number under the
+  card's name.
+- **EARS-344.** Over all of BBM's operations the reading shall satisfy, exactly
+  and in `B`: contributed + income = spent + cash at cost − owed to members,
+  where income is the replayed value of every credit on a system `income`
+  account. «Paid out» — the owner's «cash = contributed + income − paid out» —
+  shall be read as spent − owed to members: what BBM's money has actually
+  covered. WHERE `starts_on` is on or before BBM's first operation the windowed
+  figures are the all-time ones and the relation holds on the glass as shown.
+  Every figure of EARS-340…345 is a read model over postings and the budget row,
+  stored nowhere (the data-model rule: no table stores a balance), and all of
+  them are read in `B`: none follows the reporting-currency switch of decision
+  13, because the limit is denominated in `B` and the cost basis is built in it.
+- **EARS-345.** The breakdown of «spent» shall be one line per project — each
+  expense posting carries exactly one project (EARS-321) and counts once, under
+  it; the fund row's line is BBM's own spend — plus one separate «exchange
+  result» line for the EARS-340 item 5 results, which belong to no project. The
+  lines shall sum exactly to «spent», because every value is rounded once where
+  it arises (EARS-340 items 4 and 6).
 
 ## Accounting policy — rulings accepted at the stage-2 go
 
@@ -801,22 +861,23 @@ migrations.
 
 ## CRUD check (task-cycle stage 1a)
 
-| Resource (`/p/admin/finance/…`) | Create                                                                           | Read                                  | Update                                                                        | Delete                                                             |
-| ------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| currencies                      | yes (code, name, precision)                                                      | yes                                   | name; precision only while unused (EARS-303)                                  | retire; hard delete only if never referenced (EARS-308)            |
-| accounts                        | yes (money kinds only)                                                           | yes (system accounts shown read-only) | name                                                                          | retire; same rule                                                  |
-| projects                        | yes                                                                              | yes                                   | name                                                                          | retire; the fund row is neither retirable nor deletable (EARS-304) |
-| products                        | yes (under a project)                                                            | yes                                   | name, sale price                                                              | retire; same rule                                                  |
-| purposes                        | yes (binding mandatory, EARS-306)                                                | yes                                   | name, category link, binding (admin only, EARS-331; history stands, EARS-332) | retire; same rule                                                  |
-| categories                      | yes (the table ships empty; first values follow owner review of real history)    | yes                                   | name, allocable flag                                                          | retire; same rule                                                  |
-| budgets (§D)                    | `finance-approve`, fund only, one unretired per project (EARS-338/339, proposal) | every platform member (EARS-339)      | name, amount, currency, `starts_on` — audited (EARS-339)                      | retire only; never deleted (EARS-339)                              |
+| Resource (`/p/admin/finance/…`) | Create                                                                        | Read                                  | Update                                                                        | Delete                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| currencies                      | yes (code, name, precision)                                                   | yes                                   | name; precision only while unused (EARS-303)                                  | retire; hard delete only if never referenced (EARS-308)            |
+| accounts                        | yes (money kinds only)                                                        | yes (system accounts shown read-only) | name                                                                          | retire; same rule                                                  |
+| projects                        | yes                                                                           | yes                                   | name                                                                          | retire; the fund row is neither retirable nor deletable (EARS-304) |
+| products                        | yes (under a project)                                                         | yes                                   | name, sale price                                                              | retire; same rule                                                  |
+| purposes                        | yes (binding mandatory, EARS-306)                                             | yes                                   | name, category link, binding (admin only, EARS-331; history stands, EARS-332) | retire; same rule                                                  |
+| categories                      | yes (the table ships empty; first values follow owner review of real history) | yes                                   | name, allocable flag                                                          | retire; same rule                                                  |
 
 Deliberately unsupported: creating/editing system accounts (EARS-305); any
 cabinet surface for operations or postings — the fact core is written only by
 the module API (intakes are F2); changing a currency's precision in use; a
 second fund row. §D adds: a budget on a project other than the fund, or a
-second unretired budget on one project (EARS-338); a cabinet surface for
-contributions — they enter through intake (spec 339 EARS-567; EARS-337);
+second unretired budget on one project (EARS-338); any budget surface in
+`/p/admin` — the budget is recorded on `/p/finance` by `finance-approve`, read by
+every member, edited with an audit trail and retired, never deleted (EARS-339);
+a cabinet surface for contributions — they enter through intake (spec 339 EARS-567; EARS-337);
 editing or retiring the system `equity` accounts (EARS-335).
 
 ## Acceptance scenarios
@@ -879,19 +940,21 @@ Owner walkthrough, on a live stand, after the go and the build:
 8. **Categories are not pre-invented.** Open the categories resource — the
    table is empty, with creation available (EARS-307).
 9. **The budget is a limit, the money arrives as needed** (§D, 2026-11-24).
-   As a `finance-approve` holder, record BBM's budget on «Фонд BBM» with the
-   amount and start date of your choice — a second budget, or one on
-   «Doctor.School», is refused (EARS-338/339). Record a contribution onto the
+   As a `finance-approve` holder, record BBM's budget on «Фонд BBM» on
+   `/p/finance` with the amount and start date of your choice — a second
+   budget, one on «Doctor.School», or the same act by a member without
+   `finance-approve` is refused (EARS-338/339). Record a contribution onto the
    company bank account with its bank statement attached (spec 339
-   EARS-567): the account's tile on `/p/finance` grows by exactly that sum,
-   no `equity` tile appears, and nothing shows as income (EARS-335/336). Pay
-   one request from that account and have a member file one paid from a
-   personal card: «spent» grows by both on their money dates, broken down by
-   project; «remaining» is the limit minus «spent»; «owed to members» shows the
-   card payment. Reimburse it: «spent» does not move, «owed» returns to zero,
-   and «cash» drops by the reimbursement (EARS-340/342/343/345). The reading
-   surface is #584's; until it ships, the agent reads the module's query on
-   the stand and pastes the figures into the issue.
+   EARS-567): the account's tile on `/p/finance` grows by exactly that sum, no
+   `equity` tile appears, and nothing shows as income (EARS-335/336). Pay one
+   request from that account and have a member file one paid from a personal
+   card: «spent» grows by both on their money dates, broken down by project;
+   «remaining» is the limit minus «spent»; «owed to members» shows the card
+   payment. Reimburse it: «spent» does not move, «owed» returns to zero, and
+   «cash at cost» drops by the reimbursement; contributed = spent + cash at
+   cost − owed throughout (EARS-341…345). The reading surface is #584's; until
+   it ships, the agent reads the module's query on the stand and pastes the
+   figures into the issue.
 
 ### Verified by CI, not by the owner
 
@@ -994,42 +1057,63 @@ _New 2026-11-24 (#581)._ The amounts below are synthetic minor units chosen for
 hand arithmetic — they are not BBM's figures, and no real budget amount appears
 in this repository (EARS-338). Every fixture has one budget on the fund, in RUB,
 with `starts_on` before the first operation unless stated; the projects are the
-fund and one project «P». Only the read model's public output is asserted.
+fund and one project «P». Only the read model's public output is asserted, and
+every fixture also asserts EARS-344's identity.
 
 1. **The plain path.** Contribute `100_000` RUB onto a bank account; pay a
    `30_000` RUB expense of «P» from it; a member pays a `5_000` RUB expense of
    the fund from a personal card (`personal_funds`); approve, without posting,
    a `10_000` RUB request of «P». Then: «spent» `35_000` (the approved request is
-   not counted), breakdown «P» `30_000` + fund `5_000`; «contributed»
-   `100_000`; «owed to members» `5_000`; «cash» `70_000`. Reimburse the member
-   `5_000`: «spent» stays `35_000`, «owed» becomes `0`, «cash» becomes `65_000`
-   = `100_000` + `0` − (`30_000` + `5_000`) (EARS-336/340/343/345).
-2. **FX result is spent.** Contribute `100_000` RUB; convert `100_000` RUB →
-   `10_000` THB into a THB account; pay a `5_000` THB expense from it; convert
-   the remaining `5_000` THB → `45_000` RUB. The THB expense is valued at its
-   recorded cost `50_000` RUB (EARS-341 rule 3); the second conversion realizes
-   a `5_000` RUB loss on `fx_result` (EARS-328). «Spent» `55_000`, «cash»
-   `45_000` RUB = «contributed» `100_000` − «spent» `55_000` (EARS-340/341/343).
-3. **A cross-currency payment uses its own rate.** An invoice of `3_500` THB
-   paid from a RUB account that is charged `8_750` RUB adds exactly `8_750` RUB
-   to «spent» (EARS-341 rule 2), with no THB holding involved.
-4. **No path, no number.** Contribute `1_000` USDT onto a crypto account with no
-   recorded USDT conversion and pay a `100` USDT expense from it: «spent» and
-   «remaining» are withheld and `USDT` is named; the native amounts stay
-   visible (EARS-341).
-5. **Reversal, window, sign.** A `10_000` RUB expense and its reversal leave
+   not counted), breakdown «P» `30_000` + fund `5_000` + exchange result `0`;
+   «contributed» `100_000`; «owed» `5_000`; «cash at cost» `70_000`. Reimburse
+   the member `5_000`: «spent» stays `35_000`, «owed» becomes `0`, «cash at
+   cost» becomes `65_000` (EARS-336/341/343/344/345).
+2. **A spend depletes the cost basis — the case the per-pair pools get wrong.**
+   Contribute `160_000` RUB; convert `100_000` RUB → `10_000` THB; pay a
+   `5_000` THB expense of «P» from the THB account (cost `50_000`; the THB pool
+   keeps `5_000` at `50_000`); convert `60_000` RUB → `5_000` THB (pool
+   `10_000` at `110_000`); convert `10_000` THB → `110_000` RUB. The last step
+   draws `110_000` of cost and receives `110_000` RUB: exchange result `0`.
+   «Spent» `50_000`, «cash at cost» `110_000`, «contributed» `160_000` =
+   `50_000` + `110_000`. The ledger's own EARS-328 pool, which the expense did
+   not deplete, holds `15_000` THB at `160_000` and posts a `3_333` gain on that
+   last step; the reading ignores it, and a reading that added it would show
+   «spent» `46_667` and break the identity (EARS-340/341/344).
+3. **A loss on a round trip is spent.** Contribute `100_000` RUB; convert
+   `100_000` RUB → `10_000` THB; pay a `5_000` THB expense from it (`50_000`);
+   convert the remaining `5_000` THB → `45_000` RUB: exchange result `5_000`.
+   «Spent» `55_000` = «P» `50_000` + exchange result `5_000`; «cash at cost»
+   `45_000` (EARS-340/341/345).
+4. **A multi-hop chain carries its cost.** Contribute `100_000` RUB; in ONE
+   operation convert `100_000` RUB → `1_000` USDT → `30_000` THB onto a THB
+   account (pool `30_000` at `100_000`); later convert `30_000` THB → `90_000`
+   RUB: exchange result `10_000`, «spent» `10_000`, «cash at cost» `90_000`.
+   EARS-328's per-pair pool finds no THB-against-RUB acquisition and posts no
+   result; the reading still counts the loss (EARS-340 items 4–5).
+5. **A cross-currency payment and a conversion fee.** An invoice of `3_500` THB
+   paid from a RUB account charged `8_750` RUB adds exactly `8_750` to «spent»,
+   whatever the THB pool holds. A conversion of `10_000` RUB → `10_000` USD
+   whose step charges a `5_000` USD fee costs the fee `5_000` RUB and leaves
+   `5_000` USD in the pool at `5_000` (EARS-340 item 4).
+6. **No recorded cost, no number.** Contribute `1_000` USDT onto a crypto
+   account and pay a `100` USDT expense from it: «spent», «remaining»,
+   «contributed» and «cash at cost» are withheld and `USDT` is named; the native
+   amounts stay visible. A member's `5_000` THB personal-card expense while BBM
+   holds no THB is withheld the same way (EARS-340 item 7).
+7. **Reversal, window, sign.** A `10_000` RUB expense and its reversal leave
    «spent» unchanged, including when the reversal is dated before `starts_on`;
    an expense dated the day before `starts_on` is not counted; with a limit of
    `20_000` and «spent» `25_000`, «remaining» is `−5_000`, not `0`
-   (EARS-340/342).
-6. **The guards.** An operation that credits an `equity` account without the
-   matching money-account debit is refused (EARS-337); the `equity` account is
-   neither a cash tile nor part of the EARS-325 total (EARS-335); a budget on
-   «P» and a second unretired budget on the fund are refused, as is any budget
-   write from a session without `finance-approve` (EARS-338/339); a budget write
-   appears in `core.audit_event` (EARS-339); a reporting-currency switch
-   re-presents «contributed», «owed» and «cash» and leaves the limit, «spent»
-   and «remaining» in the budget's currency (EARS-344).
+   (EARS-340/341/342).
+8. **The guards.** An operation carrying an `equity` posting with a purpose, a
+   conversion step, a second money leg, a mismatched amount or a non-fund project
+   is refused, as is a reversal-shaped operation that reverses no contribution
+   (EARS-336/337); the `equity` account is neither a cash tile nor part of the
+   EARS-325 total (EARS-335); a budget on «P» and a second unretired budget on
+   the fund are refused, as is any budget write from a session without
+   `finance-approve` (EARS-338/339); a budget write appears in
+   `core.audit_event` (EARS-339); a reporting-currency switch leaves every
+   budget figure in RUB (EARS-344).
 
 ## Out of scope
 
@@ -1056,7 +1140,7 @@ fund and one project «P». Only the read model's public output is asserted.
   selected-currency total of **current money-account balances** is part of the
   EARS-325 F1b cash card, not an F3 report. _(Amended 2026-11-24 by §D,
   #581: the budget figures — «spent», «remaining», «contributed», «owed to
-  members», «cash» — are DEFINED here, in EARS-340…345, because they are
+  members», «cash at cost» — are DEFINED here, in EARS-340…345, because they are
   readings of ledger facts this spec owns; the surface that renders them is
   #584's dashboard spec, and the rest of F3 stays #340's.)_ Reconciliation remains **F4
   (#341)**; scenarios remain **F5 (#342)**.
@@ -1089,16 +1173,29 @@ Only the product forks the lead could not settle from the owner's decisions of
 2026-11-24 or from research; everything else in §D is decided above. Each
 carries the default that applies until the owner answers.
 
-1. **Can a member's personal-card debt become a contribution?** A funder may pay
+1. **Which projects draw on the BBM budget?** The owner named Doctor School and
+   BBM's own spend. The ledger has other projects under the fund as well. Does
+   their spend draw on the same budget? _Default: yes — every project under the
+   fund (EARS-341), because the fund is the umbrella._
+2. **Can a member's personal-card debt become a contribution?** A funder may pay
    BBM's expenses from a personal card and not want the money back. Is that
    debt converted into a contribution — liability → `equity`, no money moving —
    or must every such expense be reimbursed? _Default: not supported; the debt
    stays «owed to members» until a reimbursement transfer settles it (spec 339
-   EARS-528)._
-2. **Is any contribution repayable?** If some money is lent to BBM rather than
+   EARS-528), consistent with the owner's «personal-card payments are
+   reimbursed»._
+3. **Is any contribution repayable?** If some money is lent to BBM rather than
    contributed, it is a debt, not funding, and would need its own liability
    rather than `equity`. _Default: every contribution is non-repayable funding;
    a loan is not modelled._
-3. **Who records the budget limit?** EARS-339 proposes `finance-approve`; the
-   alternative is reference administration (`platform-admin` or
-   `finance-entry`, spec 339 EARS-529). _Default: `finance-approve`._
+4. **What does foreign money with no recorded cost count as?** A contribution
+   or income received directly in a foreign currency or crypto, or a member's
+   card debt in a currency BBM holds none of, has no recorded cost in the
+   budget currency, so EARS-340 withholds the figures. Should the Bank of
+   Russia rate of that day serve as its cost, which would narrow spec 339
+   EARS-553 for this reading? _Default: no; the figures are withheld, and the
+   practical path is to bring money in roubles and convert it on record._
+5. **Who records the budget limit?** EARS-339 places it with `finance-approve`
+   on `/p/finance`; the alternative is reference administration
+   (`platform-admin` or `finance-entry`) in the cabinet. _Default:
+   `finance-approve`._

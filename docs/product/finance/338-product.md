@@ -88,22 +88,26 @@ the reference table and the link from purpose to category; the request form that
 picks from it is F2 (#339).
 
 **BBM's budget and its funding — owner decisions, 2026-11-24 (#581).** BBM is
-the umbrella: the fund row «Фонд BBM», with Doctor School and the other
-projects one flat level under it; BBM's own infrastructure is the fund's
-spend, kept apart from the Doctor School project. A **fixed initial budget**
-is allocated to BBM for its launch and the Doctor School pilot, and every
-project's spend draws on it. The budget is a **limit**, and the money is
-brought onto the company account **as needed** — so the ledger keeps two
-separate facts: the limit, which is plan and moves no balance, and each
+the umbrella: the fund row «Фонд BBM», with Doctor School a project done inside
+it — its first pilot; BBM's own infrastructure is the fund's spend, kept apart
+from the Doctor School project. A **fixed initial budget** is allocated to BBM
+for its launch and the Doctor School pilot — in the owner's words, the budget
+allocated to BBM goes to Doctor School too. The budget is a **limit**, and the
+money is brought onto the company account **as needed** — so the ledger keeps
+two separate facts: the limit, which is plan and moves no balance, and each
 **contribution**, a dated inflow onto a company account recorded like any
-other operation. A contribution is neither income nor an opening balance:
-the books still start at zero (decision 17), and money arrives in them only
-as dated movements. Spending counts on the date the money moved (cash
-basis; decision 14 keeps accrual deferred), and an expense paid from a
-member's own card counts on that date too — paying the member back settles
-a debt and is not a second expense. The budget amount itself is recorded by
-the owner as data, never written into this repository. The exact rules are
-spec 338 §D (`docs/specs/338-ledger-core.md`).
+other operation. An expense paid from a member's own card is reimbursed to that
+member, counts against the budget on the day it was paid, and the
+reimbursement settles a debt rather than counting a second time
+_(owner-confirmed in session, 2026-11-24)_. The budget amount itself is
+recorded by the owner as data, never written into this repository.
+
+_Lead readings, pending the owner's go:_ every other project under the fund
+draws on the same budget; a contribution is neither income nor an opening
+balance — the books still start at zero (decision 17), and money arrives in
+them only as dated movements; spending counts on the date the money moved
+(cash basis — decision 14 keeps accrual deferred). The exact rules are spec 338
+§D (`docs/specs/338-ledger-core.md`).
 
 ## Expense taxonomy — derived from the fact, not invented upfront
 

@@ -82,21 +82,26 @@ dimension filter, never a separate report per project.
 
 **BBM's budget — the first reading the owner asked for (2026-11-24, #581,
 #587).** BBM, the fund, has one fixed budget for its launch and the Doctor
-School pilot, and every project's spend draws on it. The reading answers two
-questions with separate numbers. **Against the limit:** how much has been
-spent since the budget started — every project's expenses, fees, spend from
-members' own cards on the day it happened, and the gain or loss on currency
-exchanges — and what remains, which goes below zero when the limit is
-exceeded rather than stopping at zero. **Against the money:** how much has
-been contributed, how much is owed back to members who paid from their own
-cards, and how much cash the accounts hold. Approved but unpaid requests are
-not spending (cash basis, decision 14 stays deferred); income does not
-extend the limit. The limit is plan and the rest is fact, so the two are
-never blended into one line. Amounts are read at recorded rates only
-(decision 18); the limit and its spend stay in the budget's own currency,
-while contributed, owed and cash follow the reporting-currency switch
-(decision 13). Definitions: spec 338 §D (`docs/specs/338-ledger-core.md`);
-the screen is #584's.
+School pilot _(owner)_; every other project's spend draws on it too _(lead
+reading, pending the owner's go)_. The reading answers two questions with
+separate numbers. **Against the limit:** how much has been spent since the
+budget started — every project's expenses, fees, spend from members' own cards
+on the day it happened _(owner-confirmed)_, and the gain or loss on currency
+exchanges shown as its own line — and what remains, which goes below zero when
+the limit is exceeded rather than stopping at zero. **Against the money:** how
+much has been contributed, how much is owed back to members who paid from their
+own cards, and how much cash the accounts hold at what it cost us. The two
+answers always reconcile: contributed (plus income) equals spent plus cash at
+cost minus what is owed to members. That holds because every foreign-currency
+holding carries the cost it was bought for in the budget currency, and spending it or
+converting it back uses up that cost — including chains such as RUB → USDT →
+THB. Approved but unpaid requests are not spending (cash basis, decision 14
+stays deferred); income does not extend the limit. The limit is plan and the
+rest is fact, so the two are never blended into one line. Every number is in
+the budget's own currency and built only from recorded operations (decision 18) — no market or Bank of Russia rate; where money arrived in a foreign
+currency with no recorded rouble cost, the reading says which currency and
+withholds the number rather than guess. Definitions: spec 338 §D
+(`docs/specs/338-ledger-core.md`); the screen is #584's.
 
 The unit-cost model has one real precedent: the Doctor.School lesson-cost
 calculator, which computes a per-lesson cost from per-role payroll with
@@ -174,11 +179,13 @@ the two that decide the rest.
   has been spent against it since it started, and what remains — negative
   if we have overspent. _(owner, 2026-11-24, #581)_
 - **US-22** — As the owner, I see where the budget went — spend per project,
-  BBM's own infrastructure as the fund's line — and the parts add up to the
-  whole. _(owner, 2026-11-24, #581)_
+  BBM's own spend as the fund's line, and the currency-exchange result as a
+  line of its own — and the parts add up to the whole. _(owner, 2026-11-24,
+  #581; the exchange line is a lead reading)_
 - **US-23** — As the owner, I see how much has been contributed, how much we
   owe members who paid from their own cards, and how much cash the accounts
-  hold, separately from the budget glass. _(owner, 2026-11-24, #581)_
+  hold at what it cost us, separately from the budget glass, and the two
+  reconcile exactly. _(owner, 2026-11-24, #581)_
 
 ## Flows
 
@@ -246,8 +253,11 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
   limit is exceeded.
 - An expense paid from a member's own card counts against the budget on the
   day it was paid, and paying the member back does not count it again.
-- Contributions, money owed to members and cash are shown as separate facts,
-  and the per-project spend adds up to the total spend.
+- Contributions, money owed to members and cash at cost are shown as separate
+  facts; contributed plus income equals spent plus cash at cost minus money
+  owed to members, exactly.
+- The per-project spend plus the exchange-result line adds up to the total
+  spend.
 
 ## Out of scope
 

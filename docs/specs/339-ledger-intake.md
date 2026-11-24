@@ -42,7 +42,7 @@ updated: 2026-11-24
   sheet) gains the per-request block and ← #558.
 - **Issues (§K, contributions, 2026-11-24):** #581 (the spec amendment that
   adds §K here and §D to spec 338) under #587, a sub-issue of epic #115; the
-  implementation is filed once the owner accepts the amended text.
+  implementation is #593, built once the owner accepts the amended text.
 
 ## Why
 
@@ -683,7 +683,7 @@ a declared clause.
   carry the paying member's `member_id` (spec 338 EARS-322), so the debt to
   each person is the member-filtered balance of the liability account.
   _(Budget reading, 2026-11-24, #581 — a pointer, not a new rule: spec 338
-  EARS-340 counts this expense against the budget on its own `occurred_on`,
+  EARS-341 counts this expense against the budget on its own `occurred_on`,
   like any other expense, and the EARS-528 reimbursement that settles it is
   never counted a second time.)_
 - **EARS-527.** The intake surface shall show a **liability view**: the
@@ -1270,11 +1270,16 @@ not an opening balance (spec 338 EARS-337) and not income.
   money `account` — never `personal_funds` and never a system account: the
   module picks the per-currency `equity` account itself, so EARS-528 stays the
   only place an intake item names a system account; the `amount` in that
-  account's currency, with no `paid_amount`/`paid_currency` pair (money that
-  arrives in another currency is a contribution followed by a conversion); the
-  `occurred_on` the money landed; and its contributor — the `member` where a
-  platform member contributed, otherwise the `counterparty` (EARS-532); one of
-  the two shall be present, so «who funded BBM» is a query. It shall carry no
+  account's currency, with no `paid_amount`/`paid_currency` pair (EARS-312:
+  an account holds one currency — money the bank converted on the way in is
+  recorded in the currency it landed in, because that conversion is the bank's,
+  not a BBM operation; a contribution onto a foreign-currency or crypto account
+  is recorded in that currency, and spec 338 EARS-340 item 7 says what the
+  budget reading makes of it); the `occurred_on` the money landed; and its
+  contributor — the `member` where a platform member contributed, otherwise the
+  `counterparty` (EARS-532); one of the two shall be present, so «who funded
+  BBM» is a query over intake items (the posting carries `member_id` only —
+  spec 338 EARS-336). It shall carry no
   purpose, product or fee — a bank's charge on the inflow is a separate expense
   of the fund — and its project is the fund. It shall post only by a
   `finance-approve` act, and only with its confirming document attached (the
