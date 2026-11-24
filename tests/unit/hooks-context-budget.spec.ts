@@ -58,6 +58,13 @@ describe('lastAssistantContextTokens', () => {
   })
 })
 
+describe('context-budget thresholds', () => {
+  it('owner-decided tiers (Anton, 2026-11-24, #588): 250K warn / 400K wrap', () => {
+    expect(WARN_THRESHOLD).toBe(250_000)
+    expect(WRAP_THRESHOLD).toBe(400_000)
+  })
+})
+
 describe('decideContextBudget', () => {
   it('is silent below the first tier', () => {
     expect(decideContextBudget(0).tier).toBe('none')
@@ -67,14 +74,14 @@ describe('decideContextBudget', () => {
   it('warns from the approach threshold and names the number', () => {
     const d = decideContextBudget(WARN_THRESHOLD)
     expect(d.tier).toBe('warn')
-    expect(d.message).toContain('≈110K')
-    expect(d.message).toContain('120K')
+    expect(d.message).toContain('≈250K')
+    expect(d.message).toContain('400K')
   })
 
   it('calls for /wrap from the wrap threshold', () => {
     const d = decideContextBudget(WRAP_THRESHOLD + 5_400)
     expect(d.tier).toBe('wrap')
-    expect(d.message).toContain('≈125K')
+    expect(d.message).toContain('≈405K')
     expect(d.message).toContain('/wrap')
   })
 
@@ -102,7 +109,7 @@ describe('context-budget as a process', () => {
   const transcriptPath = resolve(mkdtempSync(resolve(tmpdir(), 'ctx-budget-')), 'transcript.jsonl')
   writeFileSync(
     transcriptPath,
-    `${USER_LINE}\n${assistantLine({ input_tokens: 5_000, cache_read_input_tokens: 125_000 })}\n`,
+    `${USER_LINE}\n${assistantLine({ input_tokens: 5_000, cache_read_input_tokens: 255_000 })}\n`,
   )
 
   it('emits a systemMessage advisory and NEVER additionalContext', () => {

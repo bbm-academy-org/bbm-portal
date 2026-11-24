@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  CLOSEOUT_SUBAGENT_TYPES,
   HARD_THRESHOLD,
   OVERRIDE_REL,
   SOFT_THRESHOLD,
   TAIL_BYTES,
+  closeoutMessage,
   decide,
   hardMessage,
   overrideMessage,
@@ -27,7 +29,9 @@ import {
  * NO `agent_id`), measures the lead's own `transcript_path`, warns at
  * SOFT_THRESHOLD, DENIES a NEW dispatch at HARD_THRESHOLD, and is lifted —
  * loudly, and only with a written reason — by the `.claude/lead-budget-override`
- * marker. Fail-open throughout.
+ * marker. Fail-open throughout. Above the hard tier a CLOSEOUT dispatch
+ * (`bbm-reviewer`) still passes with an advisory: closing the wave frees
+ * context (#588, ported from ds-platform `#2373`).
  *
  * Unlike `context-budget.mjs` (operator advisory, `systemMessage` only), this
  * hook DOES address the model: it fires at the moment a new dispatch is asked
@@ -109,9 +113,9 @@ afterEach(() => {
 })
 
 describe('lead-context-budget thresholds', () => {
-  it('owner-decided constants (2026-09-03, #457): 150K soft / 160K hard', () => {
-    expect(SOFT_THRESHOLD).toBe(150_000)
-    expect(HARD_THRESHOLD).toBe(160_000)
+  it('owner-decided constants (2026-11-24, #588): 250K soft / 400K hard', () => {
+    expect(SOFT_THRESHOLD).toBe(250_000)
+    expect(HARD_THRESHOLD).toBe(400_000)
   })
 
   it('the override marker is the documented repo-relative path', () => {
@@ -130,33 +134,51 @@ describe('lead-context-budget decide()', () => {
     expect(decide({ contextTokens: 0, override: true }).action).toBe('silent')
   })
 
-  it('soft band 150K–159K → soft warning', () => {
-    for (const ctx of [150_000, 155_000, 159_999]) {
+  it('soft band 250K–399K → soft warning', () => {
+    for (const ctx of [250_000, 300_000, 399_999]) {
       expect(decide({ contextTokens: ctx, override: false }).action).toBe('soft')
     }
   })
 
-  it('≥160K → deny', () => {
-    for (const ctx of [160_000, 208_000, 325_000]) {
+  it('≥400K → deny', () => {
+    for (const ctx of [400_000, 420_000, 650_000]) {
       expect(decide({ contextTokens: ctx, override: false }).action).toBe('deny')
     }
   })
 
   it('an override WITH a reason lifts both tiers, loudly', () => {
-    expect(decide({ contextTokens: 155_000, override: true }).action).toBe('override')
-    expect(decide({ contextTokens: 325_000, override: true }).action).toBe('override')
+    expect(decide({ contextTokens: 300_000, override: true }).action).toBe('override')
+    expect(decide({ contextTokens: 650_000, override: true }).action).toBe('override')
   })
 
   it('a REASONLESS marker is not an override — the tiers still apply', () => {
     expect(
-      decide({ contextTokens: 325_000, override: false, overrideReasonless: true }).action,
+      decide({ contextTokens: 650_000, override: false, overrideReasonless: true }).action,
     ).toBe('deny')
     expect(
-      decide({ contextTokens: 155_000, override: false, overrideReasonless: true }).action,
+      decide({ contextTokens: 300_000, override: false, overrideReasonless: true }).action,
     ).toBe('soft')
     expect(
-      decide({ contextTokens: 325_000, override: false, overrideReasonless: true }).reasonless,
+      decide({ contextTokens: 650_000, override: false, overrideReasonless: true }).reasonless,
     ).toBe(true)
+  })
+
+  it('≥400K, a closeout subagent (bbm-reviewer) → closeout, not deny', () => {
+    expect(CLOSEOUT_SUBAGENT_TYPES).toEqual(['bbm-reviewer'])
+    for (const ctx of [400_000, 650_000]) {
+      expect(
+        decide({ contextTokens: ctx, override: false, subagentType: 'bbm-reviewer' }).action,
+      ).toBe('closeout')
+    }
+  })
+
+  it('the closeout exemption is for the hard tier only, and only for closeout types', () => {
+    expect(
+      decide({ contextTokens: 300_000, override: false, subagentType: 'bbm-reviewer' }).action,
+    ).toBe('soft')
+    for (const subagentType of ['bbm-explorer', 'bbm-implementer', 'general-purpose', '']) {
+      expect(decide({ contextTokens: 420_000, override: false, subagentType }).action).toBe('deny')
+    }
   })
 
   it('a non-numeric context reads as 0 (fail-open)', () => {
@@ -251,29 +273,37 @@ describe('lead-context-budget readTail()', () => {
 
 describe('lead-context-budget messages', () => {
   it('the soft warning names the measured size, the cap and the handoff', () => {
-    const msg = softMessage(155_000)
-    expect(msg).toContain('155K')
-    expect(msg).toContain('150K')
+    const msg = softMessage(300_000)
+    expect(msg).toContain('300K')
+    expect(msg).toContain('250K')
     expect(msg).toContain('handoff-prompt')
     expect(msg).toContain('report-task-outcome')
   })
 
   it('the deny message names the size, the cap and the override hatch', () => {
-    const msg = hardMessage(208_000)
-    expect(msg).toContain('208K')
-    expect(msg).toContain('160K')
+    const msg = hardMessage(420_000)
+    expect(msg).toContain('420K')
+    expect(msg).toContain('400K')
     expect(msg).toContain(OVERRIDE_REL)
     expect(msg).toContain('handoff-prompt')
   })
 
   it('a reasonless marker is called out by name in the tier message', () => {
-    expect(hardMessage(208_000, { reasonless: true })).toMatch(/без причины|БЕЗ причины/)
-    expect(softMessage(155_000, { reasonless: true })).toMatch(/без причины|БЕЗ причины/)
+    expect(hardMessage(420_000, { reasonless: true })).toMatch(/без причины|БЕЗ причины/)
+    expect(softMessage(300_000, { reasonless: true })).toMatch(/без причины|БЕЗ причины/)
+  })
+
+  it('the closeout advisory names the size, the hard cap, the subagent type and the handoff', () => {
+    const msg = closeoutMessage(420_000, 'bbm-reviewer')
+    expect(msg).toContain('420K')
+    expect(msg).toContain('400K')
+    expect(msg).toContain('bbm-reviewer')
+    expect(msg).toContain('handoff-prompt')
   })
 
   it('the override message announces the override, quotes the reason, and names /wrap', () => {
-    const msg = overrideMessage(325_000, 'владелец: доводим релиз')
-    expect(msg).toContain('325K')
+    const msg = overrideMessage(650_000, 'владелец: доводим релиз')
+    expect(msg).toContain('650K')
     expect(msg).toContain('OVERRIDE')
     expect(msg).toContain(OVERRIDE_REL)
     expect(msg).toContain('владелец: доводим релиз')
@@ -302,25 +332,25 @@ describe('lead-context-budget end-to-end (real hook process)', () => {
         session_id: 'sess-1',
         tool_name: 'Agent',
         tool_input: {},
-        transcript_path: leadTranscript(155_000),
+        transcript_path: leadTranscript(300_000),
       },
       { CLAUDE_PROJECT_DIR: projectDir(null) },
     )
     expect(res.status).toBe(0)
     const json = JSON.parse(res.stdout)
     expect(json.hookSpecificOutput.hookEventName).toBe('PreToolUse')
-    expect(json.hookSpecificOutput.additionalContext).toContain('155K')
+    expect(json.hookSpecificOutput.additionalContext).toContain('300K')
     expect(json.hookSpecificOutput.permissionDecision).toBeUndefined()
-    expect(json.systemMessage).toContain('155K')
+    expect(json.systemMessage).toContain('300K')
   })
 
-  it('≥160K → deny with the handoff reason', () => {
+  it('≥400K → deny with the handoff reason', () => {
     const res = runHook(
       {
         session_id: 'sess-1',
         tool_name: 'Task',
         tool_input: {},
-        transcript_path: leadTranscript(208_000),
+        transcript_path: leadTranscript(420_000),
       },
       { CLAUDE_PROJECT_DIR: projectDir(null) },
     )
@@ -329,12 +359,41 @@ describe('lead-context-budget end-to-end (real hook process)', () => {
     expect(json.hookSpecificOutput.hookEventName).toBe('PreToolUse')
     expect(json.hookSpecificOutput.permissionDecision).toBe('deny')
     expect(json.hookSpecificOutput.permissionDecisionReason).toContain('handoff-prompt')
-    expect(json.systemMessage).toContain('208K')
+    expect(json.systemMessage).toContain('420K')
+  })
+
+  it('≥400K: a new bbm-explorer dispatch is denied, a bbm-reviewer dispatch passes', () => {
+    const transcript = leadTranscript(420_000)
+    const explorer = runHook(
+      {
+        session_id: 'sess-1',
+        tool_name: 'Agent',
+        tool_input: { subagent_type: 'bbm-explorer', model: 'sonnet' },
+        transcript_path: transcript,
+      },
+      { CLAUDE_PROJECT_DIR: projectDir(null) },
+    )
+    expect(JSON.parse(explorer.stdout).hookSpecificOutput.permissionDecision).toBe('deny')
+
+    const reviewer = runHook(
+      {
+        session_id: 'sess-1',
+        tool_name: 'Agent',
+        tool_input: { subagent_type: 'bbm-reviewer', model: 'opus' },
+        transcript_path: transcript,
+      },
+      { CLAUDE_PROJECT_DIR: projectDir(null) },
+    )
+    expect(reviewer.status).toBe(0)
+    const json = JSON.parse(reviewer.stdout)
+    expect(json.hookSpecificOutput.permissionDecision).toBeUndefined()
+    expect(json.hookSpecificOutput.additionalContext).toContain('bbm-reviewer')
+    expect(json.systemMessage).toContain('420K')
   })
 
   it('a truncated first line in the tail is skipped, not fatal', () => {
     const path = join(tempDir('lead-ctx-partial-'), 'sess-1.jsonl')
-    writeFileSync(path, `PARTIAL{"type":"assis\n${usageLine(208_000)}`)
+    writeFileSync(path, `PARTIAL{"type":"assis\n${usageLine(420_000)}`)
     const res = runHook(
       { session_id: 'sess-1', tool_name: 'Agent', tool_input: {}, transcript_path: path },
       { CLAUDE_PROJECT_DIR: projectDir(null) },
@@ -349,7 +408,7 @@ describe('lead-context-budget end-to-end (real hook process)', () => {
         session_id: 'sess-1',
         tool_name: 'Agent',
         tool_input: {},
-        transcript_path: leadTranscript(208_000),
+        transcript_path: leadTranscript(420_000),
       },
       { CLAUDE_PROJECT_DIR: projectDir('владелец: доводим релиз') },
     )
@@ -369,7 +428,7 @@ describe('lead-context-budget end-to-end (real hook process)', () => {
         session_id: 'sess-1',
         tool_name: 'Agent',
         tool_input: {},
-        transcript_path: leadTranscript(208_000),
+        transcript_path: leadTranscript(420_000),
       },
       { CLAUDE_PROJECT_DIR: projectDir('') },
     )
@@ -379,14 +438,14 @@ describe('lead-context-budget end-to-end (real hook process)', () => {
     expect(json.hookSpecificOutput.permissionDecisionReason).toMatch(/без причины|БЕЗ причины/)
   })
 
-  it('a SUBAGENT dispatch (agent_id present) is silent even at 325K', () => {
+  it('a SUBAGENT dispatch (agent_id present) is silent even at 650K', () => {
     const res = runHook(
       {
         session_id: 'sess-1',
         agent_id: 'a1',
         tool_name: 'Agent',
         tool_input: {},
-        transcript_path: leadTranscript(325_000),
+        transcript_path: leadTranscript(650_000),
       },
       { CLAUDE_PROJECT_DIR: projectDir(null) },
     )
@@ -400,7 +459,7 @@ describe('lead-context-budget end-to-end (real hook process)', () => {
         session_id: 'sess-1',
         tool_name: 'Agent',
         tool_input: {},
-        transcript_path: leadTranscript(325_000),
+        transcript_path: leadTranscript(650_000),
       },
       { CLAUDE_PROJECT_DIR: projectDir(null), BBM_HOOKS_DISABLE: '1' },
     )
