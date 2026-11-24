@@ -334,7 +334,33 @@ describe('canonicalPath — junction escape', () => {
   it('leaves a plain path unchanged', () => {
     expect(canonicalPath(join(root, 'wt', 'x.ts'))).toBe(join(root, 'wt', 'x.ts'))
   })
+
+  // Review PR #595: JS `realpathSync` keeps an 8.3 short name
+  // (`BBM-PO~1`), so the short form of another checkout slipped past every
+  // root comparison. `realpathSync.native` expands it. Skipped where the volume
+  // produces no short names (8.3 generation disabled) or off Windows.
+  it('expands an 8.3 short name to the long, on-disk name', (ctx) => {
+    const long = join(root, 'a-long-directory-name-for-8dot3')
+    mkdirSync(long, { recursive: true })
+    const short = shortNameOf(long)
+    if (!short || short.toLowerCase() === long.toLowerCase()) ctx.skip()
+    expect(canonicalPath(join(short, 'new', 'file.ts'))).toBe(join(long, 'new', 'file.ts'))
+  })
 })
+
+/** The 8.3 form of an existing path through cmd's `%~s`, or "" when unavailable. */
+function shortNameOf(p: string): string {
+  if (process.platform !== 'win32') return ''
+  try {
+    return execFileSync('cmd.exe', ['/d', '/c', `for %I in ("${p}") do @echo %~sI`], {
+      encoding: 'utf8',
+      windowsVerbatimArguments: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return ''
+  }
+}
 
 /**
  * End-to-end: a real repo with two real `git worktree add` checkouts, the real
@@ -399,14 +425,26 @@ describe('worktree-path-guard as a process (real git worktrees)', { timeout: 60_
     expect(run(a, { file_path: join(b, 'x.ts') }, { projectDir: main }).status).toBe(0)
   })
 
+  // The real payload of the canonical bbm lead: launched in the main checkout,
+  // then `EnterWorktree` into A. Claude Code keeps `CLAUDE_PROJECT_DIR` at the
+  // launch root while `cwd` follows the session, and the lead carries no
+  // `agent_id` — the hook cannot tell this from the #187 cwd drift above. Exempt
+  // BY DESIGN (review PR #595, lead's ruling): this lead orchestrates several
+  // task worktrees from one session. Pinned so the gap is recorded, not implied.
+  it('MUST PASS (by design): a main-launched lead that ran EnterWorktree into A writes B', () => {
+    const r = run(a, { file_path: join(b, 'src', 'x.ts'), content: 'x' }, { projectDir: main })
+    expect(r.stderr).toBe('')
+    expect(r.status).toBe(0)
+  })
+
   it('MUST PASS: a non-repo cwd and a garbage payload exit 0 (fail-open)', () => {
     expect(run(tmpdir(), { file_path: join(main, 'src', 'x.ts') }).status).toBe(0)
     const garbage = spawnSync(process.execPath, [HOOK], { input: '{ nope', encoding: 'utf8' })
     expect(garbage.status).toBe(0)
   })
 
-  it('a worktree-pinned session writing ANOTHER registered worktree → wrong-worktree', () => {
-    const r = run(a, { file_path: join(b, 'src', 'x.ts') })
+  it('a session LAUNCHED inside worktree A (CLAUDE_PROJECT_DIR = A) writing B → wrong-worktree', () => {
+    const r = run(a, { file_path: join(b, 'src', 'x.ts') }, { projectDir: a })
     expect(r.status).toBe(2)
     expect(r.stderr).toContain('wrong-worktree')
   })

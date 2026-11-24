@@ -55,6 +55,17 @@ describe('dispatchStateKey — per actor', () => {
     expect(dispatchStateKey({ session_id: 's1', agent_id: 'a9' })).toBe('s1--agent-a9')
     expect(dispatchStateKey({})).toBe('')
   })
+
+  // ds `actorIdentity`: a Codex subagent shares the lead's `session_id` and
+  // carries no `agent_id`; only its `transcript_path` tells it apart.
+  it('a different transcript under the same session is a different actor', () => {
+    const lead = dispatchStateKey({ session_id: 's1', transcript_path: 'C:/t/lead.jsonl' })
+    const sub = dispatchStateKey({ session_id: 's1', transcript_path: 'C:/t/sub.jsonl' })
+    expect(lead).not.toBe(sub)
+    expect(lead.startsWith('s1')).toBe(true)
+    expect(dispatchStateKey({ session_id: 's1', transcript_path: 'C:/t/lead.jsonl' })).toBe(lead)
+    expect(lead).toMatch(/^[A-Za-z0-9._-]+$/)
+  })
 })
 
 describe('dispatch-guard as a process', { timeout: 60_000 }, () => {
@@ -109,6 +120,16 @@ describe('dispatch-guard as a process', { timeout: 60_000 }, () => {
     for (let i = 0; i < DISPATCH_WARN_THRESHOLD; i += 1) {
       lead += call('Edit', { session_id: 'latch-actor' })
     }
+    expect(lead).toBe(1)
+  })
+
+  it('a Codex subagent (same session, own transcript, no agent_id) keeps its own latch', () => {
+    const as = (transcript_path: string) => ({ session_id: 'latch-codex', transcript_path })
+    let sub = 0
+    for (let i = 0; i < DISPATCH_WARN_THRESHOLD; i += 1) sub += call('Edit', as('C:/t/sub.jsonl'))
+    expect(sub).toBe(1)
+    let lead = 0
+    for (let i = 0; i < DISPATCH_WARN_THRESHOLD; i += 1) lead += call('Edit', as('C:/t/lead.jsonl'))
     expect(lead).toBe(1)
   })
 })
