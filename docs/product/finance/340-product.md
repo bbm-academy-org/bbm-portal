@@ -124,19 +124,22 @@ The owner's three questions — how much have we spent, where did the money go,
 what is the spending dynamic — are answered on one page, «Бюджет BBM» under the
 finance reports, open to every member like every finance reading (decision 32).
 Top to bottom, in the order of importance: **the glass** — the limit, what is
-spent, what remains and how many months that lasts at the recent pace (the
-runway); **contributed versus spent** — the money brought in, what is owed to
+spent, what remains and how many months that lasts at the recent pace of
+spending (the runway — counted on spending before income, because income never
+raises the limit; the pace after income is shown beside it as the cash view); **contributed versus spent** — the money brought in, what is owed to
 members, the cash at cost and income, with the check that they add up; **the
 dynamic** — spending per month, before and after income, with the average of
 the last three full months, and the cumulative result sinking below zero while
-there is no income, the contributions drawn beside it and the limit marked as
-the floor the glass empties at; **where it went** — spend by project, by
+there is no income, the contributions drawn beside it and the limit marked as a reference level —
+the line meets that level exactly when the glass empties only while there is
+no income; **where it went** — spend by project, by
 expense category and by counterparty, each adding up to the total with the
 exchange result as its own line, and every line opening the operations behind
 it. A period choice narrows the dynamic and the breakdown; the glass and the
-cash always read from the budget's start. The figures can be shown in roubles,
-dollars or euros; the budget itself stays counted in its own currency, so the
-runway and every share do not change with the switch. The person holding the
+cash always read from the budget's start. The figures can be shown in roubles, dollars or euros, converted for display
+only (which rate converts is spec 584's open question); the budget itself stays
+counted in its own currency, so the runway and every share do not change with
+the switch. The person holding the
 approve role sets, changes or closes the limit on this same page; nobody
 deletes it, and every change stays in the audit trail. What is provisional
 (a foreign-currency card debt not yet repaid) is marked as such, and what
@@ -231,8 +234,10 @@ the two that decide the rest.
 - **US-24** — As a member, I see how much BBM spends per month, before and
   after income, and the average of the last three full months, so I know the
   pace. _(owner, 2026-11-24, #584)_
-- **US-25** — As a member, I see how many months the remaining limit lasts at
-  that pace — the runway. _(owner, 2026-11-24, #584)_
+- **US-25** — As a member, I see how many months the remaining limit lasts at the recent pace of spending — the runway — counted on spending
+  before income, since income does not raise the limit; the pace after income
+  is shown beside it. _(owner, 2026-11-24, #584; the gross divisor is the
+  lead's decision recorded in spec 584)_
 - **US-26** — As a member, I see the cumulative result of BBM over time — below
   zero while there is no income — with the contributions drawn beside it.
   _(owner, 2026-11-24, #584)_

@@ -204,9 +204,9 @@ const DEFERRALS_BY_ISSUE = {
       'spec 338 §D (budget and funding: the equity kind, the contribution operation, the budget record and the budget cost-basis reading) and spec 339 §K (the contribution intake kind) plus spec 339 EARS-568 (the cross-currency reimbursement through a payment agent), added by the #581 amendment (PR #591) before any code exists — a spec that leads its implementation, like spec 311 did. #593 builds them, with tests named after these ids on the §D CI fixtures, and drops them from this list.',
   },
   586: {
-    ids: Array.from({ length: 27 }, (_, i) => `EARS-${701 + i}`),
+    ids: Array.from({ length: 29 }, (_, i) => `EARS-${701 + i}`),
     reason:
-      'spec 584 (the BBM budget dashboard on /p/finance/reports/budget: the widget-to-§D-figure mapping, monthly burn, trailing average, runway, waterline, the three breakdowns with drill-down, provisional/withheld states, the reporting-currency switch and the budget-limit form) — EARS-701…727, written before any code, like spec 338 §D. #586 builds the screen on the #593 read model and the #585 chart element, with tests named after these ids, and drops them from this list.',
+      'spec 584 (the BBM budget dashboard on /p/finance/reports/budget: the widget-to-§D-figure mapping, monthly burn, trailing average, runway, waterline, the three breakdowns with drill-down, provisional/withheld states, the reporting-currency switch and the budget-limit form) — EARS-701…729 (one of EARS-728/729 is retired at the owner’s go on open question 1, and its id leaves this list then), written before any code, like spec 338 §D. #586 builds the screen on the #593 read model and the #585 chart element, with tests named after these ids, and drops them from this list.',
   },
   559: {
     ids: [],

@@ -847,11 +847,16 @@ research answers.
   them are read in `B`: none follows the reporting-currency switch of decision
   13, because the limit is denominated in `B` and the cost basis is built in it.
   _(Amendment proposed 2026-11-24 by spec 584 EARS-722
-  (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec:
-  the figures are still computed only in `B`, and the dashboard's switch
-  converts what is shown — once per shown figure, through the EARS-325 graph —
-  leaving every ratio and every exactness claim in `B`. Which rate the switch
-  uses is spec 584's open question 1.)_
+  (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec,
+  and applying under either answer of its open question 1: the figures are
+  still computed only in `B`, and the dashboard's switch converts what is
+  shown — one factor per reading, rounded once per shown figure, never stored
+  — leaving every ratio and every exactness claim in `B`. Only answer A (the
+  Bank of Russia rate of one as-of date, EARS-728) also narrows spec 339
+  EARS-553, by the pending note written there; answer B (the EARS-325 graph,
+  EARS-729) needs nothing more. The dashboard lives at
+  `/p/finance/reports/budget`, inside the `/p/finance` subtree, and its limit
+  form is the one EARS-339 places «on `/p/finance`».)_
 - **EARS-345.** The breakdown of «spent» shall be one line per project — each
   expense posting carries exactly one project (EARS-321) and counts once, under
   it; the fund row's line is BBM's own spend — plus one separate «exchange
