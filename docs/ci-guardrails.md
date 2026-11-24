@@ -660,8 +660,9 @@ tier by owner mandate (#588, the amendment above).**
 that subagent's OWN transcript — never the lead's. At the soft tier it injects a ROTATE
 directive (WIP-commit, write the checkpoint file it names, return with `ROTATE: <path>` as the
 first line), re-emitted per repeat step; at the hard tier it denies every tool call through
-the permission plane (§2.2) except the hand-back allow-list — chain-free git inspect / add /
-commit / push and writing the agent's own checkpoint. The tiers and the step are constants in
+the permission plane (§2.2) except the hand-back allow-list — git inspect / add / commit /
+push written in a plain ASCII alphabet with no quoting, escaping or shell operator, and
+writing the agent's own checkpoint. The tiers and the step are constants in
 the hook and are not restated here. Ported from ds-platform (their `#1374` / `#1376`); the
 contract an agent honours is [`.claude/agents/bbm-implementer.md`](../.claude/agents/bbm-implementer.md).
 Clause (d), read for this plane: there is no owner hatch, because the deny never strands work
