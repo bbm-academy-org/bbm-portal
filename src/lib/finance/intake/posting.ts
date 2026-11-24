@@ -559,11 +559,14 @@ async function recordTransfer(tx: PlatformTx, item: PostingItem): Promise<Record
   if (item.accountId === null || item.counterAccountId === null) {
     throw new FinanceRefusal('Перевод обязан назвать счёт списания и счёт зачисления.')
   }
-  if (item.paidAmount !== null || item.paidCurrency !== null) {
-    throw new FinanceRefusal('Межвалютный перевод записывается как kind = conversion.')
-  }
   const source = await requireMoneyAccount(tx, item.accountId, 'счёта списания')
   const target = await requireAccount(tx, item.counterAccountId)
+  if (item.paidAmount !== null || item.paidCurrency !== null) {
+    if (isReimbursementTransfer(item, target) && item.paidCurrency !== item.currency) {
+      return recordCrossCurrencyReimbursement(tx, item, source, target)
+    }
+    throw new FinanceRefusal('Межвалютный перевод записывается как kind = conversion.')
+  }
   assertAccountCurrency(source, item.currency, 'счёта списания')
   assertAccountCurrency(target, item.currency, 'счёта зачисления')
   // Which system account may stand here, and with which member, was already
@@ -673,6 +676,125 @@ async function recordCrossCurrencyResult(
     ...(await feePostings(tx, item, cross.money, 1)),
     ...(await realizedFxPostings(tx, conversionStep, cross.fxPoolLocks)),
   ]
+  return insertSingleStepOperation(tx, item, postings, conversionStep)
+}
+
+/**
+ * Spec 339 §K EARS-568 — a reimbursement settling a liability booked in another
+ * currency than its paying company account, as ONE operation: the whole sum
+ * that left the account (`paid_amount`, agent's fee included) credited to it;
+ * one conversion step from that currency into the liability's, receiving
+ * exactly the liability amount at the rate the two amounts imply (decision 18
+ * — never a Bank of Russia rate, EARS-553); the liability debit carrying the
+ * member; and the agent's itemized fee as the step's own expense on the fund
+ * project, the step disposing the rest. It enters the EARS-328 pool like the
+ * cross-currency vendor payment, and EARS-543's write-order refusal applies.
+ */
+async function recordCrossCurrencyReimbursement(
+  tx: PlatformTx,
+  item: PostingItem,
+  source: FinanceAccountView,
+  liability: FinanceAccountView,
+): Promise<RecordedOperation> {
+  const paidAmount = item.paidAmount
+  const paidCurrency = item.paidCurrency
+  if (paidAmount === null || paidCurrency === null) {
+    throw new FinanceRefusal(intakePaidPairRefusal(item) ?? 'Вторая сумма записывается парой.')
+  }
+  if (source.currency !== paidCurrency) {
+    throw new FinanceRefusal(
+      `Межвалютное возмещение списывается со счёта компании в ${paidCurrency}, а счёт ` +
+        `«${source.name}» ведётся в ${source.currency} (EARS-568).`,
+    )
+  }
+  assertAccountCurrency(liability, item.currency, 'счёта зачисления')
+  const fee = item.feeAmount ?? 0n
+  if (item.feeAmount !== null && item.feeCurrency !== paidCurrency) {
+    throw new FinanceRefusal(
+      `Комиссия платёжного агента записана в ${item.feeCurrency}, а счёт возврата ведётся в ` +
+        `${paidCurrency}: комиссия списывается в валюте счёта (EARS-568).`,
+    )
+  }
+  if (fee >= paidAmount) {
+    throw new FinanceRefusal(
+      'Комиссия платёжного агента должна быть меньше всей суммы, ушедшей со счёта: иначе на ' +
+        'погашение долга не остаётся ничего (EARS-568).',
+    )
+  }
+
+  const pair = { fromCurrency: paidCurrency, toCurrency: item.currency }
+  const fxPoolLocks = await lockRealizedFxPools(tx, [pair])
+  await lockFxSystemAccounts(tx, [
+    { kind: 'conversion', currency: paidCurrency },
+    { kind: 'conversion', currency: item.currency },
+    { kind: 'fx_result', currency: item.currency },
+    { kind: 'liability', currency: item.currency },
+    ...(item.feeAmount === null ? [] : [{ kind: 'expense' as const, currency: paidCurrency }]),
+  ])
+  await assertRealizedFxWriteOrder(tx, [pair], fxPoolLocks, item.occurredOn, item.source)
+
+  const disposed = paidAmount - fee
+  const from = await requireCurrency(tx, paidCurrency)
+  const to = await requireCurrency(tx, item.currency)
+  const conversionStep = {
+    ...pair,
+    fromAmount: disposed,
+    toAmount: item.amount,
+    rate: deriveRate(disposed, from.precision, item.amount, to.precision),
+  }
+  const conversionFrom = await ensureSystemAccount(tx, 'conversion', paidCurrency)
+  const conversionTo = await ensureSystemAccount(tx, 'conversion', item.currency)
+  const postings: PostingDraft[] = [
+    { accountId: source.id, amount: -disposed, currency: paidCurrency },
+    {
+      accountId: conversionFrom.id,
+      amount: disposed,
+      currency: paidCurrency,
+      conversionStepNo: 1,
+    },
+    {
+      accountId: conversionTo.id,
+      amount: -item.amount,
+      currency: item.currency,
+      conversionStepNo: 1,
+    },
+    {
+      accountId: liability.id,
+      amount: item.amount,
+      currency: item.currency,
+      memberId: item.memberId,
+    },
+  ]
+  if (item.feeAmount !== null) {
+    // The payout process's overhead, not the reimbursed service's: the fund (EARS-568).
+    const fund = await requireFundProject(tx)
+    const expense = await ensureSystemAccount(tx, 'expense', paidCurrency)
+    postings.push(
+      {
+        accountId: expense.id,
+        amount: fee,
+        currency: paidCurrency,
+        projectId: fund.id,
+        conversionStepNo: 1,
+      },
+      { accountId: source.id, amount: -fee, currency: paidCurrency, conversionStepNo: 1 },
+    )
+  }
+  postings.push(...(await realizedFxPostings(tx, conversionStep, fxPoolLocks)))
+  return insertSingleStepOperation(tx, item, postings, conversionStep)
+}
+
+/** The checked write of a one-step operation: the row, its step, then the postings naming it. */
+async function insertSingleStepOperation(
+  tx: PlatformTx,
+  item: PostingItem,
+  postings: readonly PostingDraft[],
+  conversionStep: {
+    fromCurrency: string
+    toCurrency: string
+    rate: string
+  },
+): Promise<RecordedOperation> {
   const parsed = parseRecordOperationInput(operationInput(item, postings))
   const accounts = await loadAccountFacts(tx, parsed.postings)
   assertNoRetiredAccount(accounts)

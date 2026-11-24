@@ -91,10 +91,17 @@ export function intakeAccountPlacementRefusal(
       '(EARS-528).'
     )
   }
-  if (state.paidAmount !== null || state.paidCurrency !== null) {
+  // EARS-568: the one second amount a reimbursement carries is its paying
+  // side in ANOTHER currency — the roubles that settled a foreign-card debt.
+  if (
+    (state.paidAmount !== null || state.paidCurrency !== null) &&
+    (state.paidAmount === null ||
+      state.paidCurrency === null ||
+      state.paidCurrency === state.currency)
+  ) {
     return (
-      'Возмещение закрывает долг в его собственной валюте одной суммой; вторая сумма ' +
-      'в другой валюте у него не записывается (EARS-528, EARS-513).'
+      'Возмещение в валюте долга закрывает его одной суммой; вторая сумма записывается только ' +
+      'у межвалютного возмещения — сколько ушло со счёта в другой валюте (EARS-528, EARS-568).'
     )
   }
   if (state.currency !== counterAccount.currency) {
