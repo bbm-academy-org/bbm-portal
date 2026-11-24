@@ -6,9 +6,8 @@ description: Use when ending a working session in this repo — "wrap up", "fini
 # wrap — session-end retro + methodology improvement
 
 Trackers: **GitHub Issues** (code/dev work for this repo) **+ Plane**
-(organizational / strategic `BBMP-*`). Instruction files: **CLAUDE.md**
-(authoritative on tracker choice) + **AGENTS.md** (entrypoint and fuller
-context). The evidence and method below work in both Claude Code and Codex.
+(organizational / strategic `BBMP-*`); tracker choice is owned by `AGENTS.md`
+§6. The evidence and method below work in both Claude Code and Codex.
 
 ## Hard rules (read before running)
 
@@ -139,7 +138,7 @@ authorize the wrap to edit it.
   the wrap done, `git status` carries no uncommitted instruction files.
 - **Tracker follow-ups:** load `task-canon`, then file discovered work in the
   tracker it assigns: code/dev work → GitHub; organizational / strategic
-  `BBMP-*` → Plane (`--workspace bbm`). When unsure, CLAUDE.md is authoritative.
+  `BBMP-*` → Plane (`--workspace bbm`). When unsure, `AGENTS.md` §6 is authoritative.
 - Commit the methodology changes on the current branch; stage only the files this
   retro touched.
 
@@ -222,8 +221,8 @@ that missed this rule.
 - **Two trackers, by domain — do not default to one.** **Code/dev** work for this
   repo lives in **GitHub Issues** (`gh issue list/view`, `bbm-academy-org/bbm-portal`).
   **Organizational / strategic / cross-project** work lives in **Plane**
-  (`pp-plane`, `--workspace bbm`, prefixes `BBMP-*`). CLAUDE.md is authoritative;
-  if AGENTS.md and CLAUDE.md disagree, CLAUDE.md wins. _(symptoms: «СТоп, мы разве
+  (`pp-plane`, `--workspace bbm`, prefixes `BBMP-*`). Owner: `AGENTS.md` §6.
+  _(symptoms: «СТоп, мы разве
   в этом проекте в Plane работем, а не в GitHub?»; «При чём тут Plane… я по инерции
   пошёл в Plane из-за инструкций».)_
 - **Plane CLI 403 / empty result → do NOT improvise raw REST.** Load the `pp-plane`
