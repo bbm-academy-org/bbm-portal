@@ -2,10 +2,9 @@
 // UserPromptSubmit hook: context-budget OPERATOR ADVISORY (issue #134; ported
 // from ds-platform tools/hooks/context-budget.mjs).
 //
-// Symptom → root cause: a session that runs past the cache-read cliff gets
-// slower and more expensive every turn, and nobody notices — the number is
-// invisible while the work feels fine. `/wrap` then happens too late, after the
-// retro material has already been squeezed out of the window.
+// Symptom → root cause: a session keeps growing and nobody notices — the
+// number is invisible while the work feels fine. `/wrap` then happens too
+// late, after the retro material has already been squeezed out of the window.
 //
 // This hook NEVER talks to the model. The ds-platform predecessor originally
 // injected `additionalContext` ordering the agent to stop taking new work; the
@@ -82,8 +81,8 @@ export function decideContextBudget(contextTokens) {
       tier: 'wrap',
       message:
         `⚠ context budget (#134): the session is at ≈${k}K tokens (threshold ` +
-        `${WRAP_THRESHOLD / 1000}K) — every further turn pays full cache-read price and the ` +
-        `retro material is being squeezed out. Time to /wrap. Advisory only: the call is yours.`,
+        `${WRAP_THRESHOLD / 1000}K) — the retro material is being squeezed out of the window. ` +
+        `Time to /wrap. Advisory only: the call is yours.`,
     }
   }
   if (context >= WARN_THRESHOLD) {
