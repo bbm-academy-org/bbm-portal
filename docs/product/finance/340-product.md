@@ -119,6 +119,31 @@ or a debt's day has no Bank of Russia rate, the reading says which currency and
 withholds the number rather than guess. Definitions: spec 338 §D
 (`docs/specs/338-ledger-core.md`); the screen is #584's.
 
+**Budget dashboard (#584) — the screen for that reading (owner, 2026-11-24).**
+The owner's three questions — how much have we spent, where did the money go,
+what is the spending dynamic — are answered on one page, «Бюджет BBM» under the
+finance reports, open to every member like every finance reading (decision 32).
+Top to bottom, in the order of importance: **the glass** — the limit, what is
+spent, what remains and how many months that lasts at the recent pace (the
+runway); **contributed versus spent** — the money brought in, what is owed to
+members, the cash at cost and income, with the check that they add up; **the
+dynamic** — spending per month, before and after income, with the average of
+the last three full months, and the cumulative result sinking below zero while
+there is no income, the contributions drawn beside it and the limit marked as
+the floor the glass empties at; **where it went** — spend by project, by
+expense category and by counterparty, each adding up to the total with the
+exchange result as its own line, and every line opening the operations behind
+it. A period choice narrows the dynamic and the breakdown; the glass and the
+cash always read from the budget's start. The figures can be shown in roubles,
+dollars or euros; the budget itself stays counted in its own currency, so the
+runway and every share do not change with the switch. The person holding the
+approve role sets, changes or closes the limit on this same page; nobody
+deletes it, and every change stays in the audit trail. What is provisional
+(a foreign-currency card debt not yet repaid) is marked as such, and what
+cannot be counted honestly is withheld with the reason. Definitions, states and
+the widget-by-widget mapping: spec 584 (`docs/specs/584-budget-dashboard.md`);
+how the charts look is #585's and the owner's pick.
+
 The unit-cost model has one real precedent: the Doctor.School lesson-cost
 calculator, which computes a per-lesson cost from per-role payroll with
 employment-mode tax loading plus external vendors, and derives margin against a
@@ -203,6 +228,26 @@ the two that decide the rest.
   hold at what it cost us, separately from the budget glass, and the two
   reconcile exactly while the budget starts on or before BBM's first
   operation. _(owner, 2026-11-24, #581)_
+- **US-24** — As a member, I see how much BBM spends per month, before and
+  after income, and the average of the last three full months, so I know the
+  pace. _(owner, 2026-11-24, #584)_
+- **US-25** — As a member, I see how many months the remaining limit lasts at
+  that pace — the runway. _(owner, 2026-11-24, #584)_
+- **US-26** — As a member, I see the cumulative result of BBM over time — below
+  zero while there is no income — with the contributions drawn beside it.
+  _(owner, 2026-11-24, #584)_
+- **US-27** — As a member, I see the spend by expense category and by
+  counterparty as well as by project, and I can open any line down to the
+  operations behind it. _(owner, 2026-11-24, #584)_
+- **US-28** — As a member, I read the dashboard in roubles, dollars or euros,
+  and the runway and the shares do not change when I switch. _(owner,
+  2026-11-24, #584; which rate converts — spec 584 open question 1)_
+- **US-29** — As the holder of the approve role, I set, change or close BBM's
+  budget limit on the page that shows it, and no one else can.
+  _(owner, 2026-11-24, #581 question 5 / spec 338 EARS-339)_
+- **US-30** — As a member, I can tell a provisional or withheld figure from a
+  final one at a glance, and I see why it is so. _(lead reading of #581's
+  provisional rule, recorded in spec 584)_
 
 ## Flows
 
@@ -283,6 +328,14 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
   entries, which differ whenever foreign money is held.
 - The per-project spend plus the exchange-result line adds up to the total
   spend.
+- The months of the spending chart add up to the total spend, and the runway
+  can be checked by hand from the remaining limit and the average shown beside
+  it.
+- The spend by category and by counterparty each add up to the total spend
+  with the exchange-result line, and every line opens to operations that add
+  up to it.
+- Only the approve role can set, change or close the limit; every member can
+  read it.
 
 ## Out of scope
 

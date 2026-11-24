@@ -846,6 +846,12 @@ research answers.
   provisional value alone — the Bank of Russia rate store, stored nowhere (the data-model rule: no table stores a balance), and all of
   them are read in `B`: none follows the reporting-currency switch of decision
   13, because the limit is denominated in `B` and the cost basis is built in it.
+  _(Amendment proposed 2026-11-24 by spec 584 EARS-722
+  (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec:
+  the figures are still computed only in `B`, and the dashboard's switch
+  converts what is shown — once per shown figure, through the EARS-325 graph —
+  leaving every ratio and every exactness claim in `B`. Which rate the switch
+  uses is spec 584's open question 1.)_
 - **EARS-345.** The breakdown of «spent» shall be one line per project — each
   expense posting carries exactly one project (EARS-321) and counts once, under
   it; the fund row's line is BBM's own spend — plus one separate «exchange
