@@ -29,4 +29,4 @@ Canon they grow from: `.claude/skills/task-cycle/SKILL.md` (stage 1 — the `Д�
 
 The owner sees the split BEFORE the "go". A plan whose lead column holds implementation, writing or bulk recon is wrong at the moment of approval, and that is caught at approval, not afterwards.
 
-The deterministic half of §1–§3 is the zero-dispatch hook `tools/hooks/zero-dispatch-guard.mjs` (#322), which blocks a lead that keeps editing files without a single `Agent` dispatch; this file is the canon it enforces.
+The deterministic half of §1–§3 is the zero-dispatch hook `tools/hooks/zero-dispatch-guard.mjs` (#322), which blocks a lead that keeps editing files without a single `Agent` dispatch; its threshold, one-shot bypass and severity live there and in `docs/ci-guardrails.md` §6. This file is the canon it enforces.
