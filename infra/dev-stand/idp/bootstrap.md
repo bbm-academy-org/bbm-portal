@@ -359,8 +359,10 @@ and the live IdP is only correct after the run at the end:
    someone looking at the live registration.
 4. The post-logout tripwire in the same spec — the literal `20`, same purpose.
 5. The two counts and the range in **the table above** — the only prose copy of
-   those numbers left. Anything else that quotes the range (`CLAUDE.md`,
-   `.claude/rules/dev-env.md`, `.claude/rules/parallel-sessions.md`) speaks of
+   those numbers left. Anything else that quotes the range
+   (`.claude/rules/dev-env.md`, `.claude/rules/parallel-sessions.md`,
+   `.claude/skills/task-cycle/SKILL.md`, `infra/dev-stand/README.md`, plus the
+   messages in `tests/helpers/base-url.ts` and `tools/dev/dev-ports.mjs`) speaks of
    `3000–3009` as the port range, not as a URI count: `rg -n '3000' --glob '!node_modules'`
    is the sweep that finds them.
 6. Then a **supervised `provision.sh` run** against the dev IdP — until it runs,

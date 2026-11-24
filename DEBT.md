@@ -848,7 +848,7 @@ Entry format:
       `docs/ci-guardrails.md` §5 register row. The template and the constant are
       operational copies the mechanism needs (a form to fill, strings to match);
       the §5 prose enumeration is a second retelling of the canon in the sense
-      CLAUDE.md's «path is the contract» bans, kept because the register row is
+      `AGENTS.md`'s «Path is the contract» bans, kept because the register row is
       read standalone — return condition: the first change to the facet SET
       (adding, renaming or dropping a facet); that PR replaces the §5
       enumeration with a pointer at step 4 and updates the template and the
