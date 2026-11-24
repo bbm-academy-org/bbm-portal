@@ -92,8 +92,8 @@ asserts the opposite of the paragraph.
 
 - **Skipping the pass** and going from merge straight to the report — the
   structural reason silent decisions accumulate.
-- **Naming a deviation in prose while writing `[]`** — the contradiction the
-  a reviewer will catch.
+- **Naming a deviation in prose while writing `[]`** — the contradiction a
+  reviewer will catch.
 - **Routing to nothing**: "noted for later" with no issue, no `DEBT.md` line and
   no explicit write-off is a deviation that was never surfaced.
 - **A `DEBT.md` line without a return condition** — it does not survive the next
