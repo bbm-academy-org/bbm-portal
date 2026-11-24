@@ -322,6 +322,8 @@ export function wrongWorktreeMessage(target, targetRoot, currentRoot) {
     `session's work (.claude/rules/parallel-sessions.md).\n` +
     `If that worktree is yours, switch the session to it and re-issue the write: ` +
     `EnterWorktree path:${enterWorktreeArg(targetRoot)}\n` +
+    `A SUBAGENT cannot switch worktrees: stop and return to the lead naming the ` +
+    `target path — the lead re-dispatches into the right worktree.\n` +
     `Do NOT author the file elsewhere (scratchpad, main tree) and copy it in.\n`
   )
 }
