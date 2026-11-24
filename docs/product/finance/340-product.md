@@ -47,15 +47,19 @@ behind it. This settles the rate-policy fork this PRD previously carried as its
 first open question.
 
 _Note, 2026-11-24 (spec 584, pending the owner's go on its open question 1):
-the budget dashboard's ₽/$/€ switch keeps this ruling under answer A, spec
-584 EARS-728 — each item is converted at a rate frozen at its own
-operation's date (the limit at its start date's), never a period-end rate and
-never one fetched at read time, so past figures do not move with the market
+the budget dashboard's ₽/$/€ switch converts only the flow figures — the
+monthly burn, the waterline, the breakdown and its drill-down; the budget
+block (limit, spent, remaining, runway, contributed, owed, cash at cost and
+the reconciliation) always stays in the budget's own currency. Under answer
+A, spec 584 EARS-728, the switch keeps this ruling: each operation is
+converted at a rate frozen at its own date, never a period-end rate and never
+one fetched at read time, so past figures do not move with the market
 (US-18). An item in the budget currency records no rate into $ or € of its
-own, so the frozen rate of its date is the Bank of Russia rate; the
-conversion is display only and the budget is still computed in its own
-currency. Answer B, EARS-729, would convert by the current recorded-conversion
-graph instead and says that it does not apply this ruling._
+own, so the frozen rate of its date is the Bank of Russia rate; where BBM
+itself paid in a foreign currency, the drill-down row also shows the amount it
+recorded in that currency. The conversion is display only. Answer B,
+EARS-729, would convert by the current recorded-conversion graph instead and
+says that it does not apply this ruling._
 
 **Current money is already F1b, not a sixth F3 report.** The accepted
 `Overview.dc.html` card that lists current non-system money-account balances and
@@ -147,10 +151,11 @@ no income; **where it went** — spend by project, by
 expense category and by counterparty, each adding up to the total with the
 exchange result as its own line, and every line opening the operations behind
 it. A period choice narrows the dynamic and the breakdown; the glass and the
-cash always read from the budget's start. The figures can be shown in roubles, dollars or euros, converted for display
-only (which rate converts is spec 584's open question); the budget itself stays
-counted in its own currency, so the runway and every share do not change with
-the switch. The person holding the
+cash always read from the budget's start. The dynamic and the breakdown can be
+shown in roubles, dollars or euros, converted for display only (which rate
+converts is spec 584's open question); the glass, the runway and the cash stay
+in the budget's own currency, with a line saying so, so they never disagree
+with each other whatever the switch shows. The person holding the
 approve role sets, changes or closes the limit on this same page; nobody
 deletes it, and every change stays in the audit trail. What is provisional
 (a foreign-currency card debt not yet repaid) is marked as such, and what
@@ -256,9 +261,11 @@ the two that decide the rest.
 - **US-27** — As a member, I see the spend by expense category and by
   counterparty as well as by project, and I can open any line down to the
   operations behind it. _(owner, 2026-11-24, #584)_
-- **US-28** — As a member, I read the dashboard in roubles, dollars or euros,
-  and the runway and the shares do not change when I switch. _(owner,
-  2026-11-24, #584; which rate converts — spec 584 open question 1)_
+- **US-28** — As a member, I read the dashboard's dynamic and breakdown in
+  roubles, dollars or euros, and the glass, the runway and the cash stay in
+  the budget's own currency when I switch. _(owner, 2026-11-24, #584; which
+  rate converts — spec 584 open question 1; the budget block staying in its
+  own currency is the lead's decision recorded in spec 584 EARS-722)_
 - **US-29** — As the holder of the approve role, I set, change or close BBM's
   budget limit on the page that shows it, and no one else can.
   _(owner, 2026-11-24, #581 question 5 / spec 338 EARS-339)_

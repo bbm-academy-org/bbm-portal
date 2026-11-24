@@ -849,13 +849,15 @@ research answers.
   _(Amendment proposed 2026-11-24 by spec 584 EARS-722
   (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec,
   and applying under either answer of its open question 1: the figures are
-  still computed only in `B`, and the dashboard's switch converts what is
-  shown at read time, never stored, and leaves every ratio in `B`. Under
-  answer A (EARS-728) each item is converted at the Bank of Russia rate of
-  its own operation's date and cash at cost is the balancing figure, so this
-  identity also holds exactly in the converted currency; under answer B
-  (EARS-729) one graph factor converts the whole reading, rounded once per
-  shown figure, and the exactness claims stay in `B`. Only answer A also
+  still computed only in `B`, and every figure of EARS-338…344 — the limit,
+  spent, remaining, contributed, income, owed to members, cash at cost and
+  this relation — is always shown in `B`, so this relation is read and shown
+  in `B` alone. The dashboard's switch converts only the flow figures built
+  from these items — the monthly series, the cumulative series and the
+  EARS-345 breakdown with its drill-down — at read time, never stored: under
+  answer A (EARS-728) each item at the Bank of Russia rate of its own
+  operation's date, under answer B (EARS-729) by one graph factor for the
+  reading, rounded once per shown figure. Only answer A also
   narrows spec 339 EARS-553, by the pending note written there; answer B
   needs nothing more. The dashboard lives at
   `/p/finance/reports/budget`, inside the `/p/finance` subtree, and its limit
