@@ -20,7 +20,7 @@ updated: 2026-11-24
   it that ships on its own. `docs/specs/README.md` names a spec after its issue,
   #586's `## Spec reference` declares «the dashboard spec from #584», and the
   figures it reads are owned by spec 338 §D, which is not re-opened here except
-  for the amendment notes named in §G. The product text, by contrast, is an
+  for the amendment notes named in §E and §G. The product text, by contrast, is an
   amendment of `340-product.md`, so the F3 user stories keep one home.
 
 ## Why
@@ -297,7 +297,7 @@ months available)`, months with no spend counted as zero; each shown once,
   operation, with «без контрагента» for an operation with no item or an item
   with none. The counterparty is read from `finance_intake_item.counterparty_id`
   (an operation has at most one item, `operation_id` being unique): spec 339 EARS-532
-  (wording corrected by this PR) stores it there, and no posting column shall
+  (wording revised 2026-11-24) stores it there, and no posting column shall
   be added for this grouping. Each grouping shall carry one separate «курсовой
   результат» line for the period's part (b) exchange results, which belong to
   no project, category or counterparty, and each grouping's lines shall sum
@@ -356,44 +356,79 @@ and EARS-722 hold under either.
   candidate other than `B` that the chosen rule (EARS-728 or EARS-729) cannot
   convert to shall be shown disabled with that rule's reason.
 - **EARS-722.** The computation stays in `B`; the switch converts only what is
-  shown. In a reporting currency other than `B`, every shown amount — the
-  limit, every §D figure, every month, waterline point, line and drill-down
-  value — shall be its `B` figure multiplied by **one** conversion factor for
-  the whole reading, as an exact rational, rounded half away from zero once per
-  shown figure; no converted value shall be stored. Share used, runway and
-  every ratio are taken in `B` and do not change with the switch; an expense's
-  own-currency amount in a drill-down row is shown as recorded; the exactness
-  of sums (EARS-344, EARS-710, EARS-716, EARS-718) is asserted in `B`, and a
-  converted view shall say that a sum may differ from its lines by rounding.
-  The header shall name the factor's source and date in the rule's words.
+  shown, at read time, and no converted value shall be stored. Share used,
+  runway and every ratio are taken in `B` and do not change with the switch;
+  they are checked by hand in `B`. An expense's own-currency amount in a
+  drill-down row is shown as recorded. The header shall name the conversion
+  rule in that rule's words (EARS-728 or EARS-729).
   _(This narrows the last sentence of spec 338 EARS-344 — «none follows the
   reporting-currency switch of decision 13» — to the computation, under
   either answer; the amendment note sits on EARS-344.)_
-- **EARS-728.** WHERE the display rate is the **Bank of Russia rate of one
-  as-of date** (open question 1, answer A — the lead's recommendation), the
-  factor of EARS-722 shall be the Bank of Russia rate from `B` to the chosen
-  currency, through RUB where neither is RUB (spec 339 EARS-550), looked up by
-  EARS-552 for **today** — the latest stored rate on or before today — and the
-  header shall say «пересчёт из <B> по курсу ЦБ на <rate date>, только для
-  показа». ₽ stays the reading's own currency in the usual case `B` = RUB. IF
-  no rate is stored for a currency on or before today, THEN that candidate
-  shall be disabled with «нет курса ЦБ». Because one date converts every
-  figure, every past month and line moves with the day's rate and the header
-  says from which date; no figure is valued at its own spend day. This answer
-  requires the pending note on spec 339 EARS-553, written out there.
+- **EARS-728.** WHERE the display rate is the **Bank of Russia rate of each
+  operation's own date** (open question 1, answer A — the lead's
+  recommendation, which keeps decision 18's frozen-at-its-date rule), every
+  item behind a shown figure — an expense value, an exchange result, an income
+  credit, a contribution credit, an owed-pool lot — shall be converted once
+  from `B` at the Bank of Russia rate of that item's own operation
+  `occurred_on`, through RUB where neither currency is RUB (spec 339
+  EARS-550), looked up by EARS-552 (the latest stored rate on or before that
+  date), as an exact rational rounded half away from zero once per item to the
+  chosen currency's minor units, and frozen with that date. The limit shall be
+  converted the same way at the rate of `starts_on`. An owed-pool lot shall be
+  converted at the rate of its debt's spend day (spec 338 EARS-340 item 3),
+  and the reimbursement's draw on it shall remove exactly that converted
+  value, so owed to members is zero in the chosen currency exactly when it is
+  zero in `B`; the reimbursement's exchange result is an item of its own
+  operation's date.
+  1. Every shown amount — spent, remaining (the converted limit − the
+     converted spent), contributed, income, owed to members, every month,
+     waterline point, breakdown line and drill-down row — shall be the integer
+     sum of its converted items, so the exactness of EARS-710, EARS-713,
+     EARS-716 and EARS-718 holds in the chosen currency as it does in `B`; the
+     trailing averages are the means of the converted months under EARS-712's
+     rounding.
+  2. Cash at cost shall be the **balancing figure** — the converted
+     contributed + the converted income − the converted spent + the converted
+     owed to members, over all of BBM's operations as EARS-343 reads it — so
+     the EARS-344 identity, and the equation of EARS-709, hold exactly in the
+     chosen currency too. The money tier shall say that cash at cost in that
+     currency is the sum of BBM's movements, each at its own date's rate, not
+     the `B` balance converted at one rate, and that it can be non-zero while
+     the `B` balance is zero.
+  3. The header shall say «пересчёт из <B> по курсу ЦБ на дату каждой
+     операции, только для показа; лимит — по курсу на <starts_on>». ₽ stays
+     the reading's own currency in the usual case `B` = RUB.
+  4. Past figures shall not move with the market: a converted figure changes
+     only when the ledger changes (a reversal, EARS-714) or when a rate is
+     newly stored for a date whose lookup had fallen back to an earlier one.
+  5. IF no rate is stored on or before an item's date, THEN every figure in
+     that currency that sums the item shall be withheld with «нет курса ЦБ на
+     <date>», and cash at cost shall be withheld whenever any figure of the
+     identity is; the `B` (and ₽) figures stay shown. A candidate shall be
+     disabled with «нет курса ЦБ» only WHERE no item of the reading, the limit
+     included, can be converted to it.
+
+  This answer requires the pending note on spec 339 EARS-553, written out
+  there.
+
 - **EARS-729.** WHERE the display rate is the **recorded pair-rate graph**
-  (open question 1, answer B), the factor of EARS-722 shall be EARS-325's
-  graph path ratio from `B` to the chosen currency as the graph stands at the
-  reading (fewest edges, lexicographic tie-break, exact rational), and the
-  header shall say «пересчёт из <B> по записанному курсу пар, как в «Итого»;
-  рыночный курс не используется». A candidate with no path shall be disabled
-  with «нет записанной конвертации <B> → <currency>». The header shall also
-  say that the converted figures, past months included, change whenever a new
-  conversion is recorded (for example the next reimbursement step of spec 339
-  EARS-568), because the graph is the current state of BBM's recorded
-  holdings, not each operation's own rate (decision 18 governs period reports
-  and is not what this graph applies). This answer needs no change to spec 339
-  EARS-553.
+  (open question 1, answer B), every shown amount in a reporting currency
+  other than `B` — the limit, every §D figure, every month, waterline point,
+  line and drill-down value — shall be its `B` figure multiplied by **one**
+  conversion factor for the whole reading: EARS-325's graph path ratio from
+  `B` to the chosen currency as the graph stands at the reading (fewest edges,
+  lexicographic tie-break, exact rational), rounded half away from zero once
+  per shown figure. The exactness of sums (EARS-344, EARS-710, EARS-716,
+  EARS-718) is asserted in `B`, and a converted view shall say that a sum may
+  differ from its lines by rounding. The header shall say «пересчёт из <B> по
+  записанному курсу пар, как в «Итого»; рыночный курс не используется». A
+  candidate with no path shall be disabled with «нет записанной конвертации
+  <B> → <currency>». The header shall also say that the converted figures,
+  past months included, change whenever a new conversion is recorded (for
+  example the next reimbursement step of spec 339 EARS-568), because the
+  graph is the current state of BBM's recorded holdings, not each operation's
+  own rate (decision 18 governs period reports and is not what this graph
+  applies). This answer needs no change to spec 339 EARS-553.
 
 ### H. The budget limit form (spec 338 EARS-339)
 
@@ -523,9 +558,15 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
   Russia rate (EARS-720; real data may hold neither);
 - provisional marks appearing on every derived figure and clearing across a
   reimbursement (EARS-719);
-- the single-factor rule, the URL fallbacks for `currency` and `period`, and
-  the chosen answer's factor and disabled reasons (EARS-715, EARS-721,
-  EARS-722, EARS-728 or EARS-729); the stale-rate notice (EARS-703);
+- the chosen answer's conversion — under A, each item converted once at its
+  own operation date's rate, the limit at `starts_on`'s, an owed lot at its
+  debt's spend day and removed at that value by the reimbursement, every sum
+  and the EARS-344 identity exact in the converted currency with cash at cost
+  as the balancing figure, past months unmoved by a newer rate, and the
+  per-date withholding; under B, the single graph factor and its rounding
+  note — plus the URL fallbacks for `currency` and `period` and the chosen
+  answer's disabled reasons (EARS-715, EARS-721, EARS-722, EARS-728 or
+  EARS-729); the stale-rate notice (EARS-703);
 - the route importing no table and computing no figure (EARS-702,
   `pnpm boundaries`).
 
@@ -547,15 +588,18 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
    either answer the budget is counted in its own currency, so the runway and
    every share stay the same in any currency; only the converted amounts
    differ.
-   - **A — the Bank of Russia rate of one date (recommended).** All three
-     currencies are always available. Every figure is converted at the rate of
-     the display date shown in the header, the way the requests queue shows
-     amounts (decision 39), so «$ spent» means «what our roubles are worth in
-     dollars today». It is a market rate, so it needs a second display-only
-     narrowing of spec 339 EARS-553 — its note is written out there.
+   - **A — the Bank of Russia rate of each operation's own date, frozen
+     (recommended).** The limit converts at the rate of the budget's start
+     date. € and $ are always available, and past months never move with the
+     market, which keeps decision 18 and US-18. Totals and the reconciliation
+     add up exactly in $ or €. The cost: cash at cost in $ is the sum of BBM's
+     movements at their own dates' rates, not today's balance at one rate, and
+     the page says so; and it needs a display-only narrowing of spec 339
+     EARS-553, whose pending note is written out there.
    - **B — the rate of BBM's own recorded conversions** (the `/p/finance`
-     «Итого» graph). No market rate enters anything, but € is unavailable
-     until BBM records a rouble-euro conversion, and every $ figure — past
-     months included — shifts whenever a new conversion is recorded.
+     «Итого» graph). No Bank of Russia rate enters anything, but € is
+     unavailable until BBM records a rouble-euro conversion, and every $
+     figure — past months included — shifts whenever a new conversion is
+     recorded.
 
    Decision needed: A or B.

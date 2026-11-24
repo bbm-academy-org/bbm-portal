@@ -1193,11 +1193,13 @@ the corpus's «потерялась в канале» case).
   (`docs/specs/584-budget-dashboard.md`) — in force only if the owner picks
   answer A of that spec's open question 1, and retired with EARS-728
   otherwise. The budget dashboard (`/p/finance/reports/budget`) may show its
-  figures in $ or € converted from the budget currency by the Bank of Russia
-  rate of one as-of date — today, through the EARS-552 lookup and through RUB
-  as in EARS-550. The conversion is display only: the figures are computed in
-  the budget currency by spec 338 §D, every converted value is computed at
-  read time, shown and never stored, and no figure of spec 338 EARS-340…345,
+  figures in $ or € converted from the budget currency item by item, each item
+  at the Bank of Russia rate of its own operation's date, frozen with that
+  date, and the limit at the rate of the budget's `starts_on` — through the
+  EARS-552 lookup and through RUB as in EARS-550. No figure is converted at
+  a rate fetched for the day of reading. The conversion is display only: the
+  figures are computed in the budget currency by spec 338 §D, every converted
+  value is computed at read time, shown and never stored, and no figure of spec 338 EARS-340…345,
   no posting, conversion step, balance or stored amount is computed from it.
   The dashboard route is then one more allowlisted reader beside the barrel,
   the sync CLI, the queue, the §J route and the §D budget read model; #586

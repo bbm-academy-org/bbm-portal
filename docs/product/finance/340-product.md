@@ -46,6 +46,17 @@ what every later reading uses, so any total is reproducible from the postings
 behind it. This settles the rate-policy fork this PRD previously carried as its
 first open question.
 
+_Note, 2026-11-24 (spec 584, pending the owner's go on its open question 1):
+the budget dashboard's ₽/$/€ switch keeps this ruling under answer A, spec
+584 EARS-728 — each item is converted at a rate frozen at its own
+operation's date (the limit at its start date's), never a period-end rate and
+never one fetched at read time, so past figures do not move with the market
+(US-18). An item in the budget currency records no rate into $ or € of its
+own, so the frozen rate of its date is the Bank of Russia rate; the
+conversion is display only and the budget is still computed in its own
+currency. Answer B, EARS-729, would convert by the current recorded-conversion
+graph instead and says that it does not apply this ruling._
+
 **Current money is already F1b, not a sixth F3 report.** The accepted
 `Overview.dc.html` card that lists current non-system money-account balances and
 its reproducible current-holdings total moved to #357 / spec 338 EARS-325. Its
@@ -212,7 +223,8 @@ the two that decide the rest.
   _(`agent-proposed — UNCONFIRMED`)_
 - **US-18** — As the owner, a cross-currency total is built from each operation's
   own recorded rate, so I can reproduce it from the register and it does not
-  change when market rates move. _(decision 18)_
+  change when market rates move. _(decision 18; the budget dashboard's switch
+  keeps it under spec 584 EARS-728 — see the note beside decision 18)_
 - **US-19** — As the owner, unit cost is expressed per **lesson** and per
   **course** — the production units of the business — rather than per an abstract
   unit I have to define each time. _(decision 19)_

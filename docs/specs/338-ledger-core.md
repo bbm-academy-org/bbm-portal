@@ -850,11 +850,14 @@ research answers.
   (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec,
   and applying under either answer of its open question 1: the figures are
   still computed only in `B`, and the dashboard's switch converts what is
-  shown — one factor per reading, rounded once per shown figure, never stored
-  — leaving every ratio and every exactness claim in `B`. Only answer A (the
-  Bank of Russia rate of one as-of date, EARS-728) also narrows spec 339
-  EARS-553, by the pending note written there; answer B (the EARS-325 graph,
-  EARS-729) needs nothing more. The dashboard lives at
+  shown at read time, never stored, and leaves every ratio in `B`. Under
+  answer A (EARS-728) each item is converted at the Bank of Russia rate of
+  its own operation's date and cash at cost is the balancing figure, so this
+  identity also holds exactly in the converted currency; under answer B
+  (EARS-729) one graph factor converts the whole reading, rounded once per
+  shown figure, and the exactness claims stay in `B`. Only answer A also
+  narrows spec 339 EARS-553, by the pending note written there; answer B
+  needs nothing more. The dashboard lives at
   `/p/finance/reports/budget`, inside the `/p/finance` subtree, and its limit
   form is the one EARS-339 places «on `/p/finance`».)_
 - **EARS-345.** The breakdown of «spent» shall be one line per project — each
