@@ -968,6 +968,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-11-19-575-vote-deadline-deviations -->
 
+- [ ] 2026-11-24 `worktree-path-guard` v2 (#594, PR #595) classifies an Edit/Write `file_path` after `absolutePath` + `canonicalPath`, and three path forms are not normalised to the registered roots: the extended-length prefix (`\\?\C:\…`), a local UNC admin share (`\\localhost\C$\…`), and the MSYS form (`/c/Users/…`, which resolves to `C:\c\Users\…`, outside the repo). A write spelled that way into the shared checkout or another worktree is classified `ok`. Recorded rather than fixed because no agent produces these forms by accident, ds-platform and v1 have the same holes, and the 8.3 short-name hole from the same review was closed (`realpathSync.native`) — return condition: a real cross-worktree write observed through one of these forms, or the next change to `worktree-path-guard`, whichever comes first; at that point `absolutePath` maps MSYS the way `commandReachPaths` does and strips the `\\?\` prefix / folds local UNC before classifying, with a RED test per form.
+
+<!-- debt-entry-end: 2026-11-24-594-worktree-guard-path-forms -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43

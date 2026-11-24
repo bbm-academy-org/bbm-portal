@@ -9,6 +9,15 @@
 // лида в основном дереве без вызова Agent между ними; порог
 // DISPATCH_WARN_THRESHOLD → одно WARN. Agent сбрасывает счётчик.
 //
+// One WARN per session (#594, ported from ds-platform `#1700`): the signal is
+// «you are drifting inline», and repeating it on every mutation past the
+// threshold was pure noise — ds-platform's week-long transcript audit found the
+// guard its second-loudest hook with zero blocks. The `warned` latch in the
+// state is sticky for the session (an Agent reset does not clear it); counting
+// itself is unchanged. State is keyed per ACTOR, not per session: a subagent
+// shares the lead's `session_id`, and without its own key a subagent's edits
+// would spend the lead's one warning (`dispatchStateKey`).
+//
 // Matcher включает и Agent, и мутации, чтобы хук видел и то, что считает, и то,
 // что сбрасывает. Read/Bash/Grep между правками матчер не поднимают — они и не
 // считаются, и не сбрасывают, что и есть нужная семантика «подряд».
@@ -30,6 +39,8 @@
 //
 // Контракт: stdin — JSON PreToolUse. WARN = exit 0 + JSON на stdout. Никогда не
 // блокирует. FAIL-OPEN.
+
+import { createHash } from 'node:crypto'
 
 import {
   DISPATCH_STATE_DIR_REL,
@@ -63,6 +74,31 @@ export function isCarveOut(env = process.env) {
   return v === '1' || v === 'true' || v === 'yes'
 }
 
+/**
+ * State key of the actor: the lead keys by `session_id`; a subagent (payload
+ * carries `agent_id`) gets `<session>--agent-<id>` so its streak and latch are
+ * its own. A `transcript_path` adds `--t-<hash>` (ds-platform `actorIdentity`):
+ * a Codex subagent shares the lead's `session_id` and carries no `agent_id`, so
+ * its transcript is the only thing that tells it apart. Empty when the payload
+ * names no session.
+ */
+export function dispatchStateKey(payload) {
+  const session = (payload && payload.session_id) || ''
+  if (!session) return ''
+  const agent = payload && payload.agent_id
+  const transcript = payload && payload.transcript_path
+  const actor = agent ? `${session}--agent-${agent}` : session
+  if (!transcript) return actor
+  const hash = createHash('sha256').update(String(transcript)).digest('hex').slice(0, 12)
+  return `${actor}--t-${hash}`
+}
+
+/** The once-per-session latch. Missing / corrupt → `false` (fail-open: a lost
+ * latch costs at most one extra WARN, never a wedged call). */
+export function readWarned(state) {
+  return Boolean(state) && state.warned === true
+}
+
 /** Прочитать серию: нет файла / битый JSON / отрицательное → 0 (fail-open). */
 export function readStreak(state) {
   const s = state && Number(state.streak)
@@ -86,7 +122,8 @@ export function warnMessage(streak, threshold = DISPATCH_WARN_THRESHOLD) {
  * - не пишущий инструмент → `{ action: 'silent' }` (состояние не трогаем);
  * - carve-out             → `{ action: 'silent' }`;
  * - серия+1 < порога      → `{ action: 'count', streak }`;
- * - серия+1 >= порога     → `{ action: 'warn',  streak }`.
+ * - серия+1 >= порога     → `{ action: 'warn',  streak }`, если в сессии ещё
+ *   не предупреждали, иначе `{ action: 'count', streak }` (латч #594).
  */
 export function decideDispatch({
   toolName,
@@ -95,13 +132,14 @@ export function decideDispatch({
   streak,
   threshold = DISPATCH_WARN_THRESHOLD,
   carveOut = false,
+  warned = false,
 }) {
   if (DISPATCH_TOOL_RE.test(toolName || '')) return { action: 'reset', streak: 0 }
   if (!MUTATION_TOOL_RE.test(toolName || '')) return { action: 'silent' }
   if (carveOut) return { action: 'silent' }
   if (inWorktree(cwd) || inWorktree(projectDir)) return { action: 'silent' }
   const next = (Number.isFinite(streak) && streak >= 0 ? streak : 0) + 1
-  if (next >= threshold) return { action: 'warn', streak: next }
+  if (next >= threshold && !warned) return { action: 'warn', streak: next }
   return { action: 'count', streak: next }
 }
 
@@ -162,15 +200,24 @@ function main() {
     const payload = readHookPayload()
     const cwd = payload.cwd || ''
     const projectDir = mainRepoRoot(cwd)
-    const statePath = stateFilePath(projectDir, DISPATCH_STATE_DIR_REL, payload.session_id || '')
+    const statePath = stateFilePath(projectDir, DISPATCH_STATE_DIR_REL, dispatchStateKey(payload))
+    const state = readState(statePath)
+    const warned = readWarned(state)
     const decision = decideDispatch({
       toolName: payload.tool_name,
       cwd,
       projectDir,
-      streak: readStreak(readState(statePath)),
+      streak: readStreak(state),
       carveOut: isCarveOut(process.env),
+      warned,
     })
-    if (decision.action !== 'silent') writeState(statePath, { streak: decision.streak })
+    if (decision.action !== 'silent') {
+      // The latch is sticky: the Agent reset clears the streak, never `warned`.
+      writeState(statePath, {
+        streak: decision.streak,
+        warned: warned || decision.action === 'warn',
+      })
+    }
     if (decision.action === 'warn') {
       emitWarn(warnMessage(decision.streak))
       process.exit(0)

@@ -20,16 +20,18 @@
 
 import {
   closeSync,
+  existsSync,
   fstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   readSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, join, posix, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Файл-флаг живых параллельных сессий; пишет `session-flag-writer.mjs`. */
@@ -287,6 +289,126 @@ export function powershellFileWritePaths(command) {
     if (path && !paths.includes(path)) paths.push(path)
   }
   return paths
+}
+
+/**
+ * Resolve `value` against `cwd` with the path flavour the paths themselves use:
+ * a drive-letter path is resolved as win32 on every platform, so a spec with
+ * `C:/…` fixtures reads the same on the Linux CI runner (ds-platform
+ * `hook-compat.mjs`).
+ */
+export function absolutePath(value, cwd) {
+  const api = /^[a-zA-Z]:[\\/]/.test(value) || /^[a-zA-Z]:[\\/]/.test(cwd) ? win32 : posix
+  return api.resolve(cwd || '.', value)
+}
+
+/**
+ * The real filesystem location of `value`, resolving every EXISTING ancestor —
+ * so a new file under a junction / symlink that points out of a worktree is
+ * classified where it would actually land (#594, ported from ds-platform
+ * `hook-compat.mjs`). A path that is not absolute for this platform (a `C:/…`
+ * fixture on Linux) and any IO error return the path unchanged: canonicalisation
+ * only ever adds precision, it never turns into a reason to block.
+ *
+ * The ancestor is resolved with `realpathSync.native` (review PR #595): unlike
+ * the JS `realpathSync` it expands an 8.3 short name (`BBM-PO~1` → `bbm-portal`)
+ * and returns the on-disk case, so the short form of a checkout compares equal
+ * to its registered root. If the native call fails, the JS one is the fallback.
+ */
+export function canonicalPath(value) {
+  try {
+    if (!isAbsolute(String(value))) return String(value)
+    let parent = resolve(value)
+    const tail = []
+    while (!existsSync(parent)) {
+      const up = dirname(parent)
+      if (up === parent) return resolve(value)
+      tail.unshift(parent.slice(up.length).replace(/^[\\/]/, ''))
+      parent = up
+    }
+    return join(realAncestor(parent), ...tail)
+  } catch {
+    return String(value)
+  }
+}
+
+function realAncestor(p) {
+  try {
+    return realpathSync.native(p)
+  } catch {
+    return realpathSync(p)
+  }
+}
+
+/** The command string of a shell tool input (Claude `command`, Codex `cmd`). */
+export function shellCommand(input) {
+  return typeof input === 'string' ? input : (input?.command ?? input?.cmd)
+}
+
+/**
+ * Bounded literal shell-writer parser (#594, ported from ds-platform
+ * `tools/hooks/shell-mutations.mjs`) — not a shell grammar and not a security
+ * boundary. Returns the absolute targets of ONE literal writer
+ * (`Set-Content`/`Add-Content`/`Out-File`/`Clear-Content`, `touch`/`mkdir`/`rm`/
+ * `rmdir`), `[]` for a command that writes nothing it recognises, and THROWS
+ * (the message is the reason) for a write it cannot isolate: a chained /
+ * redirected / dynamic writer, a move or copy, an interpreter write, a
+ * `git checkout|switch|restore|reset|clean|apply|read-tree`. What a throw costs
+ * is the caller's decision — `worktree-path-guard.mjs` refuses it only when the
+ * command visibly reaches a protected checkout.
+ *
+ * bbm adaptation: the read/checkpoint fast path also accepts `git -C <path> …`,
+ * the form `.claude/rules/dev-env.md` mandates, so a commit message that merely
+ * mentions `rm` is not mistaken for a write.
+ */
+export function shellMutationPaths(input, cwd) {
+  const command = shellCommand(input)
+  if (typeof command !== 'string') throw new Error('unparseable shell command')
+  // Quoted data (a commit message) is not a command: ignore it for the chain check.
+  const outsideQuotes = command.replace(/"[^"\r\n]*"|'[^'\r\n]*'/g, '')
+  if (
+    /^\s*git\s+(?:-C\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\S+)\s+)?(?:status|diff|log|show|rev-parse|add|commit|push)\b/.test(
+      command,
+    ) &&
+    !/[;&|`$<>\r\n]/.test(outsideQuotes)
+  )
+    return []
+  if (
+    /^\s*git\b/.test(command) &&
+    /\b(?:apply|checkout|switch|restore|reset|clean|read-tree)\b/.test(outsideQuotes)
+  )
+    throw new Error('a git checkout mutation cannot be isolated; use the file tools for edits')
+  const writer =
+    /\b(?:Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Copy-Item|New-Item|Clear-Content|tee|touch|mkdir|rmdir|rm|mv|cp)\b|(?:^|\s)sed\s+-i\b|writeFile(?:Sync)?\s*\(|\.write_text\s*\(|\.write_bytes\s*\(|open\s*\([^\n]*,[\s]*['"](?:w|a)|(?:^|[^>])>{1,2}(?!&)/i
+  if (!writer.test(command)) return []
+  // Redirection, chaining and PowerShell arrays could add destinations the
+  // single-target check below never sees.
+  if (/[;&|`$\r\n(){},<>]/.test(command))
+    throw new Error('a dynamic, chained or redirected shell write cannot be isolated')
+  const tokens = command.match(/"[^"\r\n]*"|'[^'\r\n]*'|[^\s]+/g) || []
+  const unquote = (s) => s.replace(/^(['"])(.*)\1$/, '$2')
+  const cmd = tokens[0]?.toLowerCase()
+  const paths = []
+  if (['set-content', 'add-content', 'out-file', 'clear-content'].includes(cmd)) {
+    const ix = tokens.findIndex((t) => /^-(?:literalpath|path|filepath)$/i.test(t))
+    const target = ix >= 0 ? tokens[ix + 1] : tokens[1]
+    if (!target || target.startsWith('-')) throw new Error('the shell writer has no literal target')
+    paths.push(unquote(target))
+  } else if (['touch', 'mkdir', 'rm', 'rmdir'].includes(cmd)) {
+    paths.push(
+      ...tokens
+        .slice(1)
+        .filter((t) => !t.startsWith('-'))
+        .map(unquote),
+    )
+  } else {
+    // Moves, copies, removals with flags and interpreter writes need a real
+    // grammar to find every destination; refusing to guess is the point.
+    throw new Error('an unparsed shell write (move, copy, remove or interpreter write)')
+  }
+  if (!paths.length || paths.some((p) => /[*?[\]<>]/.test(p)))
+    throw new Error('the shell write has ambiguous targets')
+  return paths.map((p) => absolutePath(p, cwd))
 }
 
 /**
