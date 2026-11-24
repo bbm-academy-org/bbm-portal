@@ -172,6 +172,24 @@ export function assertFinanceLedgerAccess(actor: FinanceActor): void {
   }
 }
 
+/**
+ * The budget record — creating, editing or retiring a limit (spec 338
+ * EARS-339): `finance-approve` alone. A limit is an authorization ceiling on
+ * spending, so it sits with the role that authorizes spend; it is not a
+ * reference row, so neither `platform-admin` nor `finance-entry` writes it.
+ */
+export function assertFinanceBudgetAccess(actor: FinanceActor): void {
+  assertAttributable(actor)
+  if (!holds(actor, FINANCE_APPROVE_ROLE)) {
+    throw new FinanceAccessRefusal(
+      `Бюджет фонда задаёт и меняет роль «${FINANCE_APPROVE_ROLE}» (EARS-339): лимит — потолок ` +
+        `разрешённых трат, он у роли, которая одобряет траты. У ${actor.email} её нет. Чтение ` +
+        'бюджета и его показателей открыто каждому участнику платформы. Роль выдаёт ' +
+        'администратор рабочего пространства.',
+    )
+  }
+}
+
 /** The same question as a boolean — for a READ that shapes itself by role, never for a write. */
 export function holdsFinanceLedgerRole(actor: FinanceActor): boolean {
   return holds(actor, FINANCE_APPROVE_ROLE)

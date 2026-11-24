@@ -123,6 +123,11 @@ describe('the budget record (spec 338 EARS-338/339)', () => {
   })
 
   it('EARS-339: every change of the limit is recorded in core.audit_event with the signed-in actor', async () => {
+    // core.audit_event is append-only and outlives the finance reset: read only this test's rows.
+    const before = await db.execute(
+      sql`select coalesce(max(id), 0)::bigint as id from core.audit_event`,
+    )
+    const since = String((before.rows[0] as { id: string | number }).id)
     const budget = await createBudget(APPROVER, BUDGET)
     const edited = await updateBudget(APPROVER, budget.id, {
       name: 'Бюджет фонда 2026',
@@ -138,11 +143,10 @@ describe('the budget record (spec 338 EARS-338/339)', () => {
     })
 
     const audited = await db.execute(sql`
-      select op, actor_email, diff from core.audit_event
-       where table_name = 'finance_budget' order by id
+      select actor_email, diff from core.audit_event
+       where table_name = 'finance_budget' and id > ${since}::bigint order by id
     `)
     const rows = audited.rows as {
-      op: string
       actor_email: string
       diff: Record<string, unknown>
     }[]
