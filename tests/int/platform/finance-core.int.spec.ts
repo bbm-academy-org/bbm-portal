@@ -590,12 +590,15 @@ describe('the person dimension (EARS-322)', () => {
     // Two columns named `created_by` therefore appear with different rules —
     // `finance_counterparty` and `finance_intake_item` carry the SUBMITTER in
     // that column (NOT NULL, RESTRICT, predating #516), everyone else carries
-    // the audit column.
+    // the audit column. The budget record (#593, spec 338 EARS-338) carries
+    // only the audit pair: a budget is not an act recorded to a person's name.
     expect(
       constraints.map((row) => `${row.table_name}.${row.column_name} → ${row.delete_rule}`).sort(),
     ).toEqual([
       'finance_account.created_by → SET NULL',
       'finance_account.updated_by → SET NULL',
+      'finance_budget.created_by → SET NULL',
+      'finance_budget.updated_by → SET NULL',
       'finance_category.created_by → SET NULL',
       'finance_category.updated_by → SET NULL',
       'finance_conversion_step.created_by → SET NULL',

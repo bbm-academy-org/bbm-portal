@@ -25,6 +25,7 @@ import {
   type CreateExpenseRequestInput,
 } from '@/lib/finance'
 import type { FinanceDocumentStorage } from '@/lib/finance/documents/storage'
+import { syncCbrRates } from '@/lib/finance/fx/store'
 import { closePlatformDb, getPlatformDb } from '@/lib/platform/db/client'
 
 import {
@@ -307,12 +308,17 @@ describe('the budget reading through the ledger (spec 338 §D)', () => {
 
   it('EARS-343: fixture 12 — a foreign-card debt is provisional at the CBR rate until the agent reimbursement replaces it', async () => {
     const refs = await seedRefs()
-    await fixtureWrite((tx) =>
-      tx.execute(sql`
-        insert into core.finance_fx_rate (source, currency, rate_date, nominal, value_rub)
-        values ('cbr', 'THB', '2026-02-02', 1, '2.5')
-      `),
-    )
+    // The rate enters through its own door, the sync job (EARS-552), with a
+    // recorded document in place of cbr.ru — a fixture insert would leave a
+    // `cli:int-fixture` audit row on finance_fx_rate behind.
+    await syncCbrRates({
+      from: '2026-02-02',
+      to: '2026-02-02',
+      fetchDaily: async () => ({
+        effectiveDate: '2026-02-02',
+        rates: [{ currency: 'THB', nominal: 1, valueRub: '2.5' }],
+      }),
+    })
     await contribute(refs, 100_000n)
     const own = await paid(
       request(refs, {
