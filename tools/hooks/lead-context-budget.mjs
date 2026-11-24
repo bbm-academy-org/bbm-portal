@@ -23,15 +23,20 @@
 // Contract:
 //   - Acts ONLY for the LEAD. A PreToolUse payload from inside a SUBAGENT
 //     carries `agent_id`; a lead call has none, and its `transcript_path` IS the
-//     lead's own transcript. `agent_id` present ⇒ exit 0 silent (a subagent-side
-//     budget is out of scope, see #457).
+//     lead's own transcript. `agent_id` present ⇒ exit 0 silent: a subagent's
+//     budget belongs to `subagent-context-budget.mjs`, not to this hook (#588).
 //   - Context size = the last assistant usage block, computed by
 //     `lastAssistantContextTokens` imported from `context-budget.mjs` — ONE
-//     definition of that parse, never a copy — over the file TAIL (`readTail`).
+//     definition of that parse, never a copy — over the file TAIL (`readTail`
+//     from `shared.mjs`, shared with the subagent hook).
 //   - ≥ SOFT_THRESHOLD → allow, plus an `additionalContext` warning. No
 //     `permissionDecision: "allow"`: that would pre-approve the dispatch and
 //     bypass the operator's own permission view.
-//   - ≥ HARD_THRESHOLD → `permissionDecision: "deny"`.
+//   - ≥ HARD_THRESHOLD → `permissionDecision: "deny"` — EXCEPT a closeout
+//     dispatch (`CLOSEOUT_SUBAGENT_TYPES`), which passes with an advisory:
+//     closing the wave in flight (the review verdict) frees lead context rather
+//     than spending it, so fencing it only strands the PR (#588, ported from
+//     ds-platform `#2373`).
 //   - The marker file `.claude/lead-budget-override` in the MAIN checkout lifts
 //     both tiers — but only when it CARRIES A REASON (its first line). An empty
 //     marker is not an override: the tiers still apply and the message says the
@@ -46,25 +51,33 @@
 //   - `BBM_HOOKS_DISABLE=1` silences it like every other hook of the stack.
 //   FAIL-OPEN: any parse / IO / logic error exits 0 with no output — a budget
 //   probe must never wedge a legitimate dispatch.
-//
-// `readTail` lives HERE rather than in `shared.mjs` on purpose: it has exactly
-// one consumer today (ds-platform shares it with a subagent-side budget hook
-// this repo deliberately did not port). It is exported, so the day that sibling
-// lands the move to `shared.mjs` is a rename, not a rewrite.
 
-import { closeSync, fstatSync, openSync, readFileSync, readSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { lastAssistantContextTokens } from './context-budget.mjs'
-import { hooksDisabled, isDirectRun, mainRepoRoot, readHookPayload } from './shared.mjs'
+import {
+  hooksDisabled,
+  isDirectRun,
+  mainRepoRoot,
+  readHookPayload,
+  readTail as readTailShared,
+} from './shared.mjs'
 
 /** Soft cap: the wave in flight may finish; no NEW wave may start.
- * Owner-tunable (owner decision, 2026-09-03, #457: 150K). */
-export const SOFT_THRESHOLD = 150_000
+ * Owner-tunable (owner decision, Anton, 2026-11-24, #588: 250K — a restart
+ * below it saves neither money nor subscription usage; 150K under #457). */
+export const SOFT_THRESHOLD = 250_000
 
 /** Hard cap: a new dispatch is DENIED — bring the task to a stop and hand off.
- * Owner-tunable (owner decision, 2026-09-03, #457: 160K). */
-export const HARD_THRESHOLD = 160_000
+ * Owner-tunable (owner decision, Anton, 2026-11-24, #588: 400K; 160K under
+ * #457). A closeout dispatch (`CLOSEOUT_SUBAGENT_TYPES`) still passes. */
+export const HARD_THRESHOLD = 400_000
+
+/** Subagent types that CLOSE the current wave: dispatching one frees lead
+ * context, so the hard tier never blocks it (it still gets an advisory). This
+ * repo has no lander agent — the lead runs `pnpm pr:land` itself. */
+export const CLOSEOUT_SUBAGENT_TYPES = Object.freeze(['bbm-reviewer'])
 
 /** Owner-only escape hatch, repo-relative. Gitignored: it is a live-session
  * marker, never a committed setting. */
@@ -76,19 +89,10 @@ export const OVERRIDE_REL = '.claude/lead-budget-override'
  * the very runs this hook exists to catch is tens of MB. */
 export const TAIL_BYTES = 4 * 1024 * 1024
 
-/** Last `maxBytes` of a file as UTF-8. A truncated first line is fine — the
- * parser skips unparseable lines. IO errors propagate to the fail-open catch. */
+/** Last `maxBytes` of a file as UTF-8 — `shared.mjs`'s reader, defaulted to
+ * this hook's window. */
 export function readTail(path, maxBytes = TAIL_BYTES) {
-  const fd = openSync(path, 'r')
-  try {
-    const size = fstatSync(fd).size
-    const length = Math.min(size, maxBytes)
-    const buf = Buffer.allocUnsafe(length)
-    readSync(fd, buf, 0, length, size - length)
-    return buf.toString('utf8')
-  } finally {
-    closeSync(fd)
-  }
+  return readTailShared(path, maxBytes)
 }
 
 /** Absolute path of the override marker for a given repo root. */
@@ -168,6 +172,16 @@ export function hardMessage(contextTokens, { reasonless = false } = {}) {
   )
 }
 
+export function closeoutMessage(contextTokens, subagentType) {
+  const k = Math.round(contextTokens / 1000)
+  const hard = Math.round(HARD_THRESHOLD / 1000)
+  return (
+    `⚠ Контекст лида ≈${k}K ≥ ${hard}K — диспатч ${subagentType} разрешён: закрытие текущей ` +
+    `волны освобождает контекст. Новую работу не начинать: доведи хвосты PR, напиши ` +
+    `финальный отчёт (skill report-task-outcome) и handoff (skill handoff-prompt).`
+  )
+}
+
 export function overrideMessage(contextTokens, reason = '') {
   const k = Math.round(contextTokens / 1000)
   const soft = Math.round(SOFT_THRESHOLD / 1000)
@@ -186,6 +200,7 @@ export function overrideMessage(contextTokens, reason = '') {
  * can say so.
  * - below SOFT                       → `{ action: 'silent' }`
  * - ≥ SOFT, reasoned override marker → `{ action: 'override' }` (loud allow)
+ * - ≥ HARD, closeout subagent type   → `{ action: 'closeout' }` (advisory allow)
  * - ≥ HARD                           → `{ action: 'deny' }`
  * - ≥ SOFT                           → `{ action: 'soft' }`
  *
@@ -194,15 +209,23 @@ export function overrideMessage(contextTokens, reason = '') {
  * `overrideReasonless` survives and every caller passing `contextTokens` is a
  * TS2353 (the same trap turned `lint-and-typecheck` red on PR #393).
  *
- * @param {{contextTokens?: number, override?: boolean, overrideReasonless?: boolean}} [args]
- * @returns {{action: 'silent'|'soft'|'deny'|'override', reasonless: boolean}}
+ * @param {{contextTokens?: number, override?: boolean, overrideReasonless?: boolean, subagentType?: string}} [args]
+ * @returns {{action: 'silent'|'soft'|'deny'|'closeout'|'override', reasonless: boolean}}
  */
-export function decide({ contextTokens, override, overrideReasonless = false } = {}) {
+export function decide({
+  contextTokens,
+  override,
+  overrideReasonless = false,
+  subagentType = '',
+} = {}) {
   const ctx = Number.isFinite(contextTokens) ? contextTokens : 0
   const reasonless = Boolean(overrideReasonless)
   if (ctx < SOFT_THRESHOLD) return { action: 'silent', reasonless }
   if (override) return { action: 'override', reasonless: false }
-  if (ctx >= HARD_THRESHOLD) return { action: 'deny', reasonless }
+  if (ctx >= HARD_THRESHOLD) {
+    const closeout = CLOSEOUT_SUBAGENT_TYPES.includes(String(subagentType || ''))
+    return { action: closeout ? 'closeout' : 'deny', reasonless }
+  }
   return { action: 'soft', reasonless }
 }
 
@@ -216,10 +239,12 @@ function main() {
     if (typeof transcriptPath !== 'string' || !transcriptPath) process.exit(0)
     const contextTokens = lastAssistantContextTokens(readTail(transcriptPath))
     const hatch = readOverride(projectRoot(payload))
+    const subagentType = String(payload.tool_input?.subagent_type || '')
     const decision = decide({
       contextTokens,
       override: hatch.active,
       overrideReasonless: hatch.reasonless,
+      subagentType,
     })
     if (decision.action === 'silent') process.exit(0)
     if (decision.action === 'deny') {
@@ -239,7 +264,9 @@ function main() {
     const msg =
       decision.action === 'override'
         ? overrideMessage(contextTokens, hatch.reason)
-        : softMessage(contextTokens, { reasonless: decision.reasonless })
+        : decision.action === 'closeout'
+          ? closeoutMessage(contextTokens, subagentType)
+          : softMessage(contextTokens, { reasonless: decision.reasonless })
     // The reason has to land in the SESSION LOG, not only in the model's
     // context: stderr is what the operator and the transcript actually keep.
     if (decision.action === 'override') {

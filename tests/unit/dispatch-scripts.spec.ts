@@ -4,6 +4,10 @@ import { describe, expect, it } from 'vitest'
 
 import { STAGED_TOKEN_RE, STAGING_RE } from '../../tools/hooks/dispatch-guard.mjs'
 import {
+  HARD_THRESHOLD as SUBAGENT_HARD_THRESHOLD,
+  SOFT_THRESHOLD as SUBAGENT_SOFT_THRESHOLD,
+} from '../../tools/hooks/subagent-context-budget.mjs'
+import {
   deriveBranch,
   extractPathTokens,
   gatherState,
@@ -226,6 +230,13 @@ describe('dispatch:brief — renderBrief', () => {
       '\u041e\u0442\u043a\u043b\u043e\u043d\u0435\u043d\u0438\u044f \u043e\u0442 \u043a\u043e\u043d\u0432\u0435\u043d\u0446\u0438\u0439',
     )
     expect(brief).toContain('pnpm dispatch:brief-check 134')
+  })
+
+  it('states the subagent context budget from the hook constants, never a copy (#588)', () => {
+    expect(brief).toContain('CONTEXT BUDGET:')
+    expect(brief).toContain(`${Math.round(SUBAGENT_SOFT_THRESHOLD / 1000)}K`)
+    expect(brief).toContain(`${Math.round(SUBAGENT_HARD_THRESHOLD / 1000)}K`)
+    expect(brief).toContain('ROTATE: <path>')
   })
 
   /**

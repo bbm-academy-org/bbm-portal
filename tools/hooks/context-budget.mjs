@@ -18,9 +18,10 @@
 // It reads the CURRENT session transcript (path arrives on stdin), takes the
 // last assistant message's usage block, and computes the live context size as
 // input_tokens + cache_read_input_tokens + cache_creation_input_tokens.
-// Thresholds are calibrated to the ~150K cache-read cost cliff of the session
-// model, with headroom for the wrap itself — below the first tier the hook is
-// silent.
+// Below the first tier the hook is silent. The tiers are the owner's (Anton,
+// 2026-11-24, #588) and match the lead dispatch fence in
+// `lead-context-budget.mjs`: a restart below 250K saves neither money nor
+// subscription usage, so the advisory does not fire before that.
 //
 // Contract: stdin — JSON UserPromptSubmit ({session_id, transcript_path, …}).
 // exit 0 always, with an optional `systemMessage` on stdout. FAIL-OPEN: any
@@ -31,11 +32,13 @@ import { readFileSync } from 'node:fs'
 
 import { emitWarn, hooksDisabled, isDirectRun, readHookPayload } from './shared.mjs'
 
-/** Approaching the cliff: advisory only, the session can keep going. */
-export const WARN_THRESHOLD = 110_000
+/** Approaching the wrap tier: advisory only, the session can keep going.
+ * Owner-tunable (owner decision, Anton, 2026-11-24, #588: 250K). */
+export const WARN_THRESHOLD = 250_000
 
-/** The /wrap threshold: every further turn pays full cache-read price. */
-export const WRAP_THRESHOLD = 120_000
+/** The /wrap tier: every further turn re-sends the whole context.
+ * Owner-tunable (owner decision, Anton, 2026-11-24, #588: 400K). */
+export const WRAP_THRESHOLD = 400_000
 
 /**
  * Live context size of the session: the usage block of the LAST assistant

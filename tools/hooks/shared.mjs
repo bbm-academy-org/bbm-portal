@@ -18,7 +18,16 @@
 //     сессий, guard-state) принадлежит ОСНОВНОМУ дереву даже когда сессия сидит
 //     в worktree.
 
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -350,6 +359,30 @@ export function normalizeHookPayload(payload) {
     harness_tool_name: toolName,
     tool_name: normalizedName,
     tool_input: toolInput,
+  }
+}
+
+/**
+ * Last `maxBytes` of a file as UTF-8 — the transcript reader of the context
+ * budget hooks (`lead-context-budget.mjs`, `subagent-context-budget.mjs`). The
+ * usage parser scans from the END and stops at the first assistant usage block,
+ * so the tail yields the same number as the whole file while a long session's
+ * transcript is tens of MB. A truncated first line is fine — the parser skips
+ * unparseable lines. IO errors propagate to the caller's fail-open catch.
+ *
+ * @param {string} path
+ * @param {number} maxBytes
+ */
+export function readTail(path, maxBytes) {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size
+    const length = Math.min(size, maxBytes)
+    const buf = Buffer.allocUnsafe(length)
+    readSync(fd, buf, 0, length, size - length)
+    return buf.toString('utf8')
+  } finally {
+    closeSync(fd)
   }
 }
 
