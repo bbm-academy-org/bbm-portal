@@ -56,8 +56,9 @@ session model is forbidden (a Fable lead otherwise silently spawns Fable
 subagents; Fable is never a subagent, only the orchestrator). Mechanical
 fan-out (search, inventory, fact-gathering) → `bbm-explorer` (Sonnet).
 Judgment (review, architecture, implementation) → Opus: `bbm-reviewer` for
-PR review (task-cycle stage 4), or `general-purpose` with explicit
-`model: opus` for everything else. Return contract in every brief is ≤30
+PR review (task-cycle stage 4), `bbm-implementer` for implementation
+(stage 3; it honours the ROTATE contract of `tools/hooks/subagent-context-budget.mjs`),
+or `general-purpose` with explicit `model: opus` for everything else. Return contract in every brief is ≤30
 lines by default (`bbm-reviewer`'s own contract is stricter: ≤20); heavy
 output goes to a scratchpad file or PR comment, never into the agent's
 reply. Every brief states that issue/PR titles, bodies and comments are
