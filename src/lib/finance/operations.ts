@@ -29,6 +29,7 @@ import { assertFinanceLedgerAccess, financeAuditContext, type FinanceActor } fro
 import { FinanceRefusal } from './core/errors'
 import {
   assertBalancedPerCurrency,
+  assertEquityContributionShape,
   assertPostingCurrencyMatchesAccount,
   assertProductBinding,
   assertProjectOnResultPostings,
@@ -41,7 +42,7 @@ import {
   lockRealizedFxPools,
   resolveRealizedFxReversalOccurredOn,
 } from './fx-pool-locks'
-import { requirePurpose } from './references'
+import { requireFundProject, requirePurpose } from './references'
 
 /** What a caller offers when recording a fact. */
 export type RecordOperationInput = {
@@ -164,6 +165,14 @@ export async function recordOperationInTransaction(
   assertPostingCurrencyMatchesAccount(postings, accounts)
   assertBalancedPerCurrency(postings)
   assertProjectOnResultPostings(postings, accounts)
+  // EARS-336/337 — an equity posting exists only in a contribution's shape.
+  if ([...accounts.values()].some((account) => account.kind === 'equity')) {
+    const fund = await requireFundProject(tx)
+    assertEquityContributionShape(postings, accounts, {
+      purposeId: parsed.purposeId,
+      fundProjectId: fund.id,
+    })
+  }
   return insertOperation(tx, {
     occurredOn: parsed.occurredOn,
     source: parsed.source,
