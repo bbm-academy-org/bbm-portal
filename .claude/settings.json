@@ -29,11 +29,6 @@
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/handoff-verify-reminder.mjs\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/context-budget.mjs\"",
             "timeout": 15
           }
@@ -47,16 +42,6 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/worktree-path-guard.mjs\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/main-tree-read-guard.mjs\"",
             "timeout": 10
           }
         ]
@@ -103,11 +88,6 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/askuserquestion-context-guard.mjs\"",
             "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/askuserquestion-calibration-guard.mjs\"",
-            "timeout": 10
           }
         ]
       },
@@ -132,28 +112,6 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/merge-gate.mjs\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/completion-report-gate.mjs\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/deviations-gate.mjs\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/tools/hooks/surface-decision-debt-gate.mjs\"",
             "timeout": 10
           }
         ]

@@ -6,14 +6,13 @@ description: The pre-merge iteration-end gate — a fresh-context subagent verif
 # run-iteration-end-checklist — the gate before the merge tail
 
 Ported from ds-platform (task 7.8, issue #139). **This skill checks only what
-nothing else already checks.** Three enforcement layers exist in this repo
+nothing else already checks.** Two enforcement layers exist in this repo
 before it, and the checklist REFERENCES them instead of re-running them:
 
-| Layer                                                                                                                       | Owns                                                                                                                                                                                                                                                                    |
-| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm pr:land <PR>` (`tools/gh/pr-land.mjs`)                                                                                | PR open / not draft / no conflict / carries a linkage (`Closes #N`, or `Part of #N` on an OPEN parent); a `VERDICT: APPROVE` review newer than the last commit that changed the diff; every check-run green on the current head SHA; then merge, board `Done`, teardown |
-| `tools/hooks/completion-report-gate.mjs`, `deviations-gate.mjs`, `surface-decision-debt-gate.mjs` (`tools/hooks/README.md`) | the shape of the final report at session Stop — «Проверить глазами:», «Отклонения от конвенций:», `surface-decision-debt:`                                                                                                                                              |
-| `.claude/skills/report-task-outcome/SKILL.md`, `surface-decision-debt/SKILL.md`, `write-iteration-summary/SKILL.md`         | what those lines mean, how the routing is derived, and the shape of the closing issue comment                                                                                                                                                                           |
+| Layer                                                                                                               | Owns                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm pr:land <PR>` (`tools/gh/pr-land.mjs`)                                                                        | PR open / not draft / no conflict / carries a linkage (`Closes #N`, or `Part of #N` on an OPEN parent); a `VERDICT: APPROVE` review newer than the last commit that changed the diff; every check-run green on the current head SHA; then merge, board `Done`, teardown |
+| `.claude/skills/report-task-outcome/SKILL.md`, `surface-decision-debt/SKILL.md`, `write-iteration-summary/SKILL.md` | what those lines mean, how the routing is derived, and the shape of the closing issue comment                                                                                                                                                                           |
 
 Duplicating any of those here would create a second source of truth that drifts.
 The items below are the gap between "the code compiles and someone approved it"
@@ -97,8 +96,8 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
     was executed and every item is routed — own issue via `pnpm issue:create`
     (threshold: `.claude/skills/task-canon/SKILL.md` §6), a `DEBT.md` line with a
     return condition, or an explicit write-off. Verify the
-    pass HAPPENED and the routing is real; the report LINES themselves are the
-    Stop hooks' jurisdiction, not this checklist's.
+    pass HAPPENED and the routing is real; the report LINES themselves are
+    `report-task-outcome`'s canon, not this checklist's.
 11. **Iteration summary** — **deferred** to
     `.claude/skills/write-iteration-summary/SKILL.md`; report `N/A (deferred)`
     unless the comment is already published, in which case name its URL. It lands

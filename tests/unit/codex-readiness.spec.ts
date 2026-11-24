@@ -85,9 +85,9 @@ describe('Codex hook coverage inventory', () => {
   })
 
   it.each([
-    ['completion-report-gate.mjs', 'completion'],
-    ['deviations-gate.mjs', 'deviations'],
-    ['surface-decision-debt-gate.mjs', 'debt'],
+    ['alpha-gate.mjs', 'alpha'],
+    ['beta-gate.mjs', 'beta'],
+    ['gamma-gate.mjs', 'gamma'],
   ])('distinguishes the %s adapter mode', (claudeScript, requiredMode) => {
     const inventory: HookCoverageEntry[] = [
       {
@@ -95,14 +95,14 @@ describe('Codex hook coverage inventory', () => {
         claudePath: `tools/hooks/${claudeScript}`,
         status: 'mapped',
         codexEvent: 'Stop',
-        codexPath: 'tools/hooks/codex-stop-adapter.mjs',
+        codexPath: 'tools/hooks/example-stop-adapter.mjs',
         codexArgs: requiredMode,
       },
     ]
     expect(
       auditHookCoverage(
         config('Stop', `tools/hooks/${claudeScript}`),
-        config('Stop', 'tools/hooks/codex-stop-adapter.mjs', ' wrong-mode'),
+        config('Stop', 'tools/hooks/example-stop-adapter.mjs', ' wrong-mode'),
         inventory,
       ),
     ).toEqual([expect.objectContaining({ kind: 'missing-codex-registration' })])
@@ -118,16 +118,16 @@ describe('Codex readiness inspection', () => {
             kind: 'missing-codex-registration',
             entry: {
               claudeEvent: 'Stop',
-              claudePath: 'tools/hooks/deviations-gate.mjs',
+              claudePath: 'tools/hooks/beta-gate.mjs',
               codexEvent: 'Stop',
-              codexPath: 'tools/hooks/codex-stop-adapter.mjs',
-              codexArgs: 'deviations',
+              codexPath: 'tools/hooks/example-stop-adapter.mjs',
+              codexArgs: 'beta',
             },
           },
         ],
         unverified: [],
       }),
-    ).toContain('Stop tools/hooks/deviations-gate.mjs')
+    ).toContain('Stop tools/hooks/beta-gate.mjs')
   })
 
   it('keeps tracked Codex hook config in the staged formatting policy', () => {
@@ -215,12 +215,12 @@ describe('Codex readiness inspection', () => {
       mkdirSync(resolve(root, '.claude'), { recursive: true })
       mkdirSync(resolve(root, '.codex'), { recursive: true })
       mkdirSync(resolve(root, 'tools', 'hooks'), { recursive: true })
-      writeFileSync(resolve(root, 'tools', 'hooks', 'codex-stop-adapter.mjs'), '')
+      writeFileSync(resolve(root, 'tools', 'hooks', 'example-stop-adapter.mjs'), '')
       writeFileSync(resolve(root, 'tools', 'hooks', 'other.mjs'), '')
       writeFileSync(resolve(root, '.claude', 'settings.json'), JSON.stringify({ hooks: {} }))
 
-      const codex = config('Stop', 'tools/hooks/codex-stop-adapter.mjs', ' completion')
-      codex.hooks.Stop[0].hooks[0].commandWindows = 'node tools/hooks/other.mjs deviations'
+      const codex = config('Stop', 'tools/hooks/example-stop-adapter.mjs', ' alpha')
+      codex.hooks.Stop[0].hooks[0].commandWindows = 'node tools/hooks/other.mjs beta'
       writeFileSync(resolve(root, '.codex', 'hooks.json'), JSON.stringify(codex))
 
       expect(

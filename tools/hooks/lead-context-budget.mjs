@@ -192,7 +192,7 @@ export function overrideMessage(contextTokens, reason = '') {
  * The JSDoc `@param` is load-bearing, not decoration: without it TS infers the
  * parameter shape from the destructuring defaults alone, so only
  * `overrideReasonless` survives and every caller passing `contextTokens` is a
- * TS2353. Same trap, same fix as `applyBlockBudget` in `shared.mjs`.
+ * TS2353 (the same trap turned `lint-and-typecheck` red on PR #393).
  *
  * @param {{contextTokens?: number, override?: boolean, overrideReasonless?: boolean}} [args]
  * @returns {{action: 'silent'|'soft'|'deny'|'override', reasonless: boolean}}

@@ -3,19 +3,14 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { decideAgentModel } from '../../tools/hooks/agent-model-guard.mjs'
 import {
   applyPatchPaths,
   normalizeHookPayload,
   powershellFileWritePaths,
-  recordWriteEvidence,
-  readStopContext,
-  writeEvidenceForPayload,
-} from '../../tools/hooks/codex-compat.mjs'
-import { decideCodexStop } from '../../tools/hooks/codex-stop-adapter.mjs'
-import { decideReminder } from '../../tools/hooks/handoff-verify-reminder.mjs'
+} from '../../tools/hooks/shared.mjs'
 import {
   collectRegisteredSessionLogs,
   registerSessionLog,
@@ -129,25 +124,14 @@ describe('Codex hook payload compatibility', () => {
     ).toBe(true)
   })
 
-  it('normalizes Codex shell calls while keeping read-only classification fail-open', () => {
+  it('normalizes Codex shell calls and passes unknown payloads through unchanged', () => {
     expect(
       normalizeHookPayload({ tool_name: 'shell_command', tool_input: { command: 'git status' } }),
     ).toMatchObject({ tool_name: 'Bash', tool_input: { command: 'git status' } })
 
-    expect(
-      writeEvidenceForPayload({
-        tool_name: 'shell_command',
-        tool_input: { command: 'git status' },
-      }),
-    ).toBe(false)
-    expect(
-      writeEvidenceForPayload({
-        tool_name: 'shell_command',
-        tool_input: { command: 'git commit -m "test: evidence"' },
-      }),
-    ).toBe(true)
-    expect(writeEvidenceForPayload({ tool_name: 'unknown', tool_input: null })).toBe(false)
-    expect(writeEvidenceForPayload(null)).toBe(false)
+    const unknown = { tool_name: 'unknown', tool_input: null }
+    expect(normalizeHookPayload(unknown)).toBe(unknown)
+    expect(normalizeHookPayload(null)).toBe(null)
   })
 
   it('normalizes async user-input titles and string options without transcript repeat inference', () => {
@@ -234,7 +218,7 @@ describe('Codex hook payload compatibility', () => {
     }
   })
 
-  it('records literal PowerShell file writes and path-checks them from nested cwd', () => {
+  it('path-checks literal PowerShell file writes from nested cwd', () => {
     const cwd = resolve(tmpdir(), 'bbm-main', '.claude', 'worktrees', '475', 'nested')
     const escaped = normalizeHookPayload({
       tool_name: 'exec_command',
@@ -249,7 +233,7 @@ describe('Codex hook payload compatibility', () => {
       tool_input: { command: "Get-Content -LiteralPath '../../../../escaped.txt'" },
     })
 
-    expect(writeEvidenceForPayload(escaped)).toBe(true)
+    expect(escaped.tool_input.file_paths).toEqual(['../../../../escaped.txt'])
     expect(
       decideEscapeBlock({ toolName: escaped.tool_name, toolInput: escaped.tool_input, cwd }).block,
     ).toBe(true)
@@ -259,7 +243,7 @@ describe('Codex hook payload compatibility', () => {
       block: false,
       inWorktreeSession: true,
     })
-    expect(writeEvidenceForPayload(read)).toBe(false)
+    expect(read.tool_input).not.toHaveProperty('file_paths')
     expect(
       decideEscapeBlock({ toolName: read.tool_name, toolInput: read.tool_input, cwd }),
     ).toEqual({
@@ -291,195 +275,6 @@ describe('Codex hook payload compatibility', () => {
     }
   })
 
-  // `spawn_agent` normalizes to `Agent`, and since #439 a dispatch is NOT write
-  // evidence in either harness: what the subagent did lives in its own
-  // transcript, so the dispatch answers nothing about what THIS session
-  // produced. Keeping the two harnesses aligned is the point — a Codex session
-  // must not be held to a completion report a Claude Code session is released
-  // from. Rationale in full: `isWriteToolUse()` in `completion-report-gate.mjs`.
-  it('classifies apply_patch as a write and spawn_agent as not one (#439)', () => {
-    expect(
-      writeEvidenceForPayload({
-        tool_name: 'apply_patch',
-        tool_input: { command: '*** Begin Patch\n*** Update File: src/a.ts\n*** End Patch' },
-      }),
-    ).toBe(true)
-    expect(
-      writeEvidenceForPayload({
-        tool_name: 'spawn_agent',
-        tool_input: { task_name: 'review', message: 'Review this.' },
-      }),
-    ).toBe(false)
-  })
-
-  it('preserves write evidence across compact, resume, and source-less SessionStart events', () => {
-    const writes: Array<{ writeActionSeen: boolean }> = []
-    const deps = {
-      mainRepoRoot: () => 'C:\\repo',
-      writeState: (_path: string, state: { writeActionSeen: boolean }) => writes.push(state),
-    }
-
-    for (const source of ['compact', 'resume', undefined]) {
-      recordWriteEvidence(
-        {
-          session_id: 'codex-209',
-          hook_event_name: 'SessionStart',
-          ...(source ? { source } : {}),
-        },
-        deps,
-      )
-    }
-    expect(writes).toEqual([])
-  })
-
-  it('resets write evidence only for explicit startup and clear SessionStart events', () => {
-    const writes: Array<{ writeActionSeen: boolean; haltSignal: boolean }> = []
-    const deps = {
-      mainRepoRoot: () => 'C:\\repo',
-      writeState: (_path: string, state: { writeActionSeen: boolean; haltSignal: boolean }) =>
-        writes.push(state),
-    }
-
-    for (const source of ['startup', 'clear']) {
-      recordWriteEvidence(
-        { session_id: `codex-${source}`, hook_event_name: 'SessionStart', source },
-        deps,
-      )
-    }
-    expect(writes).toEqual([
-      { writeActionSeen: false, haltSignal: false },
-      { writeActionSeen: false, haltSignal: false },
-    ])
-  })
-
-  it('persists a halt prompt monotonically and blocks deviations self-certification at Stop', () => {
-    let state = { writeActionSeen: true, haltSignal: false }
-    const deps = {
-      mainRepoRoot: () => 'C:\\repo',
-      readState: () => state,
-      writeState: (_path: string, next: typeof state) => {
-        state = next
-      },
-    }
-    const stop = {
-      session_id: 'codex-209',
-      hook_event_name: 'Stop',
-      stop_hook_active: false,
-      last_assistant_message: [
-        'Done: PR #209 merged.',
-        'Проверить глазами: tests.',
-        'Отклонения от конвенций: нет.',
-      ].join('\n'),
-    }
-
-    recordWriteEvidence(
-      {
-        session_id: 'codex-209',
-        hook_event_name: 'UserPromptSubmit',
-        prompt: 'Стоп, что ты делаешь?',
-      },
-      deps,
-    )
-    recordWriteEvidence(
-      {
-        session_id: 'codex-209',
-        hook_event_name: 'UserPromptSubmit',
-        prompt: 'Continue with the fix.',
-      },
-      deps,
-    )
-
-    expect(state).toEqual({ writeActionSeen: true, haltSignal: true })
-    expect(decideCodexStop('deviations', stop, deps)).toEqual({
-      block: true,
-      reason: 'self-cert',
-    })
-  })
-
-  it('does not arm halt evidence for a normal prompt', () => {
-    const state = { writeActionSeen: true, haltSignal: false }
-    const writeState = vi.fn()
-    const deps = {
-      mainRepoRoot: () => 'C:\\repo',
-      readState: () => state,
-      writeState,
-    }
-    const stop = {
-      session_id: 'codex-209',
-      hook_event_name: 'Stop',
-      stop_hook_active: false,
-      last_assistant_message: [
-        'Done: PR #209 merged.',
-        'Проверить глазами: tests.',
-        'Отклонения от конвенций: нет.',
-      ].join('\n'),
-    }
-
-    recordWriteEvidence(
-      {
-        session_id: 'codex-209',
-        hook_event_name: 'UserPromptSubmit',
-        prompt: 'Continue with the fix.',
-      },
-      deps,
-    )
-
-    expect(writeState).not.toHaveBeenCalled()
-    expect(decideCodexStop('deviations', stop, deps)).toEqual({ block: false })
-  })
-
-  it('uses stable PostToolUse evidence and Stop last_assistant_message without parsing Codex JSONL', () => {
-    const readTranscript = vi.fn(() => {
-      throw new Error('Codex transcript format is intentionally not parsed')
-    })
-    expect(
-      readStopContext(
-        {
-          session_id: 'codex-209',
-          hook_event_name: 'Stop',
-          stop_hook_active: false,
-          last_assistant_message: 'PR #209 merged. Проверить глазами: tests.',
-          transcript_path: 'unstable-codex-format.jsonl',
-        },
-        {
-          readTranscript,
-          readWriteEvidence: () => true,
-        },
-      ),
-    ).toEqual({
-      haltSignal: false,
-      lastAssistantText: 'PR #209 merged. Проверить глазами: tests.',
-      writeActionSeen: true,
-    })
-    expect(readTranscript).not.toHaveBeenCalled()
-  })
-
-  it('feeds Codex Stop payloads through the existing completion, deviations, and debt seams', () => {
-    const payload = {
-      session_id: 'codex-209',
-      hook_event_name: 'Stop',
-      stop_hook_active: false,
-      last_assistant_message: 'Done: PR #209 merged.',
-    }
-    const wrote = { readWriteEvidence: () => true }
-    expect(decideCodexStop('completion', payload, wrote)).toEqual({ block: true })
-    expect(decideCodexStop('deviations', payload, wrote)).toEqual({ block: true })
-    expect(decideCodexStop('debt', payload, wrote)).toEqual({ warn: true })
-
-    const readOnly = { readWriteEvidence: () => false }
-    expect(decideCodexStop('completion', payload, readOnly)).toEqual({ block: false })
-    expect(decideCodexStop('deviations', payload, readOnly)).toEqual({ block: false })
-    expect(decideCodexStop('debt', payload, readOnly)).toEqual({ warn: false })
-  })
-
-  it('keeps UserPromptSubmit prompt semantics unchanged', () => {
-    const output = decideReminder({
-      hook_event_name: 'UserPromptSubmit',
-      prompt: '## Current task\nContinue #209\n\n## Where we stopped\nTests are red.',
-    })
-    expect(output).toContain('handoff-verify')
-  })
-
   it('registers Codex transcript paths for cross-harness parallel-session detection', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'bbm-codex-session-'))
     const transcript = resolve(root, 'rollout.jsonl')
@@ -504,7 +299,7 @@ describe('repository-local Codex hooks', () => {
       .flatMap((groups: unknown) => groups as Array<{ hooks: Array<Record<string, string>> }>)
       .flatMap((group) => group.hooks)
 
-    expect(commands).toHaveLength(24)
+    expect(commands).toHaveLength(15)
     for (const hook of commands) {
       expect(hook.commandWindows).not.toMatch(/^powershell(?:\.exe)?\s/i)
       expect(hook.commandWindows).toMatch(/;\s*exit \$LASTEXITCODE$/)
@@ -560,20 +355,22 @@ describe('repository-local Codex hooks', () => {
     30_000,
   )
 
-  it('configures all eight event families and resolves commands from git root', () => {
+  // PostToolUse and Stop are gone since #589: their only consumers were the
+  // retired Stop gates (write evidence + the Codex Stop adapter).
+  it('configures the live event families and resolves commands from git root', () => {
     const hooks = JSON.parse(readFileSync(resolve(repoRoot, '.codex', 'hooks.json'), 'utf8'))
     expect(Object.keys(hooks.hooks)).toEqual(
       expect.arrayContaining([
         'SessionStart',
         'UserPromptSubmit',
         'PreToolUse',
-        'PostToolUse',
         'SessionEnd',
         'SubagentStart',
         'SubagentStop',
-        'Stop',
       ]),
     )
+    expect(Object.keys(hooks.hooks)).not.toContain('Stop')
+    expect(Object.keys(hooks.hooks)).not.toContain('PostToolUse')
 
     const commands = Object.values(hooks.hooks)
       .flatMap((groups: unknown) => groups as Array<{ hooks: Array<Record<string, string>> }>)
@@ -586,18 +383,11 @@ describe('repository-local Codex hooks', () => {
 
     expect(hooks.hooks.SessionStart[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.UserPromptSubmit[0]).not.toHaveProperty('matcher')
-    expect(hooks.hooks.Stop[0]).not.toHaveProperty('matcher')
-    expect(hooks.hooks.PostToolUse[0].matcher).toBe('.*')
     expect(hooks.hooks.SessionEnd[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.SessionEnd[0].hooks[0].timeout).toBeLessThanOrEqual(3)
     expect(hooks.hooks.SubagentStart[0]).not.toHaveProperty('matcher')
     expect(hooks.hooks.SubagentStop[0]).not.toHaveProperty('matcher')
     expect(JSON.stringify(hooks)).not.toContain('"matcher":"*"')
-    expect(
-      hooks.hooks.UserPromptSubmit[0].hooks.some((hook: { command: string }) =>
-        hook.command.includes('write-evidence-recorder.mjs'),
-      ),
-    ).toBe(true)
   })
 
   it('wires the Codex executor lifecycle and zero-dispatch guard through real config', () => {
@@ -626,17 +416,6 @@ describe('repository-local Codex hooks', () => {
         }),
       ]),
     )
-  })
-
-  it('the Codex PostToolUse recorder is fail-open on malformed payloads', () => {
-    const result = spawnSync(process.execPath, ['tools/hooks/write-evidence-recorder.mjs'], {
-      cwd: repoRoot,
-      input: '{ malformed json',
-      encoding: 'utf8',
-    })
-    expect(result.status).toBe(0)
-    expect(result.stdout).toBe('')
-    expect(result.stderr).toBe('')
   })
 
   it('routes spawn_agent through the configured model guard with valid Codex semantics', () => {

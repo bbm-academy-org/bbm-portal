@@ -20,10 +20,10 @@
 //
 // 2. Write-WARN (exit 0 + systemMessage). Первая запись в основное дерево в
 //    НЕизолированной сессии при живой параллели: предупреждение один раз плюс
-//    отметка `mainTreeWriteSeen` в per-session state — это write-половина
-//    carve-out'а read-only лида из `main-tree-read-guard.mjs` (после первой
-//    записи чтения предупреждаются в полную силу). Только WARN: блокировать
-//    здесь значит приучать к обходу, а не закрывать дыру пункта 1.
+//    отметка `mainTreeWriteSeen` в per-session state (защёлка «уже
+//    предупредили»; read-гард, который тоже её читал, выведен в #589). Только
+//    WARN: блокировать здесь значит приучать к обходу, а не закрывать дыру
+//    пункта 1.
 //
 // Контракт: stdin — JSON PreToolUse ({session_id, cwd, tool_name,
 // tool_input:{file_path}}). exit 2 + stderr = BLOCK. exit 0 (+ опциональный
@@ -166,8 +166,7 @@ function main() {
     if (decision.warn) {
       const statePath = stateFilePath(projectDir, MAIN_TREE_STATE_DIR_REL, payload.session_id || '')
       const state = readState(statePath)
-      // Предупреждаем один раз — на ПЕРВОЙ записи; дальше `mainTreeWriteSeen`
-      // заставляет read-гард предупреждать в полную силу.
+      // Предупреждаем один раз — на ПЕРВОЙ записи; `mainTreeWriteSeen` — защёлка.
       if (!state.mainTreeWriteSeen) {
         emitWarn(writeWarnMessage(decision.liveCount))
         writeState(statePath, { ...state, mainTreeWriteSeen: true })

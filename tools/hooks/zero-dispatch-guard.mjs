@@ -93,12 +93,6 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import {
-  MUTATING_COMMAND_RE,
-  SHELL_TOOLS,
-  WRITE_TOOLS,
-  stripNonCommandText,
-} from './completion-report-gate.mjs'
 import { isCodexExecutorTurn } from './codex-subagent-turn-recorder.mjs'
 import {
   ZERO_DISPATCH_STATE_DIR_REL,
@@ -112,6 +106,75 @@ import {
   stateFilePath,
   writeState,
 } from './shared.mjs'
+
+// ── Классификатор мутаций ────────────────────────────────────────────────
+// Переехал сюда из `completion-report-gate.mjs`, когда тот Stop-гейт был
+// выведен из эксплуатации (#589, решение владельца 2026-11-24): этот гард —
+// его единственный оставшийся потребитель, и здесь теперь единственный
+// источник истины набора пишущих инструментов и белого списка мутирующих
+// shell-команд.
+
+/** Инструменты, само использование которых — запись. */
+export const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+
+/** Инструменты оболочки: решает не имя, а сама команда. */
+export const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
+
+/** Начало команды: старт строки либо разделитель цепочки (`&&`, `;`, `|`). */
+const COMMAND_START = String.raw`(?:^|[\n;&|(])\s*`
+
+/**
+ * Консервативный белый список мутирующих shell-команд. Список НАМЕРЕННО узкий:
+ * цена пропущенной мутации — один не сработавший гейт, цена лишней записи в
+ * список — возврат ровно того ложного блока, который чинит #158. Поэтому
+ * распознаются только команды, у которых мутация написана в самом глаголе, и
+ * только в начале сегмента команды (`gh api` — только с явным мутирующим
+ * методом; `git -C <path>` учтён: в этом репо это каноничная форма).
+ */
+export const MUTATING_COMMAND_RE = new RegExp(
+  COMMAND_START +
+    '(?:' +
+    [
+      String.raw`git\s+(?:-C\s+(?:"[^"]*"|'[^']*'|\S+)\s+)?(?:commit|push|merge)(?![\w:-])`,
+      String.raw`gh\s+pr\s+(?:create|merge|edit|close|comment)(?![\w:-])`,
+      String.raw`gh\s+issue\s+(?:create|edit|close|comment)(?![\w:-])`,
+      String.raw`gh\s+api\s[^\n;|&]*?(?:--method[=\s]|-X\s)\s*(?:POST|PUT|PATCH|DELETE)(?![\w:-])`,
+      String.raw`pnpm\s+(?:pr:land|issue:create|board:status|deploy(?::[\w-]+)?)(?![\w:-])`,
+    ].join('|') +
+    ')',
+  'i',
+)
+
+/**
+ * Убирает из строки команды всё, что КОМАНДОЙ НЕ ЯВЛЯЕТСЯ: тела heredoc'ов и
+ * содержимое кавычек.
+ *
+ * Ревью PR #159 (MAJOR): белый список бежал по всей строке, а `\n` считался
+ * началом команды — поэтому текст, лишь УПОМИНАЮЩИЙ «git commit» (тело
+ * коммит-сообщения, body PR-комментария с инструкциями), зачислял сессию в
+ * пишущие. Это тот же ложный BLOCK, ради которого заведён #158.
+ *
+ * Выбранная семантика: цитата — не команда, но настоящая мутация в той же
+ * строке ловиться обязана. Поэтому вырезается только СОДЕРЖИМОЕ, а разделители
+ * остаются: `git -C "$W" commit` → `git -C "" commit` по-прежнему совпадает, а
+ * `gh pr comment … --body "$(cat <<'EOF' … EOF)"` остаётся мутацией по своему
+ * глаголу, что бы ни лежало в теле.
+ *
+ * Порядок важен: heredoc'и первыми (их тело может нести непарные кавычки),
+ * двойные кавычки раньше одинарных (`-m "don't"`). Оборванный heredoc —
+ * обрезанный транскрипт — режется до конца строки: тело командой не было.
+ */
+export function stripNonCommandText(command) {
+  let s = String(command || '')
+  const HEREDOC_BODY_RE = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2(?![\w-])/g
+  const HEREDOC_UNTERMINATED_RE = /<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1([^\n]*)\n[\s\S]*$/
+  // Заменяется на ОСТАТОК строки-открывашки, а не на плейсхолдер с `<<`:
+  // плейсхолдер сам подходил под правило оборванного heredoc'а и съедал
+  // настоящую команду ПОСЛЕ терминатора (`… EOF\ngit -C x commit`).
+  s = s.replace(HEREDOC_BODY_RE, (_m, _q, _d, rest) => rest)
+  s = s.replace(HEREDOC_UNTERMINATED_RE, (_m, _q, _d, rest) => rest)
+  return s.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/'[^']*'/g, "''")
+}
 
 /**
  * Число мутаций лида без единого диспатча, на котором гард блокирует.
@@ -242,13 +305,11 @@ export const AGENT_ENV_MARKER = 'AI_AGENT'
 export const DISPATCHED_TRANSCRIPT_RE = /"promptSource":"sdk"|"isSidechain":true/
 
 /**
- * Мутация лида. Состав НЕ ДУБЛИРУЕТСЯ: пишущие инструменты и узкий белый список
- * мутирующих shell-команд импортируются из `completion-report-gate.mjs` — там их
- * единственный источник истины, и там же живёт вырезание тел heredoc'ов и
+ * Мутация лида: пишущие инструменты и узкий белый список мутирующих
+ * shell-команд (см. блок классификатора выше), с вырезанием тел heredoc'ов и
  * кавычек (упоминание `git commit` в теле коммит-сообщения командой не
- * является). `Agent`/`Task` мутацией здесь НЕ считаются, хотя в том модуле
- * считаются write-действием: там вопрос «сессия что-то делала?», здесь —
- * «сессия делала это САМА?».
+ * является). `Agent`/`Task` мутацией НЕ считаются: вопрос гарда — «сессия
+ * делала это САМА?».
  */
 export function isMutatingCall(toolName, toolInput) {
   const tool = String(toolName || '')

@@ -32,8 +32,8 @@ of decisions; it is a record of lines.
 
 **Language: English**, like every project artifact
 (`.claude/skills/task-canon/SKILL.md`). The one exception is the fixed marker
-string «Отклонения от конвенций:» — a token the Stop hooks and the stage-7 canon
-match verbatim; it is never translated or paraphrased.
+string «Отклонения от конвенций:» — a token the stage-7 canon fixes verbatim; it
+is never translated or paraphrased.
 
 ## Input
 
@@ -81,9 +81,8 @@ with newlines — quoting on this box mangles it):
 ```
 
 The last line is the stage-7 canon line, verbatim. It is the same line the
-session's final report carries — the report is where
-`tools/hooks/deviations-gate.mjs` reads it (a hook cannot read a GitHub
-comment), this comment is where it survives the session. Deriving it:
+session's final report carries — the report is where the owner reads it, this
+comment is where it survives the session. Deriving it:
 `.claude/skills/surface-decision-debt/SKILL.md`.
 
 **Record the comment URL** in the final report's technical tail, so the owner's
