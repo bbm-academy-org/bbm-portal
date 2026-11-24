@@ -71,6 +71,8 @@ const actionSchema = z
       occurredOn: z.iso.date(),
       accountId: z.number().int().positive(),
       amount: z.string().regex(/^\d+$/),
+      // EARS-568: the payment agent's itemized fee on a cross-currency refund.
+      agentFeeAmount: z.string().regex(/^\d+$/).optional(),
       ...documentIdsShape,
     }),
     z.object({ act: z.literal('refuse'), reason: z.string().trim().min(1).max(2_000) }),
@@ -142,6 +144,9 @@ export async function POST(
             occurredOn: data.occurredOn,
             accountId: data.accountId,
             amount: BigInt(data.amount),
+            ...(data.agentFeeAmount === undefined
+              ? {}
+              : { agentFeeAmount: BigInt(data.agentFeeAmount) }),
             ...(data.documentIds === undefined ? {} : { documentIds: data.documentIds }),
           })
         case 'refuse':

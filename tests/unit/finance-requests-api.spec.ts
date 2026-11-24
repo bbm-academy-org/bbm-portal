@@ -1470,6 +1470,41 @@ describe('/p/finance/api/requests — payment queue acts (EARS-543/544/547/548)'
     })
   })
 
+  it('EARS-568: mark-reimbursed forwards the payment agent fee when the statement itemizes one', async () => {
+    state.markExpenseRequestReimbursed.mockResolvedValue({
+      ...request,
+      status: 'posted',
+      operationId: 6,
+    })
+
+    const response = await actOn({
+      act: 'mark-reimbursed',
+      snapshot: 'seen-token',
+      occurredOn: '2026-09-04',
+      accountId: 7,
+      amount: '900000',
+      agentFeeAmount: '10000',
+    })
+    const badFee = await actOn({
+      act: 'mark-reimbursed',
+      snapshot: 'seen-token',
+      occurredOn: '2026-09-04',
+      accountId: 7,
+      amount: '900000',
+      agentFeeAmount: '-5',
+    })
+
+    expect([response.status, badFee.status]).toEqual([200, 400])
+    expect(state.markExpenseRequestReimbursed).toHaveBeenCalledTimes(1)
+    expect(state.markExpenseRequestReimbursed).toHaveBeenCalledWith(expect.any(Object), 41, {
+      snapshot: 'seen-token',
+      occurredOn: '2026-09-04',
+      accountId: 7,
+      amount: 900_000n,
+      agentFeeAmount: 10_000n,
+    })
+  })
+
   it('EARS-547: the bulk act refuses a role-less member with 403 before reading the body', async () => {
     state.session = { user: { email: 'member@bbm.academy', roles: [PLATFORM_USER_ROLE] } }
 

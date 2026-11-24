@@ -113,7 +113,9 @@ function compareCodes(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
-function operationOrder(a: CurrentMoneyOperationFact, b: CurrentMoneyOperationFact): number {
+type ChainFact = { operationId: number; occurredOn: string; reverses: number | null }
+
+function operationOrder(a: ChainFact, b: ChainFact): number {
   return compareCodes(a.occurredOn, b.occurredOn) || a.operationId - b.operationId
 }
 
@@ -128,8 +130,11 @@ function operationOrder(a: CurrentMoneyOperationFact, b: CurrentMoneyOperationFa
  * reversal's date — an invariant enforced in another module, unstated in the
  * spec, and one that #387's backfill path already carries an exemption from.
  * This walks the `reverses` pointer, the same thing `fx-pool-locks.ts` computes.
+ *
+ * Exported for the budget cost-basis replay (spec 338 §D EARS-340 item 1), which
+ * removes fully reversed pairs by exactly this walk.
  */
-function activeOperations(operations: CurrentMoneyOperationFact[]): CurrentMoneyOperationFact[] {
+export function activeOperations<T extends ChainFact>(operations: readonly T[]): T[] {
   const present = new Set(operations.map((operation) => operation.operationId))
   const reversedBy = new Map<number, number>()
   for (const operation of [...operations].sort(operationOrder)) {

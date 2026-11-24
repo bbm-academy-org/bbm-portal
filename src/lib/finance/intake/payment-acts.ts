@@ -82,8 +82,18 @@ export type MarkExpenseRequestReimbursedInput = {
   occurredOn: string
   /** The company money account the refund left. */
   accountId: number
-  /** The refund debited from that account, in its currency (EARS-544). */
+  /**
+   * The refund debited from that account, in its currency (EARS-544). On a
+   * cross-currency reimbursement (EARS-568) the WHOLE sum that left it — the
+   * payment agent's fee and any tax it withheld included.
+   */
   amount: bigint
+  /**
+   * EARS-568 only: the fee the payment agent's statement itemizes, in the paying
+   * account's currency, less than `amount`. Refused on any other reimbursement —
+   * an agent's fee on a same-currency one is its own expense item.
+   */
+  agentFeeAmount?: bigint | null
   documentIds?: readonly number[]
 }
 
@@ -237,13 +247,15 @@ export async function markExpenseRequestReimbursed(
     // EARS-544's refusals (a refused or cancelled request among them) come
     // BEFORE the receipts are linked: the 0014/0019 link guard would otherwise
     // answer first, with a database error instead of a readable refusal.
-    const plan = planReimbursement(row, account.currency, input.amount)
+    const agentFee = input.agentFeeAmount ?? null
+    const plan = planReimbursement(row, account.currency, input.amount, agentFee)
     if ('refusal' in plan) throw new FinanceRefusal(plan.refusal)
     await linkReadyDocumentsInTransaction(tx, input.documentIds ?? [], row.id, memberId)
     const { request } = await reimburseInTransaction(tx, actor, memberId, row, {
       account,
       refund: input.amount,
       refundDate: input.occurredOn,
+      agentFee,
     })
     return request
   })
@@ -254,6 +266,13 @@ type ReimbursementPlan = {
   refund: bigint
   /** What the posting act writes when the request is not yet posted. */
   postingDetails: IntakePostingMoneyDetails | null
+  /**
+   * EARS-568 — set only when the booked liability is in another currency than
+   * the refund account: the liability side the transfer settles (its exact
+   * booked amount) and the payment agent's itemized fee, if any. `refund` is
+   * then the paying side, the whole sum that left the account.
+   */
+  crossCurrency: { amount: bigint; currency: string; agentFee: bigint | null } | null
 }
 
 /**
@@ -265,6 +284,7 @@ function planReimbursement(
   row: IntakeRow,
   currency: string,
   refund: bigint | null,
+  agentFee: bigint | null = null,
 ): { refusal: string } | ReimbursementPlan {
   if (!row.personalFunds || !row.alreadyPaid) {
     return {
@@ -287,15 +307,6 @@ function planReimbursement(
   const posted = row.status === 'posted'
   const booked = posted || row.paidCurrency !== null
   const liabilityCurrency = booked ? (row.paidCurrency ?? row.currency) : currency
-  if (booked && liabilityCurrency !== currency) {
-    return {
-      refusal:
-        `Долг по заявке #${row.id} ${posted ? 'записан' : 'заявлен'} в ${liabilityCurrency}, а ` +
-        `счёт возврата ведётся в ${currency}: перевод одновалютный, возврат делается со счёта в ` +
-        `валюте долга; межвалютное погашение уже записанного долга в v1 не поддерживается ` +
-        '(EARS-544, EARS-528).',
-    }
-  }
   if (row.feeCurrency !== null && row.feeCurrency !== liabilityCurrency) {
     return {
       refusal:
@@ -304,15 +315,26 @@ function planReimbursement(
     }
   }
 
+  if (booked && liabilityCurrency !== currency) {
+    return planCrossCurrencyReimbursement(row, currency, refund, agentFee, posted)
+  }
+  if (agentFee !== null) {
+    return {
+      refusal:
+        `Комиссия платёжного агента записывается только в межвалютном возврате, где долг и счёт ` +
+        `возврата в разных валютах; здесь возврат идёт в ${currency} — комиссия агента ` +
+        'оформляется отдельной позицией расхода (EARS-568).',
+    }
+  }
   if (booked) {
     const required = intakeLiabilityOf(row).amount
     if (refund !== null && refund !== required) return requiredRefusal(row, required, currency)
-    return { refund: required, postingDetails: posted ? null : {} }
+    return { refund: required, postingDetails: posted ? null : {}, crossCurrency: null }
   }
   if (currency === row.currency) {
     const required = row.amount + fee
     if (refund !== null && refund !== required) return requiredRefusal(row, required, currency)
-    return { refund: required, postingDetails: {} }
+    return { refund: required, postingDetails: {}, crossCurrency: null }
   }
   // Cross-currency: the act asserts the card lost the refund less the fee for
   // the spend itself (EARS-544) — that is the account-side amount it writes.
@@ -331,7 +353,60 @@ function planReimbursement(
         'ничего (EARS-544).',
     }
   }
-  return { refund, postingDetails: { paidAmount: refund - fee, paidCurrency: currency } }
+  return {
+    refund,
+    postingDetails: { paidAmount: refund - fee, paidCurrency: currency },
+    crossCurrency: null,
+  }
+}
+
+/**
+ * EARS-544's last clause → EARS-568: a debt already booked in another currency
+ * than the refund account's is settled for exactly its booked amount, whatever
+ * the roubles came to. No required sum exists, so the refund need only be
+ * positive and exceed the agent's itemized fee.
+ */
+function planCrossCurrencyReimbursement(
+  row: IntakeRow,
+  currency: string,
+  refund: bigint | null,
+  agentFee: bigint | null,
+  posted: boolean,
+): { refusal: string } | ReimbursementPlan {
+  const liability = intakeLiabilityOf(row)
+  if (refund === null) {
+    return {
+      refusal:
+        `Долг по заявке #${row.id} записан в ${liability.currency}, а возврат идёт в ${currency}: ` +
+        'сумму, ушедшую со счёта возврата, называет отметка — она не вычисляется по курсу ' +
+        '(EARS-544, EARS-568).',
+    }
+  }
+  if (refund <= 0n) {
+    return {
+      refusal: `Сумма возврата по заявке #${row.id} должна быть положительной (EARS-568).`,
+    }
+  }
+  if (agentFee !== null && agentFee <= 0n) {
+    return {
+      refusal: `Комиссия платёжного агента по заявке #${row.id} — положительная сумма (EARS-568).`,
+    }
+  }
+  if (agentFee !== null && agentFee >= refund) {
+    return {
+      refusal:
+        `Комиссия платёжного агента ${formatMinorUnits(agentFee, currency)} должна быть меньше ` +
+        `всей суммы возврата ${formatMinorUnits(refund, currency)} по заявке #${row.id}: без неё ` +
+        'на погашение долга не остаётся ничего (EARS-568).',
+    }
+  }
+  return {
+    refund,
+    // An unposted request of this shape posts first, at its own `occurred_on`,
+    // with the liability in its `paid_currency` (EARS-544).
+    postingDetails: posted ? null : {},
+    crossCurrency: { ...liability, agentFee },
+  }
 }
 
 function requiredRefusal(row: IntakeRow, required: bigint, currency: string) {
@@ -357,9 +432,10 @@ async function reimburseInTransaction(
     refund: bigint | null
     refundDate: string
     requestDate?: string
+    agentFee?: bigint | null
   },
 ): Promise<{ request: FinanceIntakeItemView; transfer: FinanceIntakeItemView }> {
-  const plan = planReimbursement(row, act.account.currency, act.refund)
+  const plan = planReimbursement(row, act.account.currency, act.refund, act.agentFee ?? null)
   if ('refusal' in plan) throw new FinanceRefusal(plan.refusal)
 
   const request =
@@ -373,15 +449,31 @@ async function reimburseInTransaction(
           snapshotCheckedByCaller: true,
         })
 
-  const liability = await ensureSystemAccount(tx, 'liability', act.account.currency)
+  // EARS-568: `amount`/`currency` stay the liability side; the roubles that
+  // left the paying account — agent's fee included — are `paid_*`, the
+  // itemized fee `fee_*` in the paying account's currency.
+  const cross = plan.crossCurrency
+  const liability = await ensureSystemAccount(
+    tx,
+    'liability',
+    cross?.currency ?? act.account.currency,
+  )
   const filed = await createIntakeItemInTransaction(
     tx,
     reimbursementTransferValues(
       {
         occurredOn: act.refundDate,
         accountId: act.account.id,
-        amount: plan.refund,
-        currency: act.account.currency,
+        ...(cross === null
+          ? { amount: plan.refund, currency: act.account.currency }
+          : {
+              amount: cross.amount,
+              currency: cross.currency,
+              paidAmount: plan.refund,
+              paidCurrency: act.account.currency,
+              feeAmount: cross.agentFee,
+              feeCurrency: cross.agentFee === null ? null : act.account.currency,
+            }),
         memberId: row.memberId!,
         projectId: row.projectId,
         settlesItemId: row.id,

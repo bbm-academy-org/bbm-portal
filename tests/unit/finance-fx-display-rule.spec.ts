@@ -152,6 +152,8 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
       return /\.(ts|tsx|mjs)$/.test(name) ? [full] : []
     })
   }
+  /** The one ledger-side reader the spec allows (spec 338 EARS-340 item 3). */
+  const BUDGET_READING = 'src/lib/finance/budget/reading.ts'
   const files = walk(SRC).map((f) => ({
     path: relative(ROOT, f).replaceAll('\\', '/'),
     text: readFileSync(f, 'utf8'),
@@ -168,7 +170,10 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
       (f) =>
         f.path.startsWith('src/lib/finance/') &&
         !f.path.startsWith(FX_DIR) &&
-        f.path !== 'src/lib/finance/index.ts',
+        f.path !== 'src/lib/finance/index.ts' &&
+        // Spec 338 EARS-340 item 3 narrows EARS-553 for the budget reading alone:
+        // its loader values a member's open foreign-currency debt provisionally.
+        f.path !== BUDGET_READING,
     )
     expect(ledgerSide.map((f) => f.path)).toEqual(
       expect.arrayContaining([
@@ -236,6 +241,8 @@ describe('CBR rates are a presentation source only (EARS-553)', () => {
     'src/app/(platform)/p/finance/requests/',
     'src/app/(platform)/p/finance/reports/market-rate/',
     'tools/platform/finance-fx-sync.ts',
+    // Spec 338 EARS-340 item 3 / spec 339 EARS-553 note — the budget read model.
+    BUDGET_READING,
   ]
   const isAllowedConsumer = (path: string) =>
     FX_CONSUMERS_ALLOWED.some((allowed) => path === allowed || path.startsWith(allowed))
