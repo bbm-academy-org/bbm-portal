@@ -790,9 +790,14 @@ a declared clause.
   existing counterparty or create one inline (any submitter may — it is a
   name, not money data; names are case-insensitively unique, creation is
   audited per spec 201); renaming is reference administration
-  (`platform-admin` or `finance-entry`, EARS-529); a posting carries the FK, so «what did we
+  (`platform-admin` or `finance-entry`, EARS-529); the intake item carries the FK (`finance_intake_item.counterparty_id`; an operation has at most one item), so «what did we
   pay X» is a query. Merging duplicates is out of scope for v1 — admin
   rename covers it.
+
+  _Revised 2026-11-24 (spec 584 review, #584): the previous text said «a posting
+  carries the FK»; the shipped schema has always stored it on the intake item,
+  and the wording now says so. No posting column is implied._
+
 - **EARS-526.** WHERE no purpose in the reference fits, the form shall let
   the member file a free-text **purpose proposal** alongside a draft request;
   the proposal is not a purpose, appears in the reference cabinet,

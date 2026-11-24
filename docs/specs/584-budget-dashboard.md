@@ -296,10 +296,9 @@ months available)`, months with no spend counted as zero; each shown once,
   counterparty** — by the counterparty of the intake item that posted the
   operation, with «без контрагента» for an operation with no item or an item
   with none. The counterparty is read from `finance_intake_item.counterparty_id`
-  (an operation has at most one item, `operation_id` being unique): spec 339
-  EARS-532's «a posting carries the FK» is wording drift from the shipped
-  schema, which stores it on the item, and no posting column shall be added
-  for this grouping. Each grouping shall carry one separate «курсовой
+  (an operation has at most one item, `operation_id` being unique): spec 339 EARS-532
+  (wording corrected by this PR) stores it there, and no posting column shall
+  be added for this grouping. Each grouping shall carry one separate «курсовой
   результат» line for the period's part (b) exchange results, which belong to
   no project, category or counterparty, and each grouping's lines shall sum
   exactly to the period's spent. A retired category, project or counterparty
