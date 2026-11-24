@@ -504,9 +504,16 @@ ds-platform's guard (their `#1453` / `#2373`). The target is now classified agai
 checkout roots git has registered (`git worktree list`) and at its real location (junction
 and symlink ancestors resolved), so a new file under a junction that leads out of a worktree
 is caught. Two verdicts join the main-tree escape, each with its own message: `wrong-worktree`
-(a worktree session writing another registered worktree) and `unparseable-shell` (a Codex
-shell write the bounded parser cannot isolate, refused only when the command visibly reaches
-the shared checkout or another worktree). What stays allowed, and why, is the guard's own
+(a write into another registered worktree by a subagent — `agent_id` in the payload — or by a
+session LAUNCHED inside a worktree, `CLAUDE_PROJECT_DIR` = that worktree) and
+`unparseable-shell` (a Codex shell write the bounded parser cannot isolate, refused only when
+the command visibly reaches the shared checkout or another worktree). **Not covered, by
+design:** a lead launched in the main checkout, including one that entered a worktree through
+`EnterWorktree`. Claude Code keeps `CLAUDE_PROJECT_DIR` at the launch root while `cwd` follows
+the session, so the hook sees the same shape as #187's `cd` drift, and this lead legitimately
+orchestrates several task worktrees from one session. Its write into another session's
+worktree is therefore not refused; closing that needs a real identity source, not `cwd`
+(review of PR #595, lead's ruling). What stays allowed, and why, is the guard's own
 header and the row in [`tools/hooks/README.md`](../tools/hooks/README.md); in short, a
 main-checkout session and a session's own worktree are never refused, and every hook error
 or unavailable git is still fail-open. Owner go: Антон, 2026-11-24, in session (#594).
@@ -514,8 +521,9 @@ Demotion follows §4 on the first confirmed false block.
 
 **`dispatch-guard` — WARN, latched to one warning per session on 2026-11-24 (#594).** Ported
 from ds-platform (`#1700`). The streak still counts and still resets on a dispatch; only the
-repeat warnings are gone. State is kept per actor, so a subagent's edits do not spend the
-lead's warning. Severity unchanged.
+repeat warnings are gone. State is kept per actor (`session_id` plus `agent_id`, plus
+`transcript_path` for a Codex subagent that shares the lead's session), so a subagent's edits
+do not spend the lead's warning. Severity unchanged.
 
 **`secret-echo` — a BLOCK hook this register names, widened by #262.** It is a §3
 class-2 guard (documented security mandate: a printed secret is a leaked secret and is
