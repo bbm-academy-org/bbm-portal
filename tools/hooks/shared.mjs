@@ -18,9 +18,20 @@
 //     сессий, guard-state) принадлежит ОСНОВНОМУ дереву даже когда сессия сидит
 //     в worktree.
 
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, join, posix, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Файл-флаг живых параллельных сессий; пишет `session-flag-writer.mjs`. */
@@ -30,7 +41,7 @@ export const FLAG_REL = '.claude/parallel-sessions.flag.json'
  * Единственный источник истины: writer переэкспортирует эту же константу. */
 export const FRESH_WINDOW_MS = 10 * 60 * 1000
 
-/** Каталог per-session состояния read/write-гардов (`{noticeShown, mainTreeWriteSeen}`). */
+/** Каталог per-session состояния write-WARN гарда (`{mainTreeWriteSeen}` — «уже предупредили»). */
 export const MAIN_TREE_STATE_DIR_REL = '.claude/main-tree-guard-state'
 
 /** Каталог per-session состояния dispatch-гарда (`{streak}`). */
@@ -43,21 +54,6 @@ export const ZERO_DISPATCH_STATE_DIR_REL = '.claude/zero-dispatch-guard-state'
 
 /** Per-session state of the AskUserQuestion guard (`{headers: {<header>: len}}`). */
 export const ASKUSERQUESTION_STATE_DIR_REL = '.claude/askuserquestion-guard-state'
-
-/**
- * Per-session budget state of the two BLOCK Stop-gates (#392):
- * `{blocked: {"completion-report": true, "deviations": true}}`.
- *
- * Each gate blocks at most ONCE per session; a further recognized violation is
- * demoted to a `systemMessage` warning. Rationale: heuristic recognition of free
- * prose is whack-a-mole (#158 → #299 → #374 → #392, three owner complaints), and
- * the cost of the recognizer being wrong must be BOUNDED even while the gates
- * keep their real BLOCK plane. One block per session is the whole tax.
- */
-export const STOP_BLOCK_BUDGET_STATE_DIR_REL = '.claude/stop-gate-budget-state'
-
-/** Stable per-session write evidence recorded from Codex PostToolUse payloads. */
-export const CODEX_WRITE_STATE_DIR_REL = '.claude/codex-write-state'
 
 /** Stable Codex executor-turn markers recorded from SubagentStart until SessionEnd. */
 export const CODEX_EXECUTOR_TURN_DIR_REL = '.claude/codex-executor-turns'
@@ -189,93 +185,9 @@ export function writeState(path, state, deps = {}) {
 }
 
 /**
- * @typedef {{block?: boolean, reason?: string}} GateDecision
- * @typedef {{blocked: Record<string, boolean>}} BlockBudgetState — the shape the
- *   writer produces; readers accept `unknown` and validate, see below.
- */
-
-/**
- * The block budget as a PURE function (#392), so the decision is unit-testable
- * without touching the filesystem: `main()` supplies the state I/O, this decides.
- *
- * `alreadyBlocked` defaults to `false` — that is the FAIL-OPEN direction on
- * purpose. Unreadable or lost state costs at most one extra block, while the
- * opposite default would silently disarm a gate that never actually fired.
- *
- * The JSDoc types are load-bearing, not decoration: without them TS infers the
- * parameter from the destructuring defaults alone, `decision` (which has no
- * default) drops out of the inferred shape, and every caller of this exported
- * seam becomes untypeable from the outside — which is exactly what turned
- * `lint-and-typecheck` red on PR #393.
- *
- * @param {{decision?: GateDecision, alreadyBlocked?: boolean}} [args]
- * @returns {{block: boolean, demoted: boolean, reason?: string}}
- */
-export function applyBlockBudget({ decision, alreadyBlocked = false } = {}) {
-  const d = decision && typeof decision === 'object' ? decision : {}
-  if (!d.block) return { ...d, block: false, demoted: false }
-  if (alreadyBlocked) return { ...d, block: false, demoted: true }
-  return { ...d, block: true, demoted: false }
-}
-
-/**
- * I/O half of the budget, shared by both BLOCK gates so they cannot drift apart:
- * the state path for this session, whether `key` has already spent its block, and
- * the recording of a spend. Both reads and writes are fail-open (`readState` /
- * `writeState` swallow their own errors), so a lost state costs one extra block.
- */
-/**
- * @param {string} root
- * @param {string} sessionId — REQUIRED and non-empty; see the note in each gate's
- *   `main()`: without a real session id the budget is skipped entirely rather
- *   than written to a shared, never-expiring `unknown.json`.
- * @returns {string}
- */
-export function blockBudgetStatePath(root, sessionId) {
-  return stateFilePath(root, STOP_BLOCK_BUDGET_STATE_DIR_REL, sessionId)
-}
-
-/**
- * Defensive by contract — `state` is whatever `readState` salvaged from disk,
- * so it is typed `unknown` and every non-conforming shape reads as «not spent».
- *
- * @param {unknown} state
- * @param {string} key
- * @returns {boolean}
- */
-export function hasSpentBlockBudget(state, key) {
-  const blocked = state && typeof state.blocked === 'object' ? state.blocked : null
-  return Boolean(blocked && blocked[key])
-}
-
-/**
- * @param {string} path
- * @param {unknown} state
- * @param {string} key
- * @param {{mkdir?: (dir: string) => void, writeFile?: (p: string, c: string) => void}} [deps]
- * @returns {void}
- */
-export function recordBlockBudgetSpend(path, state, key, deps = {}) {
-  const blocked = state && typeof state.blocked === 'object' && state.blocked ? state.blocked : {}
-  writeState(path, { ...state, blocked: { ...blocked, [key]: true } }, deps)
-}
-
-/** Текст демотированного блока: то же сообщение гейта плюс объяснение бюджета. */
-export function budgetDemotedMessage(message) {
-  return (
-    '⚠ ' +
-    String(message || '') +
-    ' (без блока: этот гейт уже блокировал в этой сессии — бюджет 1 блок/сессию, #392)'
-  )
-}
-
-/**
  * Предупреждение БЕЗ блока: только `systemMessage`, БЕЗ `hookSpecificOutput`.
- * Двое пользователей, оба легитимны: PreToolUse-гарды и — с #392 —
- * демотированный блок двух Stop-гейтов, у которых бюджет уже израсходован.
- * На Stop-хуке `systemMessage` доходит до ОПЕРАТОРА, а не в контекст модели
- * (единственный модель-обращённый канал там — exit 2 + stderr, то есть ровно тот
- * блок, который и демотируется); докам это известно, они большего не обещают.
+ * Пользователи — PreToolUse-гарды. (Stop-гейты, которые с #392 тоже
+ * демотировали сюда свой повторный блок, выведены из эксплуатации в #589.)
  *
  * `permissionDecision: "allow"` — это не «промолчать», а активное разрешение
  * вызова в обход обычного разрешительного потока владельца: WARN-гард на
@@ -380,6 +292,126 @@ export function powershellFileWritePaths(command) {
 }
 
 /**
+ * Resolve `value` against `cwd` with the path flavour the paths themselves use:
+ * a drive-letter path is resolved as win32 on every platform, so a spec with
+ * `C:/…` fixtures reads the same on the Linux CI runner (ds-platform
+ * `hook-compat.mjs`).
+ */
+export function absolutePath(value, cwd) {
+  const api = /^[a-zA-Z]:[\\/]/.test(value) || /^[a-zA-Z]:[\\/]/.test(cwd) ? win32 : posix
+  return api.resolve(cwd || '.', value)
+}
+
+/**
+ * The real filesystem location of `value`, resolving every EXISTING ancestor —
+ * so a new file under a junction / symlink that points out of a worktree is
+ * classified where it would actually land (#594, ported from ds-platform
+ * `hook-compat.mjs`). A path that is not absolute for this platform (a `C:/…`
+ * fixture on Linux) and any IO error return the path unchanged: canonicalisation
+ * only ever adds precision, it never turns into a reason to block.
+ *
+ * The ancestor is resolved with `realpathSync.native` (review PR #595): unlike
+ * the JS `realpathSync` it expands an 8.3 short name (`BBM-PO~1` → `bbm-portal`)
+ * and returns the on-disk case, so the short form of a checkout compares equal
+ * to its registered root. If the native call fails, the JS one is the fallback.
+ */
+export function canonicalPath(value) {
+  try {
+    if (!isAbsolute(String(value))) return String(value)
+    let parent = resolve(value)
+    const tail = []
+    while (!existsSync(parent)) {
+      const up = dirname(parent)
+      if (up === parent) return resolve(value)
+      tail.unshift(parent.slice(up.length).replace(/^[\\/]/, ''))
+      parent = up
+    }
+    return join(realAncestor(parent), ...tail)
+  } catch {
+    return String(value)
+  }
+}
+
+function realAncestor(p) {
+  try {
+    return realpathSync.native(p)
+  } catch {
+    return realpathSync(p)
+  }
+}
+
+/** The command string of a shell tool input (Claude `command`, Codex `cmd`). */
+export function shellCommand(input) {
+  return typeof input === 'string' ? input : (input?.command ?? input?.cmd)
+}
+
+/**
+ * Bounded literal shell-writer parser (#594, ported from ds-platform
+ * `tools/hooks/shell-mutations.mjs`) — not a shell grammar and not a security
+ * boundary. Returns the absolute targets of ONE literal writer
+ * (`Set-Content`/`Add-Content`/`Out-File`/`Clear-Content`, `touch`/`mkdir`/`rm`/
+ * `rmdir`), `[]` for a command that writes nothing it recognises, and THROWS
+ * (the message is the reason) for a write it cannot isolate: a chained /
+ * redirected / dynamic writer, a move or copy, an interpreter write, a
+ * `git checkout|switch|restore|reset|clean|apply|read-tree`. What a throw costs
+ * is the caller's decision — `worktree-path-guard.mjs` refuses it only when the
+ * command visibly reaches a protected checkout.
+ *
+ * bbm adaptation: the read/checkpoint fast path also accepts `git -C <path> …`,
+ * the form `.claude/rules/dev-env.md` mandates, so a commit message that merely
+ * mentions `rm` is not mistaken for a write.
+ */
+export function shellMutationPaths(input, cwd) {
+  const command = shellCommand(input)
+  if (typeof command !== 'string') throw new Error('unparseable shell command')
+  // Quoted data (a commit message) is not a command: ignore it for the chain check.
+  const outsideQuotes = command.replace(/"[^"\r\n]*"|'[^'\r\n]*'/g, '')
+  if (
+    /^\s*git\s+(?:-C\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\S+)\s+)?(?:status|diff|log|show|rev-parse|add|commit|push)\b/.test(
+      command,
+    ) &&
+    !/[;&|`$<>\r\n]/.test(outsideQuotes)
+  )
+    return []
+  if (
+    /^\s*git\b/.test(command) &&
+    /\b(?:apply|checkout|switch|restore|reset|clean|read-tree)\b/.test(outsideQuotes)
+  )
+    throw new Error('a git checkout mutation cannot be isolated; use the file tools for edits')
+  const writer =
+    /\b(?:Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Copy-Item|New-Item|Clear-Content|tee|touch|mkdir|rmdir|rm|mv|cp)\b|(?:^|\s)sed\s+-i\b|writeFile(?:Sync)?\s*\(|\.write_text\s*\(|\.write_bytes\s*\(|open\s*\([^\n]*,[\s]*['"](?:w|a)|(?:^|[^>])>{1,2}(?!&)/i
+  if (!writer.test(command)) return []
+  // Redirection, chaining and PowerShell arrays could add destinations the
+  // single-target check below never sees.
+  if (/[;&|`$\r\n(){},<>]/.test(command))
+    throw new Error('a dynamic, chained or redirected shell write cannot be isolated')
+  const tokens = command.match(/"[^"\r\n]*"|'[^'\r\n]*'|[^\s]+/g) || []
+  const unquote = (s) => s.replace(/^(['"])(.*)\1$/, '$2')
+  const cmd = tokens[0]?.toLowerCase()
+  const paths = []
+  if (['set-content', 'add-content', 'out-file', 'clear-content'].includes(cmd)) {
+    const ix = tokens.findIndex((t) => /^-(?:literalpath|path|filepath)$/i.test(t))
+    const target = ix >= 0 ? tokens[ix + 1] : tokens[1]
+    if (!target || target.startsWith('-')) throw new Error('the shell writer has no literal target')
+    paths.push(unquote(target))
+  } else if (['touch', 'mkdir', 'rm', 'rmdir'].includes(cmd)) {
+    paths.push(
+      ...tokens
+        .slice(1)
+        .filter((t) => !t.startsWith('-'))
+        .map(unquote),
+    )
+  } else {
+    // Moves, copies, removals with flags and interpreter writes need a real
+    // grammar to find every destination; refusing to guess is the point.
+    throw new Error('an unparsed shell write (move, copy, remove or interpreter write)')
+  }
+  if (!paths.length || paths.some((p) => /[*?[\]<>]/.test(p)))
+    throw new Error('the shell write has ambiguous targets')
+  return paths.map((p) => absolutePath(p, cwd))
+}
+
+/**
  * Adapt the small set of Codex canonical tool payloads to the Claude-shaped
  * contracts consumed by the existing hook stack. Unknown payloads pass
  * through unchanged so the stack remains fail-open as tools evolve.
@@ -449,6 +481,30 @@ export function normalizeHookPayload(payload) {
     harness_tool_name: toolName,
     tool_name: normalizedName,
     tool_input: toolInput,
+  }
+}
+
+/**
+ * Last `maxBytes` of a file as UTF-8 — the transcript reader of the context
+ * budget hooks (`lead-context-budget.mjs`, `subagent-context-budget.mjs`). The
+ * usage parser scans from the END and stops at the first assistant usage block,
+ * so the tail yields the same number as the whole file while a long session's
+ * transcript is tens of MB. A truncated first line is fine — the parser skips
+ * unparseable lines. IO errors propagate to the caller's fail-open catch.
+ *
+ * @param {string} path
+ * @param {number} maxBytes
+ */
+export function readTail(path, maxBytes) {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size
+    const length = Math.min(size, maxBytes)
+    const buf = Buffer.allocUnsafe(length)
+    readSync(fd, buf, 0, length, size - length)
+    return buf.toString('utf8')
+  } finally {
+    closeSync(fd)
   }
 }
 

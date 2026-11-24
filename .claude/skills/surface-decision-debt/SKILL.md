@@ -1,6 +1,6 @@
 ---
 name: surface-decision-debt
-description: How a task's silent deviations from convention are surfaced and routed at the end of the work — the reflection pass, the significance threshold (own issue vs a DEBT.md line), and the two report lines the Stop gates read («Отклонения от конвенций:» + `surface-decision-debt:`). Use before writing the stage-6 final report or the stage-7 closing comment, on every task. Project-local; this repo only.
+description: How a task's silent deviations from convention are surfaced and routed at the end of the work — the reflection pass, the significance threshold (own issue vs a DEBT.md line), and the two report lines («Отклонения от конвенций:» + `surface-decision-debt:`). Use before writing the stage-6 final report or the stage-7 closing comment, on every task. Project-local; this repo only.
 ---
 
 # surface-decision-debt — routing what you decided silently
@@ -73,19 +73,16 @@ surface-decision-debt: <[] | по одному пункту на отклоне�
 ```
 
 - **«Отклонения от конвенций: …»** — the stage-7 canon line; it NAMES the
-  deviations. Enforced as a **BLOCK** by `tools/hooks/deviations-gate.mjs`, and
-  the same line is repeated in the issue's closing comment (a hook cannot read
-  the comment). When the session had an owner halt or an earlier Stop-gate
-  block, the value «нет» is rejected — a halted session that certifies itself
-  clean is not a report.
+  deviations. The same line is repeated in the issue's closing comment. When
+  the session had an owner halt, the value «нет» is not available — a halted
+  session that certifies itself clean is not a report.
 - **`surface-decision-debt: …`** — the ROUTING half; for each named deviation,
   where it landed: `#N` / `DEBT.md` / "written off: \<why\>". `[]` when the
-  first line says «нет». Checked by
-  `tools/hooks/surface-decision-debt-gate.mjs` as a **WARN** — it prints a
-  systemMessage and lets the stop through. Promotion to BLOCK follows
-  `docs/ci-guardrails.md` §4, and §6 records what this gate needs first: the
-  clean window **and** a documented escape hatch, because a wrong verdict on a
-  `Stop` gate strands the session with no way out.
+  first line says «нет».
+
+No hook checks either line: the Stop gates that did were retired on 2026-11-24
+(#589, owner decision — a block re-ran the whole session for a token tax; record
+in `docs/ci-guardrails.md` §6). Both lines are owed by this canon regardless.
 
 Both lines are `[]`/«нет» only for a genuinely deviation-free task. `[]` next to
 a prose paragraph describing a deviation is invalid output — the empty list
@@ -95,8 +92,8 @@ asserts the opposite of the paragraph.
 
 - **Skipping the pass** and going from merge straight to the report — the
   structural reason silent decisions accumulate.
-- **Naming a deviation in prose while writing `[]`** — the contradiction the
-  WARN cannot catch and a reviewer will.
+- **Naming a deviation in prose while writing `[]`** — the contradiction a
+  reviewer will catch.
 - **Routing to nothing**: "noted for later" with no issue, no `DEBT.md` line and
   no explicit write-off is a deviation that was never surfaced.
 - **A `DEBT.md` line without a return condition** — it does not survive the next

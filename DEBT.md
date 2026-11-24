@@ -882,25 +882,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-02-433-debt-marker-ambiguous -->
 
-- [ ] 2026-09-02 #439 removes a subagent DISPATCH from the write-evidence list of
-      `isWriteToolUse()` (`tools/hooks/completion-report-gate.mjs`), inverting the
-      #158 clause «the subagents wrote, the lead reports». The inversion is right
-      for the incident it closes — a grooming session that only read canon and
-      fanned out read-only recon owes no stage-6 report — but it leaves a named
-      residual: a lead that dispatches an IMPLEMENTER, lets the subagent commit and
-      push inside its own worktree/transcript, and then writes «done» while itself
-      landing nothing (no commit/push of its own, no `pnpm pr:land` / `gh pr merge`,
-      no `gh issue comment`) now trips none of the three Stop gates, where under
-      #158 it tripped all three. That session DOES owe a report. Closing it needs
-      evidence the lead's own transcript does not carry — the subagent's write, or a
-      dispatch-result-derived signal — which is a new cross-transcript input to the
-      recognizer, not a list edit, so it is routed rather than smuggled into the
-      fix — return condition: the next `/wrap` or retro that records a lead session
-      which dispatched implementation and reported it done while landing nothing
-      itself (gates silent on a session that owed a stage-6 report), or the next
-      material edit to `isWriteToolUse()`'s evidence list, whichever comes first
-      (#439, PR #441 decision-debt pass)
-
 <!-- debt-entry-end: 2026-09-02-439-dispatch-not-write-evidence -->
 
 - [ ] 2026-09-02 Root `.gitattributes` sets `/DEBT.md merge=union`, but that driver
@@ -986,6 +967,10 @@ Entry format:
 - [ ] 2026-11-19 The vote module (#575) shipped under a hard deadline (facilitated session 2026-11-20, 10:00 MSK) with three small deviations from the module pattern, recorded together: (1) no light spec in `docs/specs/` — scope and acceptance live in issue #575 and the organiser's plan, per the issue's «no spec» line; (2) the consent ballot's three answers are kit `Button`s in a `role="radiogroup"` with `role="radio"` / `aria-checked`, because `src/ui` vendors no `radio-group` and adding one is a kit change the deadline did not leave room for; (3) the cabinet resource `vote.polls` declares a zod record schema the cabinet data provider never fetches — the screens are server components posting Server Actions, like `/p/hours`, not Refine resource screens over `/api/p/vote` — return condition: the values session (the next use of this module named in #575), or the first change to the vote screens after 2026-11-20, whichever comes first; at that point the module gets its spec, the kit gets `radio-group`, and the cabinet resource either moves onto the data provider or the schema is documented as declaration-only.
 
 <!-- debt-entry-end: 2026-11-19-575-vote-deadline-deviations -->
+
+- [ ] 2026-11-24 `worktree-path-guard` v2 (#594, PR #595) classifies an Edit/Write `file_path` after `absolutePath` + `canonicalPath`, and three path forms are not normalised to the registered roots: the extended-length prefix (`\\?\C:\…`), a local UNC admin share (`\\localhost\C$\…`), and the MSYS form (`/c/Users/…`, which resolves to `C:\c\Users\…`, outside the repo). A write spelled that way into the shared checkout or another worktree is classified `ok`. Recorded rather than fixed because no agent produces these forms by accident, ds-platform and v1 have the same holes, and the 8.3 short-name hole from the same review was closed (`realpathSync.native`) — return condition: a real cross-worktree write observed through one of these forms, or the next change to `worktree-path-guard`, whichever comes first; at that point `absolutePath` maps MSYS the way `commandReachPaths` does and strips the `\\?\` prefix / folds local UNC before classifying, with a RED test per form.
+
+<!-- debt-entry-end: 2026-11-24-594-worktree-guard-path-forms -->
 
 <!-- debt-append-marker -->
 
@@ -1220,3 +1205,13 @@ scoped out of reading; neither was written off on an unverified assumption.
 `2026-08-14-0dea1e1a7d` was met live — this session's own `pnpm install` in a fresh
 worktree printed the false «Was not able to set git hooks» ERROR while the hooks
 in fact ran on every commit — and stays pointed at the open #453.)_
+
+_(Written off 2026-11-24 (#589, PR #592), body removed, anchor kept:
+`2026-09-02-439-dispatch-not-write-evidence`. Its subject was the write-evidence
+list of `isWriteToolUse()` in `tools/hooks/completion-report-gate.mjs`, and the
+residual it named — a lead that dispatches an implementer and reports «done»
+while landing nothing itself trips none of the Stop gates — only mattered while
+those gates ran. #589 retired all three Stop gates (owner decision, Anton,
+2026-11-24; register: `docs/ci-guardrails.md` §6 «Retired hook guards»), so the
+function and its evidence list no longer exist and neither return condition can
+fire.)_

@@ -29,8 +29,9 @@ export function blockMessage(reason) {
     `⛔ agent-model guard (#91): ${reason}\n` +
     `Явный model обязателен для каждого Agent-вызова (CLAUDE.md, «Subagents and models»): ` +
     `механика — поиск, инвентаризация, сбор фактов → \`bbm-explorer\` (sonnet); суждение — ` +
-    `ревью, архитектура, имплементация → opus (\`bbm-reviewer\` для ревью PR, иначе ` +
-    `\`general-purpose\` с \`model: "opus"\`). Fable субагентом не бывает — только оркестратор.\n` +
+    `ревью, архитектура, имплементация → opus (\`bbm-reviewer\` для ревью PR, ` +
+    `\`bbm-implementer\` для имплементации, иначе \`general-purpose\` с \`model: "opus"\`). ` +
+    `Fable субагентом не бывает — только оркестратор.\n` +
     `Повтори вызов, добавив параметр model.`
   )
 }

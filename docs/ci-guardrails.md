@@ -468,12 +468,28 @@ that it may never exist.
 These landed WARN in task 7.3 (#134) with a `TODO(#136)` marker deferring the severity
 decision to this canon. The decision is recorded here; the markers are gone.
 
-| Hook guard                      | File                                                | Severity           | Verdict 2026-08-05 — why, and what would promote it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------- | --------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **askuserquestion-calibration** | `tools/hooks/askuserquestion-calibration-guard.mjs` | WARN               | Calibration advice on a question already being asked. Blocking it would deny the owner a question — the opposite of the intent. **Permanent WARN by design**, not a promotion candidate.                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **handoff-verify-reminder**     | `tools/hooks/handoff-verify-reminder.mjs`           | WARN               | A `SessionStart` reminder. A session that cannot start is a broken session, and the reminder's whole value is that a human reads it. **Permanent WARN by design.**                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **screenshot-path-guard**       | `tools/hooks/screenshot-path-guard.mjs`             | **BLOCK** (exit 2) | **Promoted 2026-09-02** (#438), the one promotion this table's WARN set has had. The rule (a screenshot is not acceptance — task-cycle stage 5) is categorical, the detection is a path match, and the clean window closed with no false denial on record. Blast radius per §4 clause 4: one tool call, unblocked from inside the same session by retargeting `filename` into `.playwright-mcp/`, which the denial message prints. The exit code is the severity of record for a hook, so `tests/unit/hooks-screenshot-path-guard.spec.ts` asserts the 2. Demotion per §4 on the first confirmed false denial. |
-| **surface-decision-debt-gate**  | `tools/hooks/surface-decision-debt-gate.mjs`        | WARN               | A `Stop` gate. Promotion means an agent cannot end its turn — a wrong verdict strands the session with no way out, so this needs the clean window from §4 **and** a documented escape hatch before it can block.                                                                                                                                                                                                                                                                                                                                                                                               |
+| Hook guard                      | File                                                | Severity               | Verdict 2026-08-05 — why, and what would promote it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------- | --------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **askuserquestion-calibration** | `tools/hooks/askuserquestion-calibration-guard.mjs` | **RETIRED** 2026-11-24 | **Retired 2026-11-24 (#589)** — see «Retired hook guards» below. Earlier verdict: calibration advice on a question already being asked; blocking it would deny the owner a question, so it was a permanent WARN.                                                                                                                                                                                                                                                                                                                                                                                               |
+| **handoff-verify-reminder**     | `tools/hooks/handoff-verify-reminder.mjs`           | **RETIRED** 2026-11-24 | **Retired 2026-11-24 (#589)** — see «Retired hook guards» below. Earlier verdict: a `UserPromptSubmit` reminder whose whole value was that a human reads it; a permanent WARN. The `pnpm handoff:verify` CLI (§6.1) stays.                                                                                                                                                                                                                                                                                                                                                                                     |
+| **screenshot-path-guard**       | `tools/hooks/screenshot-path-guard.mjs`             | **BLOCK** (exit 2)     | **Promoted 2026-09-02** (#438), the one promotion this table's WARN set has had. The rule (a screenshot is not acceptance — task-cycle stage 5) is categorical, the detection is a path match, and the clean window closed with no false denial on record. Blast radius per §4 clause 4: one tool call, unblocked from inside the same session by retargeting `filename` into `.playwright-mcp/`, which the denial message prints. The exit code is the severity of record for a hook, so `tests/unit/hooks-screenshot-path-guard.spec.ts` asserts the 2. Demotion per §4 on the first confirmed false denial. |
+| **surface-decision-debt-gate**  | `tools/hooks/surface-decision-debt-gate.mjs`        | **RETIRED** 2026-11-24 | **Retired 2026-11-24 (#589)** — see «Retired hook guards» below. Earlier verdict: a `Stop` gate; promotion would mean an agent cannot end its turn — a wrong verdict strands the session with no way out, so it needed the clean window from §4 **and** a documented escape hatch before it could block.                                                                                                                                                                                                                                                                                                       |
+
+**Retired hook guards — 2026-11-24 (#589).** Owner decision, Антон, 2026-11-24, in session
+(recorded in [#589](https://github.com/bbm-academy-org/bbm-portal/issues/589)): retire the six
+hooks below, as ds-platform did. Not a §4 demotion — the guards are removed, not lowered; their
+files, specs and wiring are deleted and the history stays in git. The report format they
+checked did not change: the marker lines remain the report contract of
+`.claude/skills/report-task-outcome/SKILL.md` and `.claude/skills/surface-decision-debt/SKILL.md`.
+
+| Retired guard                   | Was            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **completion-report-gate**      | BLOCK (`Stop`) | Each `exit 2` makes the model re-read the whole session and re-emit the same text — a pure token tax (ds-platform `#1744`), about 2.5x more expensive per block once a session runs to a 400K-token context (#588 raises the lead's hard tier to that size). The free-prose recognizer misfired round after round (#158 → #299 → #374 → #392); the one-block-per-session budget (#392) bounded the count, not the cost of each block. |
+| **deviations-gate**             | BLOCK (`Stop`) | Same mechanism and the same recognizer as completion-report-gate.                                                                                                                                                                                                                                                                                                                                                                     |
+| **surface-decision-debt-gate**  | WARN (`Stop`)  | Same recognizer; retired with its siblings.                                                                                                                                                                                                                                                                                                                                                                                           |
+| **main-tree-read-guard**        | WARN           | A 75-session ds-platform transcript audit found zero real blocks and a warning on nearly every Read of the shared checkout (ds-platform `#1700`). The write guard (`worktree-path`) carries the contract.                                                                                                                                                                                                                             |
+| **askuserquestion-calibration** | WARN           | Low-yield advisory, retired in ds-platform `#1700`. `askuserquestion-context-guard` (a BLOCK on unanswerable questions) stays.                                                                                                                                                                                                                                                                                                        |
+| **handoff-verify-reminder**     | WARN           | Low-yield advisory, retired in ds-platform `#1700`. The `handoff-verify` CLI guard (§6.1) stays.                                                                                                                                                                                                                                                                                                                                      |
 
 **`worktree-path` — existing BLOCK scope expanded on 2026-09-06 (#475).** The
 guard already blocked an editor write from a task worktree into the shared
@@ -482,6 +498,32 @@ writes when their target is statically recognized from `Set-Content`,
 `Add-Content`, or `Out-File`. An unrecognized shell target stays fail-open; a
 recognized safe target keeps the existing carve-outs. The owner approved this
 scope expansion in #475. Demotion follows §4 on the first confirmed false block.
+
+**`worktree-path` — BLOCK scope expanded again on 2026-11-24 (#594, v2).** Ported from
+ds-platform's guard (their `#1453` / `#2373`). The target is now classified against the
+checkout roots git has registered (`git worktree list`) and at its real location (junction
+and symlink ancestors resolved), so a new file under a junction that leads out of a worktree
+is caught. Two verdicts join the main-tree escape, each with its own message: `wrong-worktree`
+(a write into another registered worktree by a subagent — `agent_id` in the payload — or by a
+session LAUNCHED inside a worktree, `CLAUDE_PROJECT_DIR` = that worktree) and
+`unparseable-shell` (a Codex shell write the bounded parser cannot isolate, refused only when
+the command visibly reaches the shared checkout or another worktree). **Not covered, by
+design:** a lead launched in the main checkout, including one that entered a worktree through
+`EnterWorktree`. Claude Code keeps `CLAUDE_PROJECT_DIR` at the launch root while `cwd` follows
+the session, so the hook sees the same shape as #187's `cd` drift, and this lead legitimately
+orchestrates several task worktrees from one session. Its write into another session's
+worktree is therefore not refused; closing that needs a real identity source, not `cwd`
+(review of PR #595, lead's ruling). What stays allowed, and why, is the guard's own
+header and the row in [`tools/hooks/README.md`](../tools/hooks/README.md); in short, a
+main-checkout session and a session's own worktree are never refused, and every hook error
+or unavailable git is still fail-open. Owner go: Антон, 2026-11-24, in session (#594).
+Demotion follows §4 on the first confirmed false block.
+
+**`dispatch-guard` — WARN, latched to one warning per session on 2026-11-24 (#594).** Ported
+from ds-platform (`#1700`). The streak still counts and still resets on a dispatch; only the
+repeat warnings are gone. State is kept per actor (`session_id` plus `agent_id`, plus
+`transcript_path` for a Codex subagent that shares the lead's session), so a subagent's edits
+do not spend the lead's warning. Severity unchanged.
 
 **`secret-echo` — a BLOCK hook this register names, widened by #262.** It is a §3
 class-2 guard (documented security mandate: a printed secret is a leaked secret and is
@@ -570,10 +612,10 @@ against this guard in review of PR #346 — reach the block. The answer is the e
 carve-out: with the escape reachable in flight, such a session names its reason once in a
 command prefix and continues, and the reason lands in the stage-7 deviations line, which is
 exactly the record this guard was built to produce. **The mutation predicate is deliberately
-not widened** to exempt `gh issue`/`pnpm issue:create`: it is imported whole from
-`completion-report-gate.mjs`, and forking it here would create the second source of truth
-CLAUDE.md's "path is the contract" rule exists to prevent, while making the guard silent for
-the exact session class it was written about (2026-08-24 was an issue-editing session).
+not widened** to exempt `gh issue`/`pnpm issue:create`: it was shared with the Stop
+gates until their retirement (#589) and now lives whole in the guard itself, and widening it
+would make the guard silent for the exact session class it was written about (2026-08-24 was
+an issue-editing session).
 A block that the escape does **not** adequately answer is a different matter — that is the
 demotion trigger below, and one confirmed instance spends this guard's day-0 standing.
 
@@ -590,7 +632,9 @@ their results can be accepted, and every non-dispatch tool call is unaffected. I
 from day 0**, and per §2.2 it blocks through the permission plane (exit 0 +
 `permissionDecision: "deny"`), not through an exit code. The tier numbers themselves are
 owner-tunable constants in the hook (`SOFT_THRESHOLD` / `HARD_THRESHOLD`) and are not
-restated here; today they are 150K soft / 160K hard.
+restated here — the hook file is their only home. Above the hard tier a **closeout**
+dispatch (`CLOSEOUT_SUBAGENT_TYPES` in the same file: `bbm-reviewer`) still passes, with an
+advisory: closing the wave in flight frees lead context rather than spending it.
 
 **The mandate, on record:** owner Антон, 2026-09-03, in session, filed the same day as
 [#457](https://github.com/bbm-academy-org/bbm-portal/issues/457): «at 150–160K the lead stops
@@ -624,6 +668,35 @@ marker is removed by `/wrap`. Owner-only by convention, gitignored by constructi
 Demotion to WARN per §4 on one confirmed false block that the marker did not adequately
 answer — §3's class-3 paragraph names the same condition. The thresholds are the substantive
 rule for §4's clock: changing them restarts it, changing the message text does not.
+
+**Amendment — owner decision, Anton, 2026-11-24 (#588).** In session, the owner recorded that
+the context budget «was raised to 400K long ago» and that this repo is brought in line with
+ds-platform, which moved to the current tiers on 2026-09-25 (their `#2373`: a restart below
+the soft tier saves neither money nor subscription usage). The tiers in the hook were raised
+accordingly; the #457 mandate quoted above is kept as the history of the first tiers, not as
+the current numbers. The same amendment adds the closeout exemption above, and the change of
+thresholds restarts §4's clock from 2026-11-24. The operator advisory `context-budget.mjs`
+(§3 class-3 is not engaged: it never addresses the model) moved to the same tiers, which its
+own constants hold.
+
+**`subagent-context-budget` — the subagent-side half of the same budget: a BLOCK at the hard
+tier by owner mandate (#588, the amendment above).**
+[`tools/hooks/subagent-context-budget.mjs`](../tools/hooks/subagent-context-budget.mjs) is a
+`PreToolUse` guard on `.*` that acts only inside a subagent (`agent_id` present) and measures
+that subagent's OWN transcript — never the lead's. At the soft tier it injects a ROTATE
+directive (WIP-commit, write the checkpoint file it names, return with `ROTATE: <path>` as the
+first line), re-emitted per repeat step; at the hard tier it denies every tool call through
+the permission plane (§2.2) except the hand-back allow-list — git inspect / add / commit /
+push written in a plain ASCII alphabet with no quoting, escaping or shell operator, and
+writing the agent's own checkpoint. The tiers and the step are constants in
+the hook and are not restated here. Ported from ds-platform (their `#1374` / `#1376`); the
+contract an agent honours is [`.claude/agents/bbm-implementer.md`](../.claude/agents/bbm-implementer.md).
+Clause (d), read for this plane: there is no owner hatch, because the deny never strands work
+— the allow-list IS the way out of a blocked session (commit, push, checkpoint, return), and
+the lead re-dispatches a fresh agent from the checkpoint. Fail-open (silent) on every hook
+error and whenever the subagent's own transcript cannot be established; Codex is not wired
+(`tools/codex/hook-coverage.json`). Demotion to WARN per §4 on one confirmed false block whose
+allow-list did not let the agent hand back.
 
 ### 6.1 CLI guards (§2.3) — severity per finding class
 

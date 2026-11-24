@@ -259,10 +259,10 @@ also carries the agent's `UX-record:` block, checked by
 
 APPROVE + green CI (check the actual check-run statuses — not "probably
 passed") + for visible changes the recorded stage-5 "принято" → the agent
-merges itself: `gh pr merge --squash --delete-branch` (memory:
-`agent-merges-prs-after-review`). Never merge on a stale base: run
-`git fetch origin && git log --oneline HEAD..origin/main` first — if main moved
-under someone else's commits, read what landed before merging. After the deploy
+merges itself with `pnpm pr:land <PR>`, never a raw `gh pr merge` — the gate,
+its exit codes and the base-freshness check are
+[`merge-when-green`](../merge-when-green/SKILL.md) (memory:
+`agent-merges-prs-after-review`). After the deploy
 — **postcheck: the commit deployed on prod == `origin/main` HEAD** (recipe in
 `deploy/README.md`); on a mismatch, finish shipping it, don't just report it.
 
@@ -294,9 +294,8 @@ verified here, not assumed), what was done, what got unblocked + the mandatory
 line
 **«Отклонения от конвенций: нет / \<список\>»** (significant deviation → its
 own issue; minor → a line in `DEBT.md`). **The same line is repeated in the
-session's final report** — that is where the Stop gate
-`tools/hooks/deviations-gate.mjs` checks it (a hook cannot read the issue
-comment). Plane task (if any) → Done + a results comment. Branch deleted. The next step is NAMED as a recommendation
+session's final report** — the report contract of
+`.claude/skills/report-task-outcome/SKILL.md`. Plane task (if any) → Done + a results comment. Branch deleted. The next step is NAMED as a recommendation
 but not started without a "go" — stage 2 of a new cycle.
 
 ## Enforcement hooks — no longer deferred
