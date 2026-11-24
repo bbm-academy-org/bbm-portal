@@ -1201,3 +1201,13 @@ scoped out of reading; neither was written off on an unverified assumption.
 `2026-08-14-0dea1e1a7d` was met live — this session's own `pnpm install` in a fresh
 worktree printed the false «Was not able to set git hooks» ERROR while the hooks
 in fact ran on every commit — and stays pointed at the open #453.)_
+
+_(Written off 2026-11-24 (#589, PR #592), body removed, anchor kept:
+`2026-09-02-439-dispatch-not-write-evidence`. Its subject was the write-evidence
+list of `isWriteToolUse()` in `tools/hooks/completion-report-gate.mjs`, and the
+residual it named — a lead that dispatches an implementer and reports «done»
+while landing nothing itself trips none of the Stop gates — only mattered while
+those gates ran. #589 retired all three Stop gates (owner decision, Anton,
+2026-11-24; register: `docs/ci-guardrails.md` §6 «Retired hook guards»), so the
+function and its evidence list no longer exist and neither return condition can
+fire.)_
