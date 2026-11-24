@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Хук SessionStart + UserPromptSubmit (issue #91, пункт 1): пишет машиночитаемый
 // флаг живых параллельных сессий, на который опираются PreToolUse-гарды
-// (`worktree-path-guard.mjs`, `main-tree-read-guard.mjs`).
+// (`worktree-path-guard.mjs`; read-гард `main-tree-read-guard.mjs` выведен в #589).
 //
 // Почему ДВА события (ревью PR #99): снимок только на старте не покрывает самый
 // частый случай — ровно две сессии. A стартует одна (флаг удалён), затем

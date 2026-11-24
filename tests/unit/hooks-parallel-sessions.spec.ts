@@ -21,11 +21,6 @@ import {
   isRepoSessionDir,
   liveSessions,
 } from '../../tools/hooks/session-flag-writer.mjs'
-import {
-  WARN_THROTTLE_MS,
-  decideReadAction,
-  decideWarn,
-} from '../../tools/hooks/main-tree-read-guard.mjs'
 import { decideEscapeBlock, decideWriteWarn } from '../../tools/hooks/worktree-path-guard.mjs'
 import {
   DISPATCH_WARN_THRESHOLD,
@@ -35,7 +30,7 @@ import {
 } from '../../tools/hooks/dispatch-guard.mjs'
 
 /**
- * Хуки параллельных сессий (#91). Флаг живых сессий пишет один хук, читают три —
+ * Хуки параллельных сессий (#91). Флаг живых сессий пишет один хук, читают другие —
  * поэтому контракт файла и окно свежести проверяются как общая константа, а не
  * как деталь каждого гарда.
  */
@@ -99,69 +94,6 @@ describe('контракт флага параллельных сессий', ()
       nowMs: NOW,
     })
     expect(live).toHaveLength(0)
-  })
-})
-
-describe('main-tree-read-guard', () => {
-  const base = {
-    toolName: 'Read',
-    toolInput: { file_path: `${MAIN}/src/app/page.tsx` },
-    cwd: MAIN,
-    sessionId: 'self',
-    projectDir: MAIN,
-    flag: flagWith(['other']),
-    statMtime: () => NOW - 1000,
-    nowMs: NOW,
-  }
-
-  it('предупреждает о чтении исходников общего чекаута при живой параллели', () => {
-    expect(decideWarn(base)).toEqual({ warn: true, liveCount: 1 })
-  })
-
-  it('молчит в изолированной сессии', () => {
-    expect(decideWarn({ ...base, cwd: WORKTREE }).warn).toBe(false)
-  })
-
-  it('молчит без живых параллельных сессий и без флага', () => {
-    expect(decideWarn({ ...base, flag: null }).warn).toBe(false)
-    expect(decideWarn({ ...base, statMtime: () => null }).warn).toBe(false)
-  })
-
-  it('не считает исходниками собственные .claude/ и .git/', () => {
-    expect(
-      decideWarn({ ...base, toolInput: { file_path: `${MAIN}/.claude/rules/dev-env.md` } }).warn,
-    ).toBe(false)
-    expect(decideWarn({ ...base, toolInput: { path: `${MAIN}/.git/config` } }).warn).toBe(false)
-  })
-
-  it('carve-out read-only лида: одно уведомление, потом тишина, после записи — полное предупреждение', () => {
-    const warnDecision = { warn: true, liveCount: 2 }
-    expect(decideReadAction({ warnDecision, state: {}, nowMs: NOW })).toEqual({
-      action: 'notice',
-      liveCount: 2,
-      setNoticeShown: true,
-    })
-    expect(
-      decideReadAction({ warnDecision, state: { noticeShown: true }, nowMs: NOW }).action,
-    ).toBe('silent')
-    expect(
-      decideReadAction({
-        warnDecision,
-        state: { noticeShown: true, mainTreeWriteSeen: true },
-        nowMs: NOW,
-      }),
-    ).toMatchObject({ action: 'warn', setWarnedAt: NOW })
-  })
-
-  // Без дросселя гард после первой записи предупреждал бы на КАЖДОЕ чтение —
-  // главный источник warn-fatigue во всём стеке (ревью PR #99).
-  it('после первой записи предупреждает не чаще раза в окно дросселя', () => {
-    const warnDecision = { warn: true, liveCount: 1 }
-    const state = { mainTreeWriteSeen: true, warnedAtMs: NOW }
-    expect(decideReadAction({ warnDecision, state, nowMs: NOW + 1000 }).action).toBe('silent')
-    expect(
-      decideReadAction({ warnDecision, state, nowMs: NOW + WARN_THROTTLE_MS + 1 }).action,
-    ).toBe('warn')
   })
 })
 

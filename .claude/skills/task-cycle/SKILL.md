@@ -294,9 +294,8 @@ verified here, not assumed), what was done, what got unblocked + the mandatory
 line
 **«Отклонения от конвенций: нет / \<список\>»** (significant deviation → its
 own issue; minor → a line in `DEBT.md`). **The same line is repeated in the
-session's final report** — that is where the Stop gate
-`tools/hooks/deviations-gate.mjs` checks it (a hook cannot read the issue
-comment). Plane task (if any) → Done + a results comment. Branch deleted. The next step is NAMED as a recommendation
+session's final report** — the report contract of
+`.claude/skills/report-task-outcome/SKILL.md`. Plane task (if any) → Done + a results comment. Branch deleted. The next step is NAMED as a recommendation
 but not started without a "go" — stage 2 of a new cycle.
 
 ## Enforcement hooks — no longer deferred

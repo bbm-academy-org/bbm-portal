@@ -19,7 +19,7 @@
 //      nothing — measured in `.claude/skills/wrap/SKILL.md` phase 0;
 //   3. among the survivors takes the NEWEST by last timestamp whose trailing
 //      assistant messages carry a stage-6 report, recognised by the two marker
-//      lines the Stop gates read («Проверить глазами:», «Отклонения от
+//      lines of the report contract («Проверить глазами:», «Отклонения от
 //      конвенций:» — `.claude/skills/report-task-outcome/SKILL.md`);
 //   4. prints that message verbatim as UTF-8 (the encoding is set explicitly —
 //      the default Windows console codepage turned past digs into mojibake).

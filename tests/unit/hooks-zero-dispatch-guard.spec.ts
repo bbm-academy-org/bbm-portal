@@ -92,6 +92,66 @@ describe('zero-dispatch-guard: что считается мутацией лид
   })
 })
 
+// Кейсы белого списка и вырезания цитат перенесены из спеки выведенных
+// Stop-гейтов (#589): классификатор переехал в этот гард вместе с ними.
+describe('zero-dispatch-guard: белый список мутирующих shell-команд (#158, ревью PR #159)', () => {
+  const bash = (command: string) => isMutatingCall('Bash', { command })
+
+  it('мутирующие команды из белого списка', () => {
+    for (const command of [
+      'git -C "C:/Users/x/repo" commit -m "fix: x"',
+      'git push -u origin fix/158-x',
+      'git merge --ff-only origin/main',
+      'gh pr merge 159 --squash',
+      'gh issue close 158 --repo o/r',
+      'gh api --method PATCH /repos/o/r/issues/1 -f state=closed',
+      'gh api -X POST /repos/o/r/issues/1/comments',
+      'pnpm pr:land 159',
+      'pnpm deploy:prod',
+    ]) {
+      expect(bash(command), command).toBe(true)
+    }
+    expect(isMutatingCall('PowerShell', { command: 'git -C C:/repo push' })).toBe(true)
+  })
+
+  it('видит мутацию во второй команде цепочки', () => {
+    expect(bash('export PATH=$X:$PATH && git -C "C:/repo" commit -m y')).toBe(true)
+    expect(bash('git -C "C:/repo" add . ; git -C "C:/repo" push')).toBe(true)
+  })
+
+  it('читающие команды не считаются', () => {
+    for (const command of [
+      'git -C "C:/repo" log --oneline -5',
+      'git -C "C:/repo" diff origin/main',
+      'gh pr view 158 --json body',
+      'gh issue list --repo o/r',
+      'gh api /repos/o/r/pulls/158',
+      'pnpm dev:ports',
+    ]) {
+      expect(bash(command), command).toBe(false)
+    }
+  })
+
+  it('упоминание команды в кавычках и в heredoc не считается', () => {
+    expect(bash("cat > /tmp/notes.md <<'EOF'\ngit commit -m x\nEOF")).toBe(false)
+    expect(bash('echo "инструкция: git commit -m x"')).toBe(false)
+    expect(bash("echo 'см. gh pr merge 159'")).toBe(false)
+    expect(bash('gh pr view 159 --json body\n# потом gh pr merge 159')).toBe(false)
+    // Оборванный heredoc — тело всё равно не команда.
+    expect(bash("cat > f <<'EOF'\ngit commit -m x")).toBe(false)
+    expect(bash('gh pr view 1 --json body -q "see:\ngit commit -m x"')).toBe(false)
+  })
+
+  it('настоящая мутация рядом с цитатой ловится', () => {
+    expect(bash('echo "git commit" && git -C "C:/repo" push')).toBe(true)
+    expect(bash('git -C "$W" commit -q -m "$(cat <<\'EOF\'\nfix: x\nEOF\n)"')).toBe(true)
+    // Настоящая команда ПОСЛЕ терминатора heredoc'а: вырезается тело, не хвост.
+    expect(bash("cat <<'EOF' > notes\nзаметка про gh pr merge\nEOF\ngit -C x commit -m y")).toBe(
+      true,
+    )
+  })
+})
+
 describe('zero-dispatch-guard: счётчик и порог', () => {
   it('ниже порога — считает молча', () => {
     const d = decideZeroDispatch({

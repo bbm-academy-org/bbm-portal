@@ -35,8 +35,8 @@ nested working directory still reaches the repository-local scripts.
 ## Compatibility boundary
 
 The adapters cover SessionStart, SessionEnd, UserPromptSubmit, SubagentStart,
-PreToolUse, PostToolUse, SubagentStop, and Stop without claiming impossible byte-for-byte
-harness parity:
+PreToolUse, and SubagentStop without claiming impossible byte-for-byte harness
+parity:
 
 - `apply_patch`, `spawn_agent`, and shell payloads are normalized to the
   contracts consumed by the existing Claude hooks;
@@ -50,23 +50,17 @@ harness parity:
 - SubagentStop does not retire the marker because another matching hook can
   continue that exact child turn; terminal SessionEnd removes every executor
   marker owned by the session;
-- PostToolUse records conservative per-session write evidence; Stop reads the
-  stable `last_assistant_message` field and that evidence instead of depending
-  on Codex's explicitly unstable JSONL transcript format;
-- SessionStart resets write evidence only for an explicit `startup` or `clear`;
-  `compact`, `resume`, and an absent source preserve earlier evidence;
-- UserPromptSubmit records owner-halt wording from the shared `HALT_RE` as a
-  monotonic session signal, so Stop still rejects a self-certified “no
-  deviations” report after an interruption;
-- malformed or unknown payloads remain fail-open, and read-only tool calls do
-  not turn on completion-report enforcement.
+- malformed or unknown payloads remain fail-open.
 
-Critical worktree-write, zero-dispatch, dispatch/model, secret-output, merge,
-handoff-prompt, and Stop gates are covered for representative Codex payloads.
-Two telemetry-dependent paths remain deliberately manual under Codex: arbitrary
-shell reads cannot be classified as Claude `Read`/`Grep`/`Glob` for the
-main-tree read advisory, and Codex exposes no stable token count for either the
-operator `context-budget` advisory or the lead's hard dispatch fence. The
+No PostToolUse or Stop hook is registered since 2026-11-24 (#589): their only
+consumers were the Stop gates on the final report (completion report,
+deviations line, decision-debt line) and the write/halt evidence that fed them,
+all retired by owner decision — the record is `docs/ci-guardrails.md` §6.
+
+Critical worktree-write, zero-dispatch, dispatch/model, secret-output and merge
+gates are covered for representative Codex payloads. One telemetry-dependent
+path remains deliberately manual under Codex: Codex exposes no stable token
+count for either the operator `context-budget` advisory or the lead's hard dispatch fence. The
 operator hook is wired to UserPromptSubmit and fails open when Claude usage is
 absent; `lead-context-budget` is deliberately omitted instead of being wired as
 a permanent no-op. Worktree isolation and manual context monitoring remain
@@ -129,8 +123,7 @@ coverage, and the installed pre-commit hook. It reports runtime trust and live
 hook delivery as `UNVERIFIED` because neither is observable from repository
 files. Treat those lines as manual checks, not as failures or inferred passes.
 
-Generated state under `.claude/codex-write-state/` and
-`.claude/hook-session-registry/`, plus executor markers under
+Generated state under `.claude/hook-session-registry/`, plus executor markers under
 `.claude/codex-executor-turns/`, is git-ignored and safe to delete between
 sessions. `BBM_HOOKS_DISABLE=1` remains the emergency kill switch for the whole
 stack. After pulling any change to `.codex/hooks.json`, open `/hooks`, inspect

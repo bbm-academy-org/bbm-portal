@@ -2,17 +2,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-const SCRIPT_RE = /(tools\/[\w./-]+\.mjs)(?:\\?["')]+)?\s*([\w-]+)?/g
+const SCRIPT_RE = /tools\/[\w./-]+\.mjs/g
 
 function commandTargets(command) {
   return [
     ...String(command ?? '')
       .replaceAll('\\', '/')
       .matchAll(SCRIPT_RE),
-  ].map((match) => ({
-    path: match[1],
-    args: match[2] ?? '',
-  }))
+  ].map((match) => ({ path: match[0] }))
 }
 
 function registrations(config) {
@@ -58,20 +55,16 @@ function validateDefinitions(config, label) {
   return findings
 }
 
-const key = (event, path, args = '') => `${event}|${path}|${args}`
+const key = (event, path) => `${event}|${path}`
 
 export function auditHookCoverage(claude, codex, inventory) {
   const findings = []
-  const claudeKeys = new Set(
-    registrations(claude).map((item) => key(item.event, item.path, item.args)),
-  )
-  const codexKeys = new Set(
-    registrations(codex).map((item) => key(item.event, item.path, item.args)),
-  )
+  const claudeKeys = new Set(registrations(claude).map((item) => key(item.event, item.path)))
+  const codexKeys = new Set(registrations(codex).map((item) => key(item.event, item.path)))
   const inventoryKeys = new Set()
 
   for (const entry of inventory) {
-    const sourceKey = key(entry.claudeEvent, entry.claudePath, entry.claudeArgs)
+    const sourceKey = key(entry.claudeEvent, entry.claudePath)
     if (inventoryKeys.has(sourceKey)) findings.push({ kind: 'duplicate-inventory-entry', entry })
     inventoryKeys.add(sourceKey)
     if (!claudeKeys.has(sourceKey)) findings.push({ kind: 'stale-inventory-entry', entry })
@@ -79,7 +72,7 @@ export function auditHookCoverage(claude, codex, inventory) {
       if (
         !entry.codexEvent ||
         !entry.codexPath ||
-        !codexKeys.has(key(entry.codexEvent, entry.codexPath, entry.codexArgs))
+        !codexKeys.has(key(entry.codexEvent, entry.codexPath))
       ) {
         findings.push({ kind: 'missing-codex-registration', entry })
       }
