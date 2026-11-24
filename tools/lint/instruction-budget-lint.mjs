@@ -94,6 +94,10 @@ export const NEAR_RATIO = 0.8
  * commented key — none of those makes Claude Code load the file lazily, so none
  * of them takes the file off the total.
  *
+ * The key must also SCOPE the file: at least one glob, and no match-all glob
+ * (`**`, `**\/*`). An empty list may load unconditionally and a match-all glob
+ * fires on every file a session touches — both are always-on in effect (#596).
+ *
  * @param {string} content
  * @returns {boolean}
  */
@@ -102,7 +106,57 @@ export function isPathScoped(content) {
   if (lines[0] !== '---') return false
   const close = lines.indexOf('---', 1)
   if (close === -1) return false
-  return lines.slice(1, close).some((l) => /^paths\s*:/.test(l))
+  const block = lines.slice(1, close)
+  const at = block.findIndex((l) => /^paths\s*:/.test(l))
+  if (at === -1) return false
+  const globs = pathsGlobs(block, at)
+  return globs.length > 0 && !globs.some(isMatchAllGlob)
+}
+
+/** Globs that match every path in the repo, after a leading `./` or `/` is dropped. */
+const MATCH_ALL_GLOBS = new Set(['**', '**/*', '**/**'])
+
+/** @param {string} glob */
+function isMatchAllGlob(glob) {
+  return MATCH_ALL_GLOBS.has(glob.replace(/^\.?\//, ''))
+}
+
+/**
+ * Strip one YAML scalar of its quotes, or of a trailing ` # comment` when bare.
+ *
+ * @param {string} raw
+ */
+function yamlScalar(raw) {
+  const s = raw.trim()
+  const quoted = /^(['"])(.*)\1(?:\s+#.*)?$/.exec(s)
+  if (quoted) return quoted[2].trim()
+  return s.replace(/\s+#.*$/, '').trim()
+}
+
+/**
+ * The globs a `paths:` key declares — the inline scalar, the inline flow list
+ * (`[a, b]`) or the block list of `- item` lines under it. Empty items drop out.
+ *
+ * @param {string[]} block frontmatter lines between the two `---`
+ * @param {number} at index of the `paths:` line
+ * @returns {string[]}
+ */
+function pathsGlobs(block, at) {
+  const inline = block[at].replace(/^paths\s*:/, '').trim()
+  /** @type {string[]} */
+  let items
+  if (inline && !inline.startsWith('#')) {
+    const flow = /^\[(.*)\]\s*(?:#.*)?$/.exec(inline)
+    items = flow ? flow[1].split(',') : [inline]
+  } else {
+    items = []
+    for (const line of block.slice(at + 1)) {
+      if (/^\S/.test(line)) break
+      const item = /^\s+-(?:\s+(.*))?$/.exec(line)
+      if (item) items.push(item[1] ?? '')
+    }
+  }
+  return items.map(yamlScalar).filter((g) => g.length > 0)
 }
 
 /** The always-on repo files, in the order a session meets them. */
