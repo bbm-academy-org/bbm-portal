@@ -282,6 +282,8 @@ describe('subagent-context-budget decide() — hard cap + allow-list', () => {
       'git push --forc',
       'git push origin +HEAD:main',
       'git push origin "+chore/588-x"',
+      'git push origin -- +HEAD:main',
+      'git push -- origin :chore/588-x',
       'git -C C:/r/.claude/worktrees/588 push --force',
       // remote ref deletion / mirroring / pruning
       'git push origin --delete chore/588-x',

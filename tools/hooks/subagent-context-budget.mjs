@@ -29,7 +29,10 @@
 //     auto-approve whichever call happened to cross the tier.
 //   - ≥ HARD_THRESHOLD → `permissionDecision: "deny"` on every tool except the
 //     hand-back allow-list (`isAllowedUnderHardCap`): chain-free git inspect /
-//     add / commit / push, and writing the agent's own checkpoint file.
+//     add / commit / push — no force push, ref deletion, amend, hook skip or
+//     `--output` — and writing the agent's own checkpoint file. Bash and
+//     PowerShell are both covered, PowerShell's `(…)` / `@(…)` / `{…}`
+//     evaluators included.
 //   - `BBM_HOOKS_DISABLE=1` silences it like every other hook of the stack.
 //   FAIL-OPEN: any parse / IO / logic error — and an unresolvable child
 //   transcript — exits 0 with no output, like the rest of this stack
@@ -138,12 +141,122 @@ export function resolveSubagentTranscript(payload, exists = existsSync) {
   return exists(candidate) ? candidate : null
 }
 
+/** Characters that, ANYWHERE in the command, make a git prefix prove nothing
+ * about what runs: POSIX chaining / piping / redirection / substitution
+ * (`; & | < > $` and the backtick, a newline) and PowerShell's argument-mode
+ * evaluators — `(…)`, `@(…)` and splats, `{…}` script blocks. PowerShell runs
+ * a `(…)` even glued to a word (`git diff x(Remove-Item y)`), so these are
+ * rejected outright rather than parsed. A literal paren in a quoted commit
+ * message is the accepted collateral: `-m wip` still passes. */
+const HARD_CAP_REJECT_RE = /[;&|`<>$(){}@]|[\r\n]/
+
 /** git verbs a subagent may still run above the hard cap: inspect, stage,
- * commit, push — the WIP-commit + hand-back path, nothing that moves HEAD or
- * discards work. `git -C <path>` is the form this repo mandates
- * (`.claude/rules/dev-env.md`), so it is accepted. */
-const HARD_CAP_GIT_RE =
-  /^git\s+(?:-C\s+(?:"[^"]*"|'[^']*'|\S+)\s+)?(?:status|diff|log|show|rev-parse|add|commit|push)\b/
+ * commit, push — the WIP-commit + hand-back path. */
+const HARD_CAP_GIT_VERBS = new Set([
+  'status',
+  'diff',
+  'log',
+  'show',
+  'rev-parse',
+  'add',
+  'commit',
+  'push',
+])
+
+/** Per verb, what the hand-back path never needs: rewriting history, deleting
+ * remote refs, running a program (`--receive-pack` / `--exec` run locally for a
+ * local remote), skipping hooks, writing an arbitrary file. `long` is matched as
+ * git matches it — any unique abbreviation counts (`--forc`, `--amen`);
+ * `short` letters are found inside a short-flag cluster (`-uf`) up to the first
+ * letter in `shortArg`, which takes the rest of the cluster as its value
+ * (`-mn` is the message "n"). */
+const HARD_CAP_BANNED_FLAGS = {
+  push: {
+    long: [
+      'force',
+      'force-with-lease',
+      'force-if-includes',
+      'delete',
+      'mirror',
+      'prune',
+      'receive-pack',
+      'exec',
+    ],
+    short: 'fd',
+    shortArg: 'o',
+  },
+  commit: { long: ['amend', 'no-verify'], short: 'n', shortArg: 'mFcCtuS' },
+  diff: { long: ['output'], short: '', shortArg: '' },
+  log: { long: ['output'], short: '', shortArg: '' },
+  show: { long: ['output'], short: '', shortArg: '' },
+}
+
+const DOUBLE_QUOTES = /["“”„]/
+const SINGLE_QUOTES = /['‘’‚‛]/
+
+/** Shell-ish word split: whitespace separates, quotes group and are dropped
+ * (`--fo"rce"` is `--force` to the shell, so it is to this check too), and
+ * backslashes are dropped (Bash reads `--fo\rce` as `--force`). The result is
+ * for MATCHING only — never executed, so lossy is fine where it fails closed.
+ * PowerShell also accepts the typographic quote forms, so they group too. */
+function hardCapWords(command) {
+  const words = []
+  let word = ''
+  /** @type {RegExp | null} the quote class that closes the open quote */
+  let quote = null
+  let inWord = false
+  for (const ch of command) {
+    if (quote) {
+      if (quote.test(ch)) quote = null
+      else if (ch !== '\\') word += ch
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (inWord) words.push(word)
+      word = ''
+      inWord = false
+      continue
+    }
+    inWord = true
+    if (DOUBLE_QUOTES.test(ch)) quote = DOUBLE_QUOTES
+    else if (SINGLE_QUOTES.test(ch)) quote = SINGLE_QUOTES
+    else if (ch !== '\\') word += ch
+  }
+  if (inWord) words.push(word)
+  return words
+}
+
+function hasBannedFlag(verb, args) {
+  const rules = HARD_CAP_BANNED_FLAGS[verb]
+  if (!rules) return false
+  let optionsDone = false
+  for (const arg of args) {
+    if (!optionsDone && arg === '--') {
+      // After `--` nothing is an option, but a push refspec still is one.
+      optionsDone = true
+      continue
+    }
+    if (optionsDone) {
+      if (verb === 'push' && /^[+:]/.test(arg)) return true
+      continue
+    }
+    if (arg.startsWith('--')) {
+      const name = arg.slice(2).split('=')[0]
+      if (name && rules.long.some((banned) => banned.startsWith(name))) return true
+      continue
+    }
+    if (/^-[^-]/.test(arg)) {
+      for (const letter of arg.slice(1)) {
+        if (rules.shortArg.includes(letter)) break
+        if (rules.short.includes(letter)) return true
+      }
+      continue
+    }
+    // A push refspec that forces (`+src:dst`) or deletes (`:dst`).
+    if (verb === 'push' && /^[+:]/.test(arg)) return true
+  }
+  return false
+}
 
 /**
  * The ONLY tools a subagent may still run above the hard cap.
@@ -155,11 +268,16 @@ const HARD_CAP_GIT_RE =
 export function isAllowedUnderHardCap(toolName, toolInput, agentId = null) {
   if (toolName === 'Bash' || toolName === 'PowerShell') {
     const command = String(toolInput?.command ?? '').trim()
-    // Chained / piped / redirected / substituted commands are rejected: the
-    // prefix must describe the WHOLE command, else `git status && pnpm build`
-    // routes around the fence.
-    if (/[;&|`<>$]|[\r\n]/.test(command)) return false
-    return HARD_CAP_GIT_RE.test(command)
+    // The prefix must describe the WHOLE command, else `git status && pnpm
+    // build` or PowerShell's `git status (pnpm build)` routes around the fence.
+    if (HARD_CAP_REJECT_RE.test(command)) return false
+    const words = hardCapWords(command)
+    if (words[0] !== 'git') return false
+    // `git -C <path>` is the form this repo mandates (`.claude/rules/dev-env.md`).
+    const verbAt = words[1] === '-C' ? 3 : 1
+    const verb = words[verbAt]
+    if (!verb || !HARD_CAP_GIT_VERBS.has(verb)) return false
+    return !hasBannedFlag(verb, words.slice(verbAt + 1))
   }
   if (toolName === 'Write') {
     const filePath = String(toolInput?.file_path ?? '')
@@ -190,6 +308,7 @@ export function hardMessage(contextTokens, path) {
   return (
     `Context ≈ ${k}K — hard cap ${hard}K reached (tools/hooks/subagent-context-budget.mjs). ` +
     `Every tool is denied except chain-free \`git status|diff|log|show|rev-parse|add|commit|push\` ` +
+    `(no force push, ref deletion, --amend, --no-verify or --output) ` +
     `and writing \`${path}\`. WIP-commit on the branch, write the checkpoint with: ` +
     `${CHECKPOINT_FIELDS}. Return now: first line \`ROTATE: ${path}\`, ≤20 lines.`
   )
@@ -237,6 +356,10 @@ function main() {
     const transcriptPath = resolveSubagentTranscript(payload)
     if (!transcriptPath) process.exit(0)
     const contextTokens = lastAssistantContextTokens(readTail(transcriptPath, TAIL_BYTES))
+    // Below the soft tier `decide()` is silent whatever the state says, so
+    // skip resolving the cadence path — `mainRepoRoot()` spawns git, and this
+    // hook runs on EVERY subagent tool call.
+    if (!(contextTokens >= SOFT_THRESHOLD)) process.exit(0)
     const cadencePath = statePath(
       mainRepoRoot(payload.cwd || process.cwd()),
       payload.session_id,
