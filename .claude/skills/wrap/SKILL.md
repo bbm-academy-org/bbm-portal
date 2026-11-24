@@ -149,7 +149,7 @@ owns the whole tail: gate → squash-merge → board `Done` → teardown → re-
 whether a PR merging in this wrap needs the
 independent review and the iteration-end gate is decided by the one boundary in
 `.claude/skills/task-cycle/SKILL.md` stage 4 — never re-decided here. In
-practice a wrap's own edits land on canon files (`CLAUDE.md`, `.claude/rules/**`,
+practice a wrap's own edits land on canon files (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/**`,
 `.claude/skills/task-cycle/**`), which puts them in the gated class: a wrap is
 not a bypass of its own regulation. Each task closed here gets its closing comment in
 the fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`); each task

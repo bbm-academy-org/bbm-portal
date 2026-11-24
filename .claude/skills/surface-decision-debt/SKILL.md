@@ -20,7 +20,7 @@ optional.
 Go back over this session's transcript and find every moment where you took a
 decision that:
 
-- **deviated from a documented convention** (CLAUDE.md, `.claude/rules/*`,
+- **deviated from a documented convention** (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/*`,
   `task-cycle`, `task-canon`, a spec in `docs/specs/`) without amending it;
 - **substituted a generic mechanism** for the project-specific one because the
   project one was missing or inconvenient (a raw `gh issue create` instead of
