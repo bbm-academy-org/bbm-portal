@@ -90,12 +90,21 @@ on the day it happened _(owner-confirmed)_, and the gain or loss on currency
 exchanges shown as its own line — and what remains, which goes below zero when
 the limit is exceeded rather than stopping at zero. **Against the money:** how
 much has been contributed, how much is owed back to members who paid from their
-own cards, and how much cash the accounts hold at what it cost us. The two
-answers always reconcile: contributed (plus income) equals spent plus cash at
-cost minus what is owed to members. That holds because every foreign-currency
+own cards, and how much cash the accounts hold at what it cost us; income is
+shown beside them even while it is zero. The two answers reconcile exactly —
+contributed plus income equals spent plus cash at cost minus what is owed to
+members — whenever the budget starts on or before BBM's first operation; a
+budget started later leaves earlier spend and contributions out of the glass,
+and the screen then does not claim the sum. That holds because every foreign-currency
 holding carries the cost it was bought for in the budget currency, and spending it or
 converting it back uses up that cost — including chains such as RUB → USDT →
-THB. Approved but unpaid requests are not spending (cash basis, decision 14
+THB. Two numbers therefore differ on purpose: the budget's «cash at cost» is
+not the cash total on `/p/finance` whenever foreign money is held — that card
+values holdings at the recorded exchange rates between currency pairs, not at
+what they cost and what is left of that cost — and the budget's exchange-result
+line is not the ledger's own exchange-result entries, which are kept per
+currency pair and miss holdings already spent. The budget reading is the one
+that adds up to the money contributed. Approved but unpaid requests are not spending (cash basis, decision 14
 stays deferred); income does not extend the limit. The limit is plan and the
 rest is fact, so the two are never blended into one line. Every number is in
 the budget's own currency and built only from recorded operations (decision 18) — no market or Bank of Russia rate; where money arrived in a foreign
@@ -185,7 +194,8 @@ the two that decide the rest.
 - **US-23** — As the owner, I see how much has been contributed, how much we
   owe members who paid from their own cards, and how much cash the accounts
   hold at what it cost us, separately from the budget glass, and the two
-  reconcile exactly. _(owner, 2026-11-24, #581)_
+  reconcile exactly while the budget starts on or before BBM's first
+  operation. _(owner, 2026-11-24, #581)_
 
 ## Flows
 
@@ -254,8 +264,12 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 - An expense paid from a member's own card counts against the budget on the
   day it was paid, and paying the member back does not count it again.
 - Contributions, money owed to members and cash at cost are shown as separate
-  facts; contributed plus income equals spent plus cash at cost minus money
-  owed to members, exactly.
+  facts beside an income figure; contributed plus income equals spent plus
+  cash at cost minus money owed to members, exactly, whenever the budget
+  starts on or before BBM's first operation.
+- The budget's cash at cost and exchange result are labelled so that they are
+  not mistaken for the `/p/finance` cash total or the ledger's own exchange
+  entries, which differ whenever foreign money is held.
 - The per-project spend plus the exchange-result line adds up to the total
   spend.
 

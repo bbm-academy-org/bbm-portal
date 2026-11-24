@@ -539,6 +539,12 @@ not only Doctor School and the fund row — draws on the budget (see open
 question 1 of «Open questions — §D»); cash-basis recognition on the money date
 (decision 14 keeps accrual deferred, so an approved but unpaid request is not
 spending); everything in EARS-335…345 that the four bullets above do not say.
+One of those derivations is dictated by an owner requirement rather than open
+to choice: the owner asked to read «contributed vs spent (cash)» against each
+other (#581), so the reading must reconcile to the money actually contributed.
+The ledger's per-pair pools (EARS-325, EARS-328) cannot do that once a holding
+is spent or crosses pairs (§D fixtures 2 and 4), which is why EARS-340 builds
+its own spend-aware cost basis instead of naming a limitation.
 
 **The company account that pays requests** is not a new concept: it is an
 ordinary money account (`bank`, EARS-301) created in the cabinet, and the
@@ -640,52 +646,71 @@ research answers.
      them are skipped — they cancel per currency (EARS-328), and the replay
      derives its own exchange result.
   2. **State.** For every currency `X ≠ B`: a **holding pool** (quantity, cost in
-     `B`) mirroring the `X` balance of all company money accounts, and an
-     **owed pool** (quantity, carrying cost in `B`) mirroring the `X` balance of
-     liability postings that carry `member_id`. A pool's cost may be unknown.
-  3. **Supply and use.** Within one operation, per currency, every posting is a
-     supply or a use. Supply of `X`: the net decrease of company money accounts
-     in `X`, drawn from the holding pool at its moving-average cost; a credit on
-     a member liability, valued at the holding pool's current average cost
-     without drawing from it; a credit on `equity` or `income`, of unknown cost;
-     and each conversion step's received quantity of `X`. Use of `X`: the net
-     increase of company money accounts in `X`, added to the holding pool; a
-     debit on an `expense` account; a debit on a member liability, drawn from
-     the owed pool at its carrying cost; and each step's disposed quantity of
-     `X`. In `B` itself every supply and every use is worth its own amount.
-  4. **Steps, then allocation.** Conversion steps run in `step_no` order: a
-     step's disposed quantity takes its cost from the supply of its
-     `from_currency` available at that point in the operation (the non-step
-     supply plus earlier steps' receipts), at that supply's average cost, and
-     its received quantity carries exactly that cost — so a chain RUB → USDT →
-     THB carries the roubles' cost to the baht. Then each currency's remaining
-     supply cost is allocated to that currency's non-step uses in proportion to
-     quantity, rounded half away from zero per use in posting-id order, the last
-     use taking the remainder, so an operation's cost in equals its cost out
-     exactly. A cross-currency payment therefore costs exactly what the paying
-     side gave up — decision 18's «each operation's own actual rate».
-  5. **Exchange result.** WHERE a use's value is fixed independently of the cost
-     allocated to it — a use in `B`, worth its own amount, and an owed-pool draw,
-     worth its carrying cost — the allocated cost minus that value is the
+     `B`) mirroring the `X` balance of all company money accounts, and, per
+     member, an **owed pool** (quantity, carrying cost in `B`) mirroring that
+     member's `X` balance of the liability postings this reading counts (item
+     3). A pool's cost may be unknown. **Drawing** `q` from a pool or a supply
+     holding quantity `Q` at cost `K` costs `K` when `q = Q` and otherwise
+     `round_half_away_from_zero(q × K ÷ Q)`; the drawn cost leaves `K` exactly,
+     so every later draw prices what remains. A draw is the replay's only
+     rounding point, apart from item 3's valuation of a member's debt.
+  3. **Supply and use.** Within one operation, per currency, the postings are
+     read as supplies and uses. Supply of `X`: the net decrease of company money
+     accounts in `X`, drawn from the holding pool; a credit on a member liability
+     (spec 339 EARS-513), which enters that member's owed pool at
+     `round_half_away_from_zero(quantity × K ÷ Q)` of the holding pool as it
+     stood before the operation, without drawing from it; a credit on `equity`
+     or `income`; and each conversion step's received quantity of `X`. Use of
+     `X`: the net increase of company money accounts in `X`, added to the
+     holding pool; a debit on an `expense` account; a debit on a member liability
+     (spec 339 EARS-528), drawn from that member's owed pool; and each step's
+     disposed quantity of `X`. A **non-step** supply in `B` costs its own amount,
+     and a credit on `equity` or `income` in `X ≠ B` has unknown cost. A step's
+     receipt, in `B` as in any other currency, carries the cost item 4 gives it.
+     Any other posting — an `expense` credit, an `income` or `equity` debit, or
+     a liability posting that is not one of spec 339 EARS-513/528 (a future
+     accrual, a liability without `member_id`) — makes the figures unknown (item 7) rather than being guessed.
+  4. **Steps, then allocation.** The operation's non-step supplies of each
+     currency are pooled first (quantity, cost). Conversion steps run in
+     `step_no` order: a step **draws** (item 2) its disposed quantity from the
+     supply of its `from_currency` as it stands at that point — the non-step
+     supply plus earlier steps' receipts, less earlier draws — and its received
+     quantity joins the supply of its `to_currency` carrying exactly that drawn
+     cost. So a chain RUB → USDT → THB carries the roubles' cost to the baht,
+     and a chain passing through `B` carries cost through `B` without a result.
+     Then each currency's non-step uses, in posting-id order, **draw** their cost
+     from what is left of that currency's supply, the last use taking the
+     remainder, so an operation's cost in equals its cost out exactly. A
+     cross-currency payment therefore costs exactly what the paying side gave
+     up — decision 18's «each operation's own actual rate».
+  5. **Value and exchange result.** A non-step use's **value** is its own amount
+     when it is in `B`, its owed-pool draw when it reduces a member's debt in
+     `X ≠ B`, and its drawn cost (item 4) otherwise. WHERE a value differs from
+     the drawn cost — only for those first two kinds of non-step use; a step's
+     disposal never carries a result — the drawn cost minus the value is the
      operation's **exchange result**: positive is a loss, negative a gain.
-  6. **Rounding.** Each pool draw is rounded half away from zero once and reduces
-     the pool's cost by exactly the rounded amount, so no residue survives
-     anywhere.
-  7. **Unknown cost.** A cost drawn or allocated from an unknown cost is
-     unknown, and a holding pool with unknown cost stays unknown until its
-     quantity returns to zero (EARS-325's reset). The same applies to a draw
-     larger than the pool holds, a member-liability credit in a currency whose
-     holding pool is empty, a step disposing more than the operation has
-     supplied of that currency at that point, and a liability posting without
-     `member_id`. A figure that sums an unknown cost shall be withheld, with the
-     currencies that caused it named in ascending code order — never shown as a
-     partial number (EARS-325's degraded-state rule).
+  6. **Exactness.** Every cost is rounded once, where it is drawn or where a
+     member's debt is valued (items 2 and 3), and the same rounded amount is
+     used on both sides, so no residue survives anywhere and the per-operation
+     balance of item 4 holds in integers.
+  7. **Unknown cost.** A cost drawn from an unknown cost is unknown, and a
+     holding pool with unknown cost stays unknown until its quantity returns to
+     zero (EARS-325's reset). The same applies to a draw larger than the pool or
+     supply holds, a member-liability credit in a currency whose holding pool is
+     empty, and every posting item 3 sends here. A figure that sums an unknown
+     cost shall be withheld, with the currencies that caused it named in
+     ascending code order — never shown as a partial number (EARS-325's
+     degraded-state rule). Because «spent» and «contributed» are cumulative,
+     once an unknown cost has been spent or converted into a value, the figures
+     that include it stay withheld for the life of the budget; only «cash at
+     cost» recovers when the pool returns to zero.
 
   No Bank of Russia rate (spec 339 EARS-553) and no market rate shall enter the
   replay or any figure of EARS-341…345.
 
 - **EARS-341.** «Spent» against a budget shall be the sum, in `B`, of (a) the
-  replayed cost of every debit on a system `expense` account whose operation's
+  value (EARS-340 item 5 — its own amount in `B`, its drawn cost otherwise) of
+  every debit on a system `expense` account whose operation's
   `occurred_on` is on or after the budget's `starts_on`, and (b) the exchange
   results (EARS-340 item 5) of the operations in that window. Part (a) covers
   every project and every source: an expense paid from a member's personal funds
@@ -704,12 +729,15 @@ research answers.
   Income shall not raise the limit, and a contribution shall neither raise nor
   lower it: the limit is how much BBM may spend; the contributions are when the
   money arrives.
-- **EARS-343.** Beside the glass, the reading shall show three figures, all in
+- **EARS-343.** Beside the glass, the reading shall show four figures, all in
   `B` from the same replay: «contributed» — minus the sum of `equity` postings
   whose operation's `occurred_on` is on or after `starts_on`, both members of a
-  reversed pair removed as in EARS-340 item 1; «owed to members» — the `B`
-  balance of liability postings carrying `member_id` plus the carrying cost of
-  every owed pool, that is, personal-funds spend not yet reimbursed; and «cash at
+  reversed pair removed as in EARS-340 item 1; «income» — the value of every
+  credit on a system `income` account in the same window, shown even while it
+  is zero so the relation of EARS-344 can be checked on the screen; «owed to
+  members» — the `B`
+  balance of the liability postings EARS-340 item 3 counts plus the carrying
+  cost of every owed pool, that is, personal-funds spend not yet reimbursed; and «cash at
   cost» — the `B` balance of company money accounts plus the cost of every
   holding pool. «Cash at cost» is the one cash figure of the budget reading. It
   equals the EARS-325 card total whenever all money is in `B`; otherwise the two
@@ -718,12 +746,15 @@ research answers.
   label its figure «по себестоимости» rather than show a second number under the
   card's name.
 - **EARS-344.** Over all of BBM's operations the reading shall satisfy, exactly
-  and in `B`: contributed + income = spent + cash at cost − owed to members,
-  where income is the replayed value of every credit on a system `income`
-  account. «Paid out» — the owner's «cash = contributed + income − paid out» —
-  shall be read as spent − owed to members: what BBM's money has actually
-  covered. WHERE `starts_on` is on or before BBM's first operation the windowed
-  figures are the all-time ones and the relation holds on the glass as shown.
+  and in `B`: contributed + income = spent + cash at cost − owed to members.
+  The owner's «contributed vs spent (cash)» (#581) is this relation; «paid out»,
+  where a reading needs the word, is spent − owed to members — what BBM's money
+  has actually covered. The relation holds **on the screen** only WHERE the
+  budget's `starts_on` is on or before BBM's first operation: then the windowed
+  figures (spent, contributed, income) are the all-time ones that cash at cost
+  and owed already are. WHERE `starts_on` is later, the windowed figures leave
+  out what happened before it, and the reading shall not present the four
+  figures as reconciling.
   Every figure of EARS-340…345 is a read model over postings and the budget row,
   stored nowhere (the data-model rule: no table stores a balance), and all of
   them are read in `B`: none follows the reporting-currency switch of decision
@@ -1058,7 +1089,7 @@ hand arithmetic — they are not BBM's figures, and no real budget amount appear
 in this repository (EARS-338). Every fixture has one budget on the fund, in RUB,
 with `starts_on` before the first operation unless stated; the projects are the
 fund and one project «P». Only the read model's public output is asserted, and
-every fixture also asserts EARS-344's identity.
+every fixture whose figures are numeric also asserts EARS-344's identity.
 
 1. **The plain path.** Contribute `100_000` RUB onto a bank account; pay a
    `30_000` RUB expense of «P» from it; a member pays a `5_000` RUB expense of
@@ -1095,25 +1126,52 @@ every fixture also asserts EARS-344's identity.
    whatever the THB pool holds. A conversion of `10_000` RUB → `10_000` USD
    whose step charges a `5_000` USD fee costs the fee `5_000` RUB and leaves
    `5_000` USD in the pool at `5_000` (EARS-340 item 4).
-6. **No recorded cost, no number.** Contribute `1_000` USDT onto a crypto
+6. **A rouble expense paid out of a foreign holding is counted once.**
+   Contribute `100_000` RUB; convert it to `10_000` THB; pay a `9_000` RUB
+   invoice of «P» from the THB account, which is charged `1_000` THB (one step,
+   THB `1_000` → RUB `9_000`). The step draws `10_000` of cost; the RUB expense's
+   value is its own `9_000`, so the exchange result is `1_000`. «Spent» `10_000`
+   = «P» `9_000` + exchange result `1_000`, and «cash at cost» `90_000`. A
+   reading that summed the expense's drawn cost and the result would show
+   `11_000` and break EARS-344 (EARS-340 item 5, EARS-341).
+7. **A chain through the budget currency carries cost, not a result.** Hold
+   `10_000` THB at a cost of `100_000`, then in ONE operation convert THB
+   `10_000` → RUB `90_000` → USD `1_000` onto a USD account. The RUB leg is a
+   step's disposal, not a non-step use: exchange result `0`, and the USD pool
+   holds `1_000` at `100_000`. «Spent» does not move; a reading that booked
+   `10_000` on the RUB leg would raise «spent» with cash unchanged (EARS-340
+   items 4–5).
+8. **Rounding that does not divide evenly.** Contribute `10` RUB; convert it to
+   `3` THB (pool `3` at `10`); pay a `1` THB expense of «P» — the draw is
+   `round_half_away_from_zero(1 × 10 ÷ 3) = 3`, leaving `2` at `7`; then, in one
+   operation, pay two `1` THB expenses from the THB account, the fund's first
+   by posting id and then one of «P». The operation draws the whole pool, `7`;
+   the first use draws `round_half_away_from_zero(1 × 7 ÷ 2) = 4` and the last
+   takes the remaining `3`. «Spent» `10` = «P» `6` + fund `4`, «cash at cost»
+   `0`, «contributed» `10`, and the breakdown sums exactly (EARS-340 items 2, 4
+   and 6, EARS-345).
+9. **No recorded cost, no number.** Contribute `1_000` USDT onto a crypto
    account and pay a `100` USDT expense from it: «spent», «remaining»,
    «contributed» and «cash at cost» are withheld and `USDT` is named; the native
    amounts stay visible. A member's `5_000` THB personal-card expense while BBM
-   holds no THB is withheld the same way (EARS-340 item 7).
-7. **Reversal, window, sign.** A `10_000` RUB expense and its reversal leave
-   «spent» unchanged, including when the reversal is dated before `starts_on`;
-   an expense dated the day before `starts_on` is not counted; with a limit of
-   `20_000` and «spent» `25_000`, «remaining» is `−5_000`, not `0`
-   (EARS-340/341/342).
-8. **The guards.** An operation carrying an `equity` posting with a purpose, a
-   conversion step, a second money leg, a mismatched amount or a non-fund project
-   is refused, as is a reversal-shaped operation that reverses no contribution
-   (EARS-336/337); the `equity` account is neither a cash tile nor part of the
-   EARS-325 total (EARS-335); a budget on «P» and a second unretired budget on
-   the fund are refused, as is any budget write from a session without
-   `finance-approve` (EARS-338/339); a budget write appears in
-   `core.audit_event` (EARS-339); a reporting-currency switch leaves every
-   budget figure in RUB (EARS-344).
+   holds no THB is withheld the same way. Then spend the remaining `900` USDT:
+   the USDT pool returns to zero, «cash at cost» reappears, and «spent» and
+   «remaining» stay withheld — the unknown cost is inside them for good
+   (EARS-340 item 7).
+10. **Reversal, window, sign.** A `10_000` RUB expense and its reversal leave
+    «spent» unchanged, including when the reversal is dated before `starts_on`;
+    an expense dated the day before `starts_on` is not counted; with a limit of
+    `20_000` and «spent» `25_000`, «remaining» is `−5_000`, not `0`
+    (EARS-340/341/342).
+11. **The guards.** An operation carrying an `equity` posting with a purpose, a
+    conversion step, a second money leg, a mismatched amount or a non-fund project
+    is refused, as is a reversal-shaped operation that reverses no contribution
+    (EARS-336/337); the `equity` account is neither a cash tile nor part of the
+    EARS-325 total (EARS-335); a budget on «P» and a second unretired budget on
+    the fund are refused, as is any budget write from a session without
+    `finance-approve` (EARS-338/339); a budget write appears in
+    `core.audit_event` (EARS-339); a reporting-currency switch leaves every
+    budget figure in RUB (EARS-344).
 
 ## Out of scope
 
@@ -1193,8 +1251,11 @@ carries the default that applies until the owner answers.
    card debt in a currency BBM holds none of, has no recorded cost in the
    budget currency, so EARS-340 withholds the figures. Should the Bank of
    Russia rate of that day serve as its cost, which would narrow spec 339
-   EARS-553 for this reading? _Default: no; the figures are withheld, and the
-   practical path is to bring money in roubles and convert it on record._
+   EARS-553 for this reading? _Default: no. The cost of that default: once any
+   such money is spent or converted, «spent» and «remaining» stay withheld for
+   the life of the budget — only «cash at cost» comes back when the holding is
+   used up (§D fixture 9). The practical path is to bring money in roubles and
+   convert it on record._
 5. **Who records the budget limit?** EARS-339 places it with `finance-approve`
    on `/p/finance`; the alternative is reference administration
    (`platform-admin` or `finance-entry`) in the cabinet. _Default:
