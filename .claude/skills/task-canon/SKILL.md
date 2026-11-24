@@ -5,7 +5,7 @@ description: How a task is formulated in this repo — issue body skeleton, the 
 
 # Task canon — how a task is formulated
 
-This repo's backlog is **GitHub Issues** `bbm-academy-org/bbm-portal` (CLAUDE.md);
+This repo's backlog is **GitHub Issues** `bbm-academy-org/bbm-portal` (`AGENTS.md` §6);
 Plane `BBMP-*` is the organizational layer, not this canon. The rules below port
 the ds-platform pattern (inventory #127) onto our labels, board and `task-cycle`.
 
@@ -260,7 +260,7 @@ created issues are written back into the spec. A set cannot land as N
 simultaneously pickable tasks: exactly one is pickable — the head of the critical
 path — and the rest are filed blocked. Cross-repo children
 (`bbm-public-website`) are linked natively (one organization) but are **filed,
-not implemented** here — the boundary from CLAUDE.md.
+not implemented** here — the cross-repo boundary in `AGENTS.md` §6.
 
 ## 4. Claim — a task is taken = worktree **AND** status
 
@@ -274,6 +274,13 @@ mandatory:
 For a task whose deliverable lives entirely outside the repo (issues, board, an
 external service), the claim is board status + a fixing comment on the issue; no
 worktree is created — an empty branch would only become teardown debt.
+
+**A claim names the session.** The claim comment (and the stop-state comment of
+§5) names the session that holds the work — its session link or id and harness
+— so a neighbour can tell a live claim from an abandoned one and knows whom to
+message. A worktree or an `In Progress` status claimed by another session is
+not taken over; it is resolved with that session or, if stale, by the lead or
+the owner as below.
 
 A divergence is itself a canon violation, not a "detail"; `pnpm backlog:triage`
 catches it (the «Расхождения claim» section). Resolution is asymmetric:

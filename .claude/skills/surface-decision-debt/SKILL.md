@@ -20,7 +20,7 @@ optional.
 Go back over this session's transcript and find every moment where you took a
 decision that:
 
-- **deviated from a documented convention** (CLAUDE.md, `.claude/rules/*`,
+- **deviated from a documented convention** (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/*`,
   `task-cycle`, `task-canon`, a spec in `docs/specs/`) without amending it;
 - **substituted a generic mechanism** for the project-specific one because the
   project one was missing or inconvenient (a raw `gh issue create` instead of
@@ -48,6 +48,12 @@ The threshold is the one in `DEBT.md`'s header (issue #65 / #92), unchanged:
 | Genuinely one-off, worth no tracking                                                                                                       | **Named in the report anyway**, routed nowhere, with the rationale.                                                                                                                     |
 
 The fourth row is the one agents skip. It still produces a list item.
+
+**A deferred production action is always an issue**, never only a `DEBT.md`
+line: a migration, an IdP grant, an env var, a backfill or a deploy step the
+work needs on prod but did not perform gets its own issue, linked from the PR,
+before the report — a line in a ledger nobody reads at deploy time is how such
+a step is lost.
 
 **A PRODUCT-scope gap is not a deviation and is never auto-filed (#299).** When
 the pass turns up something the product does not do — a missing screen, an

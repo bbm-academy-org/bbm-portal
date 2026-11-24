@@ -43,7 +43,7 @@
 // scope — killing a listener or a session you did not start is exactly what
 // `parallel-sessions.md` forbids; the action stays a lead decision.
 //
-// Every git call names its tree with `git -C <abs>` (`.claude/rules/dev-env.md`:
+// Every git call names its tree with `git -C <abs>` (`AGENTS.md` §4:
 // cwd drifts between calls and a probe must never read the wrong worktree). The
 // classifier, age formatter, porcelain parser and evidence gatherer are exported
 // for tests/unit/dispatch-scripts.spec.ts; git and fs go through injectable
@@ -176,7 +176,7 @@ export function formatLine(n, evidence, decision) {
 
 /**
  * Default runner — real `git`, ALWAYS with an explicit `-C <tree>` rather than
- * a cwd option (`.claude/rules/dev-env.md`): the tree a probe reads is named,
+ * a cwd option (`AGENTS.md` §4): the tree a probe reads is named,
  * never inherited.
  */
 export function defaultRunner() {

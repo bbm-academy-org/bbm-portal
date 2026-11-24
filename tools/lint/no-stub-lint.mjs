@@ -6,9 +6,9 @@
 // human-written text, so it soaked), promoted to BLOCK on 2026-09-02 (#438) under
 // the §4 clauses: no `continue-on-error`, and the job is in the `ci` needs-list.
 //
-// Why it exists: CLAUDE.md already bans user-facing dev placeholders ("render
-// the real thing or nothing") and untracked scaffold, and the ban recurred
-// anyway because prose does not fire at the moment code is written. Two literal
+// Why it exists: user-facing dev placeholders and untracked scaffold kept
+// recurring under a prose-only ban, because prose does not fire at the moment
+// code is written. Two literal
 // shapes are checked — narrow and mechanical, not a style nanny:
 //
 //   1. A user-facing DEV PLACEHOLDER: rendered copy telling the reader to set or

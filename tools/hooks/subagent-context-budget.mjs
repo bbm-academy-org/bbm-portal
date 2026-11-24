@@ -254,7 +254,7 @@ export function isAllowedUnderHardCap(toolName, toolInput, agentId = null) {
     const words = command.split(' ').filter(Boolean)
     if (words.some((word) => HARD_CAP_DOT_SPLIT_RE.test(word))) return false
     if (words[0] !== 'git') return false
-    // `git -C <path>` is the form this repo mandates (`.claude/rules/dev-env.md`).
+    // `git -C <path>` is the form this repo mandates (`AGENTS.md` §4).
     const verbAt = words[1] === '-C' ? 3 : 1
     const verb = words[verbAt]
     if (!verb || !HARD_CAP_GIT_VERBS.has(verb)) return false

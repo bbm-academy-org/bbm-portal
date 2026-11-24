@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   AGGREGATE_BUDGET,
-  AGGREGATE_SLOTS,
   BUDGET,
   NEAR_RATIO,
   collectTargets,
   evaluateFile,
   formatReport,
+  isPathScoped,
   memoryIndexPath,
   projectSlug,
   runBudgetLint,
@@ -172,28 +172,27 @@ describe('formatReport', () => {
 })
 
 /**
- * #157, second delta: the per-file budget alone is a loophole — six files each
- * at 199 lines pass individually while the session pays for 1194. The aggregate
- * cap closes it, and is DERIVED from the per-file limit rather than invented:
- * the corpus is designed to have four slots (CLAUDE.md, AGENTS.md, the MEMORY.md
- * index, and `.claude/rules/` AS A WHOLE), so the cap is four per-file budgets.
- * Treating the rules directory as one slot is the point — otherwise adding a
- * rule file would raise the ceiling it is supposed to be constrained by.
+ * #157 closed the per-file loophole (six files at 199 lines each pass while the
+ * session pays for 1194) with a corpus cap. #596 measures that corpus honestly —
+ * only what a Claude session really loads at start: CLAUDE.md, the AGENTS.md it
+ * imports, and the PATH-LESS `.claude/rules/*.md` files — and lowers the cap
+ * toward ds-platform's 30 KB (owner go, Anton, 2026-11-24). The cap is an
+ * explicit constant now, not four per-file budgets: the four-slot derivation
+ * described a corpus that counted machine-local memory and lazy rules.
  */
 describe('aggregate corpus budget', () => {
-  const row = (path: string, lines: number, bytes: number) => ({
+  const row = (path: string, lines: number, bytes: number, scope?: string) => ({
     path,
     lines,
     bytes,
     chars: bytes,
     status: 'PASS' as const,
     over: [] as string[],
+    ...(scope ? { scope } : {}),
   })
 
-  it('derives the cap from the per-file budget and the slot count', () => {
-    expect(AGGREGATE_SLOTS).toBe(4)
-    expect(AGGREGATE_BUDGET.lines).toBe(BUDGET.lines * AGGREGATE_SLOTS)
-    expect(AGGREGATE_BUDGET.bytes).toBe(BUDGET.bytes * AGGREGATE_SLOTS)
+  it('caps the always-on corpus at 32 KB / 400 lines (#596)', () => {
+    expect(AGGREGATE_BUDGET).toEqual({ lines: 400, bytes: 32 * 1024 })
   })
 
   it('fails on the corpus SUM even though every single file passes', () => {
@@ -226,6 +225,96 @@ describe('aggregate corpus budget', () => {
     const report = formatReport([row('CLAUDE.md', near, 1000)])
     expect(report.verdict).toBe('PASS')
     expect(report.text).toContain('corpus')
+  })
+
+  it('keeps lazy rules and the machine-local memory index OFF the total', () => {
+    const report = formatReport([
+      row('CLAUDE.md', 50, 2000),
+      row('.claude/rules/design-process.md', BUDGET.lines - 1, BUDGET.bytes - 1, 'lazy'),
+      row('MEMORY.md', BUDGET.lines - 1, BUDGET.bytes - 1, 'machine-local'),
+      row('.claude/rules/x.md', BUDGET.lines - 1, BUDGET.bytes - 1, 'lazy'),
+    ])
+    expect(report.verdict).toBe('PASS')
+    expect(report.total).toEqual({ lines: 50, bytes: 2000 })
+    expect(report.text).toContain('lazy')
+    expect(report.text).toContain('machine-local')
+  })
+
+  it('still fails an off-total file that is over its own per-file budget', () => {
+    const report = formatReport([
+      row('CLAUDE.md', 50, 2000),
+      {
+        ...row('MEMORY.md', BUDGET.lines + 1, 1000, 'machine-local'),
+        status: 'OVER',
+        over: ['lines'],
+      },
+    ])
+    expect(report.verdict).toBe('FAIL')
+    expect(report.exitCode).toBe(1)
+  })
+})
+
+/**
+ * Claude Code loads a `.claude/rules/*.md` file with `paths:` frontmatter only
+ * when the session touches a matching file — it is lazy, not always-on. The
+ * classifier is strict (ds-platform #1371): the frontmatter must be the first
+ * bytes of the file, terminated, and declare `paths` as a top-level key. The
+ * word `paths:` in the body, or a markdown thematic break, is not frontmatter.
+ */
+describe('isPathScoped', () => {
+  const doc = (...lines: string[]) => lines.join('\n') + '\n'
+
+  it('recognises real top-level paths frontmatter', () => {
+    expect(isPathScoped(doc('---', 'paths:', '  - "src/**/*.tsx"', '---', '', '# Rule'))).toBe(true)
+  })
+
+  it('accepts CRLF line endings', () => {
+    expect(isPathScoped(['---', 'paths:', '  - "src/**"', '---', '# Rule', ''].join('\r\n'))).toBe(
+      true,
+    )
+  })
+
+  it('rejects frontmatter that is not the first bytes of the file', () => {
+    expect(isPathScoped(doc('', '---', 'paths:', '  - "src/**"', '---'))).toBe(false)
+  })
+
+  it('rejects an unterminated block', () => {
+    expect(isPathScoped(doc('---', 'paths:', '  - "src/**"', '# Rule'))).toBe(false)
+  })
+
+  it('rejects an indented or commented paths key and a body mention', () => {
+    expect(isPathScoped(doc('---', 'meta:', '  paths: x', '---'))).toBe(false)
+    expect(isPathScoped(doc('---', '# paths: x', '---'))).toBe(false)
+    expect(isPathScoped(doc('# Rule', '', 'paths: src/**'))).toBe(false)
+  })
+
+  /*
+   * A `paths:` key that scopes the file to nothing — or to everything — is not a
+   * lazy rule (#596 review). An empty list may load unconditionally, and a
+   * match-all glob fires on every file the session touches; either way the file
+   * is effectively always-on and stays on the total.
+   */
+  it('keeps an empty paths list on the total', () => {
+    expect(isPathScoped(doc('---', 'paths:', '---', '# Rule'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: []', '---', '# Rule'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', '  -', '---', '# Rule'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: ""', '---', '# Rule'))).toBe(false)
+  })
+
+  it('keeps a match-all glob on the total, in every YAML form', () => {
+    expect(isPathScoped(doc('---', "paths: ['**']", '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: ["**/*"]', '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths: "**"', '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', "  - '**'", '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', '  - **/*', '---'))).toBe(false)
+    expect(isPathScoped(doc('---', 'paths:', "  - 'src/**'", "  - './**'", '---'))).toBe(false)
+  })
+
+  it('still treats a narrow glob list as lazy, in every YAML form', () => {
+    expect(isPathScoped(doc('---', "paths: ['src/**', 'docs/*.md']", '---'))).toBe(true)
+    expect(isPathScoped(doc('---', 'paths: src/**', '---'))).toBe(true)
+    expect(isPathScoped(doc('---', 'paths:', "  - 'src/**' # the view layer", '---'))).toBe(true)
+    expect(isPathScoped(doc('---', 'paths:', '  - "**/*.tsx"', 'other: 1', '---'))).toBe(true)
   })
 })
 
@@ -277,5 +366,31 @@ describe('runBudgetLint', () => {
     })
     expect(report.verdict).toBe('FAIL')
     expect(report.exitCode).toBe(1)
+  })
+
+  it('scopes each target: path-less rules always-on, paths: rules lazy, memory machine-local', () => {
+    const files: Record<string, string> = {
+      '/repo/CLAUDE.md': filled(10),
+      '/repo/AGENTS.md': filled(10),
+      '/repo/.claude/rules/always.md': filled(10),
+      '/repo/.claude/rules/lazy.md':
+        ['---', 'paths:', '  - "src/**"', '---', ''].join('\n') + filled(BUDGET.lines - 10),
+      '/home/.claude/projects/-repo/memory/MEMORY.md': filled(BUDGET.lines - 10),
+    }
+    const report = runBudgetLint({
+      repoRoot: '/repo',
+      home: '/home',
+      exists: (p: string) => key(p) in files,
+      readFile: (p: string) => files[key(p)],
+      listRules: () => ['/repo/.claude/rules/always.md', '/repo/.claude/rules/lazy.md'],
+    })
+    expect(report.results.map((r: { scope: string }) => r.scope)).toEqual([
+      'always-on',
+      'always-on',
+      'always-on',
+      'lazy',
+      'machine-local',
+    ])
+    expect(report.total).toEqual({ lines: 30, bytes: 330 })
   })
 })

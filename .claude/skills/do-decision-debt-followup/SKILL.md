@@ -46,7 +46,8 @@ second source of truth. A debt item is therefore one of:
      `task-cycle` (a rule stays, the deviation goes).
    - **The deviation was right, the convention is stale** → amend the convention
      itself: the rule (`.claude/rules/*`), the skill (`.claude/skills/*/SKILL.md`),
-     `CLAUDE.md`, or the spec in `docs/specs/`. The deliverable is the AMENDED
+     `AGENTS.md` (shared rules) or `CLAUDE.md` (Claude-only bindings), or the
+     spec in `docs/specs/`. The deliverable is the AMENDED
      document in one PR — not a proposal document about amending it (memory
      `no-doc-about-doc`).
    - **The theme recurred** → it escalates to a hook or a lint, not to more

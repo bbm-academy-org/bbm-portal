@@ -1,149 +1,100 @@
-# BBM Portal (Payload CMS) — Agent Context
+# Agent Instructions — bbm-portal
 
-> **Language rule:** All chat dialogue with the user MUST be in Russian. Code, code comments, commit messages, PR titles/descriptions, and this file are in English for universal agent compatibility. Product/content values are Russian.
+The shared constitution for every agent harness in this repo. Claude Code loads it through the `@AGENTS.md` import at the top of `CLAUDE.md` (Claude-only bindings live there); Codex reads it directly and also reads the [Codex adapter](docs/codex-agent-mode.md) before its first dispatch — tool, model and browser mappings. Codex discovers the canonical skills through the generated, git-ignored `.agents/skills` bridge: run `pnpm codex:setup`, never copy skill bodies there.
 
-## Instruction entrypoint
+**Language.** Chat with the owner is in Russian. Every artifact — code, comments, commits, PR titles/bodies, issue text and comments, docs, skills, rules — is in English (`task-canon` §2); a Russian file is translated when it is next touched, never in a mass pass. Product/content values stay Russian.
 
-Read [`CLAUDE.md`](CLAUDE.md) before acting; it routes tracker ownership,
-cross-repo boundaries, subagent roles, and task-specific rules and skills.
-`.claude/rules/` is not auto-loaded by every harness, so read the routed source.
-Under Codex, also read [`docs/codex-agent-mode.md`](docs/codex-agent-mode.md)
-before the first dispatch for its model, profile, tool, and browser mappings.
+**Path is the contract.** A skill, rule or spec is loaded by READING its file — `.claude/skills/<name>/SKILL.md`, `.claude/rules/<name>.md`, `docs/…`. Every reference names that path; retelling its content elsewhere creates a second source of truth, and the copy is always the one that drifts. Where two files disagree, the one that owns the subject wins and the other is the bug. Instruction files are rewritten inline so they read as if the current rule were always the rule; history lives in `git log`.
 
-## Project overview
+## 0. Read-before-you-act index
 
-This repository hosts **`bbm-portal`** — the **Payload CMS** (v3, native inside Next.js) that serves as the **headless content backend** for the BBM Academy public website (`bbm-public-website`, a separate Astro repo). It is also the **seed of the future BBM portal**: auth / personal cabinet (ЛК) and a blog/articles surface grow inside this same Next.js app later.
+These rule files are `paths:`-scoped: Claude Code loads them only when a session touches a matching file, and Codex does not load them at all. Read the file in full before its action, once per session and again after compaction.
 
-**Owner:** Anton Sidorov (founder, system architect, non-developer — works through AI agents).
-**Hard legal constraint:** 152-FZ — any PII (e.g. future form leads) is stored/processed on Russian territory (Zone RF, Timeweb Cloud). The content this CMS serves today is non-PII editorial content.
+- `.claude/rules/design-process.md` — before any UI work (`*.tsx` view layer, `*.css`, `design-source/`), and before opening ANY PR: §2 owns the `Stage-B:` line every PR carries, plus `UX-sanity:` / `UX-record:`.
+- `.claude/rules/dev-env.md` — before starting a dev stand, touching the dev IdP, `infra/`, a remote box, or the dev-stand credentials. Its two every-session facts — Node 22 and `git -C` — are owned by §4 here.
+- `.claude/rules/cms-content-contract.md` — before touching a Payload collection, global, field, endpoint, hook or migration.
+- `.claude/rules/okr-module.md` — before touching the OKR module.
 
-The public website is a **consumer**: at build time it fetches collections via Payload's REST/GraphQL and emits static HTML. This repo owns the Payload install, admin UI, and database; the site does not. **Work that belongs to `bbm-public-website` is filed as an epic-linked GitHub issue from a bbm-portal session and implemented in a separate session run from that repo — do not start building it here** (see CLAUDE.md → "Cross-repo boundary").
+Always-on for every harness: this file, `.claude/rules/parallel-sessions.md` (worktrees, ports, branch DBs) and `.claude/rules/lead-delegation.md` (what the lead does itself). Codex reads both on entry.
 
-## Accepted setup decisions (brainstorming kickoff, 2026-06-12)
+## 1. What this repo is
 
-Full rationale: `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md`.
+**`bbm-portal`** — the **Payload CMS** (v3, native inside Next.js) that serves as the headless content backend for the BBM Academy public website (`bbm-public-website`, a separate Astro repo), and THE BBM Platform code repo: every custom platform module lives here as a route + isolated lib (ADR-002).
 
-1. **Repo layout — single Next.js app at root.** Payload v3 is native inside Next.js; auth/ЛК/blog grow as routes/collections in this same app. Refactor to a monorepo only if a genuine second deployable appears (YAGNI).
-2. **Postgres — dedicated `cms` database + own role; own container at start** (`@payloadcms/db-postgres`). Logical isolation is non-negotiable (Payload owns its schema/migrations). Physical consolidation into a shared cluster is a later cost-driven move; CMS stays in its own DB regardless.
-3. **Media — `@payloadcms/storage-s3` + Timeweb Object Storage** (endpoint override + `forcePathStyle: true`, account-level S3 keys). Code lands in **BBMP-27**; do not use the local disk in production.
-4. **Content model — structured/plain now, Markdown-rich for blog/articles later.** See _Content contract_ below.
+**Owner:** Anton Sidorov — founder, system architect, non-developer; works through AI agents. **Hard legal constraint:** 152-FZ — any PII is stored and processed on Russian territory (Zone RF, Timeweb Cloud).
 
-## Content contract (the reason this CMS exists)
+**Architectural authority — do not swap:** ADR-002 (`docs/adr/002-repository-and-module-strategy.md`: modular monolith, machine-enforced boundaries, portal end-user auth = Zitadel `id.bbm.academy` OIDC, Payload native auth admin-only); D-026 (Astro site, Next.js portal, Payload as content source); D-018 (dual-zone hosting, portal in Zone RF). Sources: `../bbm-public-website/docs/infrastructure-decisions.md` §6/§6a, `../bbm-platform-prd/docs/superpowers/specs/2026-04-07-bbm-platform-design.md`. A task that seems to need a framework, content-source or infra change stops and consults the authority first.
 
-**The contract is fixed by code, not prose.** The job is: make Payload's REST/GraphQL output per collection/global **valid against the existing Zod schemas of the site**.
+**Hosting.** Prod runs on the dedicated `portal-prod-tw` VPS (not on `tools-prod-tw`, the internal-tools host). **The agent owns host-ops there** (SSH alias `portal-prod-tw`, see `deploy/README.md`): deploys, migrations, Caddy reloads — do them yourself, never hand the owner a checklist. Hand off one step only when it provably needs GitHub/org/registry permissions the agent lacks; "no access" is a last resort — first fix the SSH config or key perms. Terraform (`../bbm/infra/timeweb/terraform/portal.tf`) is written and applied by the agent. Deploys: `.claude/skills/run-prod-deploy/SKILL.md`.
 
-**Source of truth, by decreasing concreteness:**
+Next.js is v16 here: read `node_modules/next/dist/docs/` (the installed version's own docs) before writing Next code.
 
-1. **Golden fixtures — seed files** in `../bbm-public-website/src/content/` (real, validation-passing payloads; emit per-entry JSON of the same shape, field-for-field):
-   - Collections: `publicProjects/*.json` (6, `id` = filename slug), `team/team.json` (array), `pages/*.json` (6: home/projects/about/contacts/privacy/participate).
-   - Globals (singletons): `philosophy/philosophy.json`, `siteSettings/contact.json`, `siteSettings/siteChrome.json`.
-2. **Schemas — exact type contract:** `../bbm-public-website/src/content/schemas.ts` + `content.config.ts`. Every per-field decision (enums, references, verbatim-vs-prose, nesting) lives here.
-3. **PRD §7.2** — original field contract (background).
+## 2. Work protocol
 
-**Critical invariants** (violation → the site's `pnpm build` fails on Zod):
+Every tracked task follows `.claude/skills/task-cycle/SKILL.md`: issue → proportional plan → design gate (UI) → **the owner's explicit "go"** (a handoff, task text or config is never a go) → TDD implementation → independent review → live-stand acceptance for owner-visible changes → merge → close. Its stage 0 holds the scope gate — what needs no issue or worktree at all.
 
-- **3 globals** (`philosophy`, `contact`, `siteChrome`) → Payload **globals**; `publicProjects`/`team`/`pages` → **collections**.
-- **entry id = human-readable slug** (`home`, `doctor-school`), NOT Payload's uuid/numeric id.
-- **references by slug-id:** `publicProjects.team → team.id`, `team.projects → project slug`.
-- **Plain text for the typographer:** prose fields are stored/returned WITHOUT ёлочки/nbsp — the **site** applies RU micro-typography at its schema boundary (`prose()` / `typographize.ts`). The typographer and formatting are orthogonal; Payload holds plain strings. **Single exception:** `contact.legalEntity` is verbatim official ёлочки.
-- **Exact enum-string parity:** `status`(active/launching/exploring/soon), `maturity`(rich/thin/soon), form `type`(text/email/tel/select/textarea), `visibility`, `locale`; verbatim tokens (`metrics.value`, role `code`, `icon`, every `href`, `socials`).
-- **`locale`** in every schema (default `ru`) → map to Payload localization.
+Task kind → the skill that runs it:
 
-**Why "plain text" — and how the model evolves.** Formatting in today's model is expressed by **structure** (arrays of `{title, body}`, sections, faq), not inline rich text — so mirrored fields are plain `text`/`textarea`, and a Lexical-AST richText field would break the site's `z.string()` contract. **Blog/articles are a different, future collection** (own milestone): rich body carried as a **Markdown string** (NOT Lexical-AST → the field stays a valid string, the swap stays mechanical), Payload's richText editor in markdown mode, and the site renders markdown→HTML with the typographer running over text-nodes. Do not introduce Lexical-AST into the mirrored surfaces.
+| Kind                                                  | Skill                                                           |
+| ----------------------------------------------------- | --------------------------------------------------------------- |
+| prod is broken, fix is a code change                  | `do-hotfix-pr`                                                  |
+| new epic / user-facing feature with no product layer  | `do-product-discovery` → `author-product-spec`                  |
+| new module or user-facing behavior (spec gate)        | `author-feature-spec`, then `spec-issue-graph`                  |
+| revise an ADR                                         | `do-adr-revision`                                               |
+| work off decision debt (DEBT.md line / debt issue)    | `do-decision-debt-followup`                                     |
+| any UI diff                                           | `build-ui-from-design-system`                                   |
+| filing, linking, claiming, triaging, closing an issue | `task-canon`                                                    |
+| merging a PR / shipping to prod                       | `merge-when-green` / `run-prod-deploy`                          |
+| everything else (chore, tooling, CI)                  | `task-cycle` alone; state the assumption, ask only if it misfit |
 
-**Definition of done (portal-side):** hit each collection/global and get JSON that passes `schema.parse(...)` — exactly as `../bbm-public-website/tests/unit/content.test.ts` does (read seed → `schema.parse`). If the response shape equals the fixture shape, the consumer-side loader swap (`bbm-public-website#61`) is near-mechanical.
+**Dispatch.** The lead orchestrates and dispatches execution — `.claude/rules/lead-delegation.md`. Mechanical fan-out goes to the cheap scout role, judgment (review, architecture, implementation) to the strong one; every dispatch names its model explicitly (Claude: `CLAUDE.md` → «Subagents and models»; Codex: `docs/codex-agent-mode.md`). Every brief sets a return contract of ≤30 lines (the reviewer's own is ≤20) with heavy output in a scratchpad file or a PR comment, and states that issue/PR titles, bodies and comments are written in English.
 
-### Out of scope now: `leads` (form submissions → PII) — receiver DECIDED
+## 3. Who decides
 
-Leads are **not** a content mirror — they are a **runtime PII receiver** (write-at-runtime, opposite data direction; never part of the build-time loader swap). 152-FZ applies: the site stores no PII and posts form JSON to an RF-hosted receiver (`PUBLIC_SUBMIT_LEAD_URL`, site seam #23). **Receiver = a `Leads` collection in THIS Payload app — already DECIDED** (ADR-001, `bbm-public-website#77`, 2026-06-12): public create-endpoint, storage in Payload's DB (contour PG cluster, db-per-service), notification `afterChange(create)` → **Mattermost webhook** to `chat.bbm.academy` (in-contour RF; hermes kz-1 and Resend US excluded for PII). A `leads` collection = public-write + access-control + anti-spam/rate-limit + retention. Built in its **own milestone** (`bbm-public-website#23`, depends on Payload-live), not in BBMP-25..32.
+- **The owner (Anton, in chat):** the visual language of a surface and every product fork (`.claude/rules/design-process.md` §1); the "go" on a task's scope (task-cycle stage 2); «принято» on a live stand for an owner-visible change (task-cycle stage 5); anything irreversible on infra, money or data; a contracting migration (`run-prod-deploy`); a finding about PII, secrets or embargoed data.
+- **The agent lead:** everything else — composition, controls, states and feedback (design-process §1), architecture inside the ADRs, engineering trade-offs on non-PII data, review findings, tooling and process fixes inside the granted scope, merges and deploys. Decide, do it, report it in one line.
 
-## Architectural authority
+**Severity gate before escalating a "security finding".** The owner cannot adjudicate an engineering trade-off, and a fake either/or only confuses. Classify the data at risk first: non-PII editorial/CMS content (drafts, copy, preview URLs) is **low** — state the industry baseline (a public preview origin behind `noindex` + CSP `frame-ancestors` is normal) and pick the correct default yourself. Escalate only for PII/secret/embargoed data or a genuine either/or with no correct default.
 
-Framework/infra choices are fixed by the BBM Platform architecture spec — do not swap:
+## 4. Hard rules
 
-- **ADR-002 (`docs/adr/002-repository-and-module-strategy.md`, 2026-07-24)** — repository & module strategy: this repo is THE platform code repo (all custom BBM Platform modules live here; future rename `bbm-platform` at workspace conversion). New modules default to a route + isolated lib (modular monolith, machine-enforced boundaries); a separate deployable must be earned via explicit criteria. Portal end-user auth = **Zitadel `id.bbm.academy` (OIDC) from day one**; Payload native auth stays admin-only.
-- **D-026** — Astro for the public site, **Next.js for the portal, Payload CMS as the headless content source.**
-- **D-018** — dual-zone hosting; the portal (this repo, with PII surfaces later) runs in **Zone RF (Timeweb Cloud)**.
-- **Hosting (2026-06-12):** BBMP-30 deploys to a **dedicated `portal-prod-tw` VPS — NOT co-located on `tools-prod-tw`** (internal tools host: Mattermost/Outline). Public PII service is isolated from internal tooling, per the estate's per-service failure-domain pattern. Terraform (`../bbm/infra/timeweb/terraform/portal.tf`) is written/applied by the agent — not a user-action.
-  - **The agent owns host-ops on `portal-prod-tw`** (SSH alias `portal-prod-tw`, key `~/.ssh/portal-prod-tw`; see `deploy/README.md`): run deploys, migrations, and Caddy reloads/restarts **yourself** — do not hand the owner a checklist. Hand off a single step **only** when it provably requires GitHub/org/registry permissions the agent lacks (e.g. changing org package-visibility policy). "I don't have access" is a last resort, not a default — first restore the SSH config / fix key perms.
-  - **Never repurpose a read-scoped service credential for a privileged prod write.** The `preview` service's Users API-key is full-admin but exists to _read drafts_; do not use it (or any service token) to drive `POST`/mutate endpoints as a shortcut. If a real bug makes the UI path fail, fix the bug — don't poke prod with a borrowed credential.
-- `../bbm-public-website/docs/infrastructure-decisions.md` §6a (Payload/portal hosting), §6.
-- `../bbm-platform-prd/docs/superpowers/specs/2026-04-07-bbm-platform-design.md` (D-026, D-018).
+- **Node 22 first in every shell** (engine-strict; `.nvmrc`, Dockerfile, CI). The dev box's system Node is newer: prepend `%LOCALAPPDATA%\node22` — Bash `export PATH="$LOCALAPPDATA/node22:$PATH"`, PowerShell `$env:PATH = "$env:LOCALAPPDATA\node22;$env:PATH"` — then check `node --version`. On Node 23/24 the Payload tsx loader breaks (`node:crypto?tsx-namespace` ENOENT), Payload's migrate CLI fails, and `pnpm patch-commit` refuses to run.
+- **Git only as `git -C <absolute root>`.** cwd drifts between tool calls, so a bare `git` can land in someone else's worktree.
+- **Root cause, not workarounds** (task-cycle stage 3). A blocker holds only the actions that depend on it; independent work continues.
+- **Live-infra destructive actions — pre-flight, don't thrash.** Before any irreversible or state-changing call on live infra (prod VPS, prod or dev IdP, a provider API: reinstall, replace, delete, network change, a write action): (1) confirm the action and its parameters in the provider's docs or schema — firing an unknown action to read the error is banned; (2) rule out the previous hypothesis with read-only evidence before the next state change — a reboot or recreate is not a free probe; (3) the blast radius is the failing resource only — a fix that also mutates a working box is a stop-and-confirm signal; (4) anything irreversible needs the owner's explicit go, and a rhetorical owner question is not consent.
+- **Remote scripts run from a pinned revision.** A repo script sent to a remote box comes from `git -C <repo> show origin/main:<path>` after a fetch (piped to `ssh <box> bash -s`, or a file extracted that way with the SHA in its name) — never from the working tree: `git fetch` moves refs, not files (2026-08-07, a stale `provision.sh` collapsed the dev IdP's logout URIs).
+- **Secrets never reach the session output** — not even "masked": a transcript is a log nothing can be deleted from, and a mask is untested code. Read a secret straight into a variable or file and print only its length or an exit code; explore an unknown credentials file by key names. On a remote box `docker compose config`, `env`, `printenv`, `docker inspect <container>` and `cat` of an `.env` file are banned (safe: `compose config --services` / `--profiles` / `--volumes`), and every brief for an agent going to a box says so. A value that leaked is reported to the owner at once with a rotation recommendation.
+- **Never repurpose a read-scoped service credential for a privileged prod write** (e.g. the `preview` service's Users API key exists to read drafts). If the UI path fails on a real bug, fix the bug.
+- **Credentials from ANOTHER system's box are a stop-state**, a question to the owner even when the key's location is known (Hermes prod, a foreign truenas dataset, the prod IdP). Our own dev stand is inside the agent's zone — `.claude/rules/dev-env.md`.
 
-If a task seems to require a framework/content-source/infra change, stop and consult the authority first.
+## 5. Working with the owner
 
-**Severity-gate before escalating a "security finding" to the owner.** The owner is a non-developer and cannot adjudicate an engineering tradeoff — a fake either/or just creates confusion. Before you write a finding up as a "gate" or invoke a user-question tool, classify the data at risk: **non-PII editorial/CMS content** (page drafts, copy, preview URLs) is **low** — state the industry-standard baseline (e.g. a public preview origin behind `noindex` + CSP `frame-ancestors` is normal) and **pick the architecturally-correct default yourself**. Escalate to the owner **only** when the data is PII/secret/embargoed, or there is a genuine either/or with no correct default.
+- **Answer and orient first.** A question gets a full answer in words before any tool call that DOES something; reads that make the answer accurate are fine. A question does not cancel authorized in-flight work — answer, then continue unless the answer changes the work.
+- **Checkpoint between phases** (trackers → code, code → deploy) with one line, and keep the session to the scope the owner agreed — a previous session's handoff may be wrong (task-cycle stage 1).
+- Reports, checkpoints and questions follow `.claude/skills/report-task-outcome/SKILL.md` — plain text, product language, one question at a time.
+- **The PR is the record.** Review triage (finding → verdict → what changed), non-obvious decisions and verification results go on the PR as a comment, proactively — never ask whether to.
 
-## OKR module (`/okr`) — first dynamic platform module
+## 6. Trackers and boundaries
 
-**Anchor (BBMP-129 milestone):** PRD `../bbm/outputs/2026-07-22-okr-dashboard/2026-07-23-prd-plane-integration.md` · progress model §3 + Plane taxonomy §4 `../bbm/outputs/2026-07-22-okr-dashboard/okr-structure.md` · Plane structure cut `../bbm/outputs/2026-07-22-okr-dashboard/2026-07-23-update/plane-cut-spec.md` · tracking: GH #58 (P1 core, `BBMP-130`) → #59 (Zitadel OIDC gate, `BBMP-131`) → #60 (prod + Vercel retire, `BBMP-132`). Code: `src/lib/okr` + `src/app/(frontend)/okr` — reads self-hosted Plane (workspace `doctor-school`, projects DSG1–DSG5) read-only with a TTL cache; SSOT stays in Plane, the only module-owned facts are manual metric values (`metrics.yaml`). Module discipline per ADR-002: no imports from the CMS side (collections/globals/endpoints/payload config), enforced by dependency-cruiser in CI.
+- **Code/dev work for this repo → GitHub Issues** on `bbm-academy-org/bbm-portal` (`gh issue list` / `gh issue view`). Load `task-canon` before any backlog work. Issues may reference sibling sub-tasks in `bbm-public-website`.
+- **Plane** holds organizational / cross-project tracking. A `BBMP-*` id is Plane, workspace `bbm` (project "BBM Platform"); `DSP-*` / `DSC-*` / Energy are workspace `doctor-school`. There is **no default workspace** on purpose: name it on every call (`plane-pp-cli <cmd> --workspace <slug>`, MCP `workspace: "<slug>"`); never set `PLANE_SLUG` or `default_workspace` to silence the loud 404/403. Unsure → `plane-pp-cli workspaces list --agent`. Gotcha: the `relations` group ignores `--workspace` — use `PLANE_SLUG=bbm plane-pp-cli relations …` for that one call. A Plane item goes `In Progress` on start and `Done` + a results comment (artifacts, what was done, what is unblocked) on close.
+- **Cross-repo boundary — file, don't build.** Work that belongs to `bbm-public-website` (or any sibling repo) is delivered from a bbm-portal session as a **filed, epic-linked GitHub issue**; never `cd` into, read or scaffold the sibling repo to start it here. Agreeing on the approach decides what to file, not a licence to build.
 
-## Where to look first
+## 7. Code style, commits, PRs
 
-1. `../bbm/docs/superpowers/plans/2026-06-11-bbm-portal-payload-setup.md` — the setup plan + accepted decisions + phase/session map.
-2. `docs/payload-collections-spec.md` — target Payload model, 1:1 with the site contract (the implementation reference for BBMP-28).
-3. `../bbm-public-website/src/content/schemas.ts` + the seed files — the SSOT of the contract.
-4. `../bbm-public-website/AGENTS.md` — the consumer side (loader-swap invariant, typographer seam).
-5. `node_modules/next/dist/docs/` — Next's own docs, shipped inside the installed package and therefore matching the version this repo actually runs. Read them before writing Next code: this repo is on Next 16, where APIs and conventions differ from what most training data contains. (Next offers to write this pointer into the file itself; that is switched off in `next.config.ts` — see the comment there for why.)
+- **TypeScript strict** — no `any` without a written justification. No comments narrating WHAT; comments only for a non-obvious WHY.
+- Conventional Commits, imperative mood, referencing the issue (`(#N)` or `Refs #N`); `Refs BBMP-N` only for a real Plane item.
+- A PR body follows `.github/pull_request_template.md`. `Closes #N` appears only on its one linkage line: GitHub reads `close[sd]` / `fix(es)` / `resolve[sd] #N` anywhere in the body, so elsewhere write "settles", "answers", "addresses".
+- A public repo's issue is cited in backticks (`` `owner/repo#N` ``), never as a bare mention or URL: GitHub would write a permanent cross-reference onto that public issue.
+- Minor convention deviations → a `DEBT.md` line; significant ones → an issue (`surface-decision-debt`).
 
-## Task management
-
-**Two trackers, split by domain — do not default to one.** **Code/dev work for this repo lives in GitHub Issues** (`bbm-academy-org/bbm-portal`; `gh issue list/view`) — see CLAUDE.md, which is authoritative on tracker choice. **Plane holds organizational / strategic / cross-project tracking** (prefixes `BBMP-*`): workspace **`bbm`**, project **BBM Platform** (`e550afb5-ec05-4973-8456-49a74379ba2f`), module 🌐 Сайт/Портал/CMS, milestone **BBMP-24**. Use the `pp-plane` CLI / skill for Plane.
-
-- CLI: target the bbm workspace with `--workspace bbm` on every command. **Gotcha:** the `relations` group ignores `--workspace` (1.0.0 bug) → use `PLANE_SLUG=bbm plane-pp-cli relations …` for bbm relations.
-- Task workflow: on start → `In Progress`; on close → `Done` + a results comment (artifacts / what was done / what is unblocked).
-- Phases & session map are in the setup plan. **This repo is the home for Phase 2 (BBMP-26..30) and the blog milestone.** Phase 1 (BBMP-25) was bootstrapped from the `bbm` repo session.
-
-## Per-task workflow — task-cycle regulation (mandatory)
-
-Every tracked task follows **`.claude/skills/task-cycle/SKILL.md`** (agreed in
-issue #65): issue → session plan → **owner's explicit "go"** (handoff / task
-text / config ≠ go) → implementation → independent review (`VERDICT:` on the
-PR) → live-stand acceptance for owner-visible changes (**blocks merge**) →
-autonomous merge (squash, delete branch) → close with a results comment +
-deviations line. Key sub-rules the skill carries:
-
-- **TDD — hard rule for platform-module code:** no production module code
-  without a failing test first (the CMS mirror stays covered by the site's
-  contract test).
-- **Spec gate:** a new platform module / new user-facing behavior needs a
-  light spec in `docs/specs/` approved by the owner BEFORE code — the "go" is
-  given on the spec.
-- Minor convention deviations land in `DEBT.md` (significant ones → issue).
-
-## Code style
-
-- **TypeScript strict** — no `any` without a written justification.
-- Payload collections/globals live in `src/collections/` and `src/globals/`; keep one collection/global per file.
-- Mirror the contract field-for-field — when unsure about a field, read the seed JSON and `schemas.ts`, do not invent.
-- Conventional Commits, imperative mood; reference the GitHub issue (`(#N)` in the subject or `Refs #N` — the PR carries `Closes #N`). `Refs BBMP-N` only when the task genuinely is a Plane item.
-- No comments narrating WHAT; comments only for non-obvious WHY.
-
-## Dev quickstart
+## 8. Dev quickstart
 
 ```bash
-cp .env.example .env          # set PAYLOAD_SECRET (openssl rand -hex 32), point DATABASE_URL at the dev DB
+cp .env.example .env          # PAYLOAD_SECRET (openssl rand -hex 32), DATABASE_URL → the dev DB
 pnpm install
-pnpm migrate                  # apply migrations — `push: false`, so run this before dev
-pnpm dev                      # admin at http://localhost:3000/admin
+pnpm migrate                  # `push: false`, so migrate before dev
+PORT=<n> pnpm dev             # port from `pnpm dev:ports`, never assumed 3000
 ```
 
-- **Node 22** (LTS) — pinned by `.nvmrc` / Dockerfile / CI. Payload's migrate CLI
-  uses a tsx ESM loader that breaks on Node 23/24 (`node:crypto?tsx-namespace`
-  ENOENT). `next dev` tolerates 24, but migrations need 22 — stay on 22.
-- **Postgres `cms`** is a dedicated DB + `payload` role (decision #2). Migrations
-  are the schema SSOT (`push: false`); where the container runs is a per-machine
-  recipe (remote TrueNAS-over-SSH or local Docker) — see README → Database. After
-  any collection/global change: `pnpm migrate:create <name>` → commit `src/migrations/*`.
-- **pre-commit hook — install once, from the main checkout.** `simple-git-hooks`
-  (via the `prepare` script) writes the hook to `<repo>/.git/hooks/pre-commit`,
-  so `pnpm install` (or `pnpm exec simple-git-hooks` on its own) must run from
-  the **main checkout** (`C:\Users\sidor\repos\bbm-portal`, the owner's), not
-  from a session worktree (`.claude/worktrees/<N>`). Reason: a linked worktree's
-  `.git` is a _file_, not a directory — `simple-git-hooks` tries to `mkdir` a
-  `hooks/` folder under it and fails with `ENOTDIR`; `pnpm install` still exits
-  0 (the error is caught, not rethrown), so this fails silently. Once installed
-  in the main checkout, the hook **is** shared across every worktree (git
-  resolves hooks through `commondir`, common to the whole repo) — one install
-  covers all parallel dev-stand sessions; re-running `pnpm install` from a
-  worktree afterwards is a harmless no-op, not a reset.
+Node 22 first in the shell (§4). Postgres `cms` is a dedicated DB + `payload` role; where its container runs is a per-machine recipe (README → Database).

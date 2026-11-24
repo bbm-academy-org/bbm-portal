@@ -1,3 +1,14 @@
+---
+paths:
+  - 'src/**/*.tsx'
+  - 'src/**/*.css'
+  - 'design-source/**'
+  - 'docs/design/**'
+  - '.github/pull_request_template.md'
+---
+
+<!-- READ-ON-DEMAND (`paths:` frontmatter, so not always-on). The frontmatter must stay the first bytes of the file. Indexed in AGENTS.md §0: read it before any UI work and before opening any PR (§2, the `Stage-B:` line). -->
+
 # Design process — build from `design-source/`, record Stage-B
 
 Two rules, both structural replacements for prose that failed in practice.

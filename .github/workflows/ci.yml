@@ -388,9 +388,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:workflow-auth
 
-  # BLOCK — the always-on agent context (CLAUDE.md, AGENTS.md,
-  # .claude/rules/*.md) past its per-file budget, or the whole corpus past the
-  # aggregate cap. Wired by #157; no epic-7 task wired it, and wiring is what
+  # BLOCK — the agent instruction files (CLAUDE.md, AGENTS.md,
+  # .claude/rules/*.md) past their per-file budget, or the always-on corpus
+  # (CLAUDE.md + AGENTS.md + path-less rules, #596) past the aggregate cap. Wired by #157; no epic-7 task wired it, and wiring is what
   # started the §4 clock for this plane, which ran out on 2026-09-02.
   #
   # Both planes now carry the same severity; they did not always. As a CLI
