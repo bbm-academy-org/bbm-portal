@@ -110,13 +110,13 @@ The screen answers three questions in this order, and the order is the
 hierarchy: **how much is left** (dominant), **where the cash stands**, **how fast
 it goes and where it went**.
 
-| Tier              | Block                                                                                                                                                                                                                                                                                    | Chart form (input to #585)                                                                                                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Header            | Title «Бюджет BBM», the budget's name, currency and start date, the moment computed; the limit action for `finance-approve`                                                                                                                                                              | —                                                                                                                                                                                            |
-| 1 — dominant      | **The glass**: limit, spent, remaining, share used; beside it **runway** in months with the gross burn it divides by, and the net burn as the cash view; always in `B`, with the line «Бюджет ведётся в <B> и не пересчитывается»                                                        | **F1** fill gauge / bullet bar with an overflow state (spent past the limit); **F2** KPI tile                                                                                                |
-| 2 — money         | **Contributed vs spent**: contributed, spent, owed to members, cash at cost, income; the reconciliation line; always in `B`                                                                                                                                                              | **F2** KPI tiles in one row + a one-line equation                                                                                                                                            |
-| 3 — dynamics      | **Monthly burn** (gross and net per month, the trailing average) and **the waterline** (cumulative net result, cumulative contributions, the −limit reference level); the period selector and the reporting-currency switch with its rate line sit on this tier and govern tiers 3 and 4 | **F3** monthly columns, two series, negative values allowed, with a line overlay; **F4** cumulative line with a zero baseline, a negative region, a second step series and a reference level |
-| 4 — where it went | **Breakdown** with three tabs — project · category · counterparty — each with the exchange-result line; a line opens its operations                                                                                                                                                      | **F5** ranked horizontal bar list (label, value, share); the drill-down is the whitelist's settled data-table block in a sheet                                                               |
+| Tier              | Block                                                                                                                                                                                                                                                                                                                  | Chart form (input to #585)                                                                                                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Header            | Title «Бюджет BBM», the budget's name, currency and start date, the moment computed; the limit action for `finance-approve`                                                                                                                                                                                            | —                                                                                                                                                                                            |
+| 1 — dominant      | **The glass**: limit, spent, remaining, share used; beside it **runway** in months with the gross burn it divides by, and the net burn as the cash view; always in `B`, with the line «Бюджет ведётся в <B> и не пересчитывается»                                                                                      | **F1** fill gauge / bullet bar with an overflow state (spent past the limit); **F2** KPI tile                                                                                                |
+| 2 — money         | **Contributed vs spent**: contributed, spent, owed to members, cash at cost, income; the reconciliation line; always in `B`                                                                                                                                                                                            | **F2** KPI tiles in one row + a one-line equation                                                                                                                                            |
+| 3 — dynamics      | **Monthly burn** (gross and net per month, the trailing average) and **the waterline** (cumulative net result, cumulative contributions, the −limit reference level — drawn in `B` only, EARS-713); the period selector and the reporting-currency switch with its rate line sit on this tier and govern tiers 3 and 4 | **F3** monthly columns, two series, negative values allowed, with a line overlay; **F4** cumulative line with a zero baseline, a negative region, a second step series and a reference level |
+| 4 — where it went | **Breakdown** with three tabs — project · category · counterparty — each with the exchange-result line; a line opens its operations                                                                                                                                                                                    | **F5** ranked horizontal bar list (label, value, share); the drill-down is the whitelist's settled data-table block in a sheet                                                               |
 
 Grouping rationale: tiers 1–2 are cumulative since the budget started and do
 not move with the period selector; tiers 3–4 are period readings, so the
@@ -249,9 +249,12 @@ decimal, rounded half away from zero.
   (a) values of expense debits and the part (b) exchange results whose
   operation's `occurred_on` falls in `m` and on or after `starts_on`; **income**
   shall be the EARS-343 income credits in `m`; **net burn** shall be gross burn
-  − income, and may be negative. The months' gross burn shall sum exactly to
-  spent, because each item enters exactly one month at the value the replay
-  gave it. Contributions shall enter neither series.
+  − income, and may be negative. In `B` the months' gross burn shall sum
+  exactly to spent, because each item enters exactly one month at the value
+  the replay gave it; in a converted view spent is not shown in that currency
+  (EARS-722), and the months sum exactly only among themselves and to the
+  period's breakdown total (EARS-728). Contributions shall enter neither
+  series.
 - **EARS-711.** Today's month shall be shown as incomplete — «неполный месяц,
   по <today>» — and so shall the month of `starts_on` when `starts_on` is not
   its first day — «неполный месяц, с <starts_on>»; neither enters the trailing
@@ -260,9 +263,11 @@ decimal, rounded half away from zero.
   `starts_on` is on or before its first day. The **trailing average gross
   burn** and the **trailing average net burn** shall be the mean gross and the
   mean net burn of the same last `N` complete months, `N = min(3, complete
-months available)`, months with no spend counted as zero; each shown once,
-  rounded half away from zero to minor units of `B`. The chart shall draw them
-  as levels over the `N` months they average.
+months available)`, months with no spend counted as zero, each rounded once
+  half away from zero to minor units of `B`. They appear twice: in `B` beside
+  the runway, which is part of the budget block (EARS-722), and on the chart
+  as levels over the `N` months they average, which follow the switch
+  (EARS-728/729).
 - **EARS-713.** The waterline shall show, at the end of each month of
   EARS-710 and at today, the **cumulative net result** — Σ (income − gross
   burn) from `starts_on` through that point, which lies below zero while income
@@ -389,6 +394,9 @@ either.
   _(This narrows the last sentence of spec 338 EARS-344 — «none follows the
   reporting-currency switch of decision 13» — to the computation and the
   budget block, under either answer; the amendment note sits on EARS-344.)_
+  _(Lead decision, 2026-11-24, shown to the owner at the go: the budget block
+  staying in `B` answers review findings B4 and B5 on PR #600, and narrows
+  #584's scope and US-28; open question 1 asks the owner to confirm it.)_
 
 - **EARS-728.** WHERE the display rate is the **Bank of Russia rate of each
   operation's own date** (open question 1, answer A — the lead's
@@ -538,9 +546,9 @@ ledger is written into the repo or the PR.
 10. **Currency.** Switch to $ on the dynamics tier: the monthly burn, the
     waterline, the breakdown and its drill-down change; the glass, the runway
     and the money tier do not, and carry «Бюджет ведётся в <B> и не
-    пересчитывается»; the rate line names the chosen answer's rule; € is
-    offered or shown disabled with its reason (EARS-721, EARS-722, and
-    EARS-728 or EARS-729).
+    пересчитывается»; the waterline's −limit level disappears; the rate line
+    names the chosen answer's rule; € is offered or shown disabled with its
+    reason (EARS-713, EARS-721, EARS-722, and EARS-728 or EARS-729).
 11. **Later start.** Edit `starts_on` to a date after the first operation: the
     equation disappears and the sentence about earlier operations shows;
     restore it (EARS-709, EARS-725).
@@ -605,10 +613,14 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
 1. **Which rate converts the ₽/$/€ switch — EARS-728 or EARS-729.** Under
    either answer the switch converts only the flow figures: the monthly burn,
    the waterline, the breakdown and its drill-down. The budget block — the
-   limit, spent, remaining, share used, runway, contributed, owed to members,
-   cash at cost and the reconciliation — always stays in the budget's own
-   currency, with a line saying so, so the glass, the runway and the
-   reconciliation never disagree with each other in any currency.
+   limit, spent, remaining, share used, runway, contributed, income, owed to
+   members, cash at cost and the reconciliation — always stays in the
+   budget's own currency, with a line saying so, so the glass, the runway and
+   the reconciliation never disagree with each other in any currency. This
+   split is the lead's decision (EARS-722) and narrows #584's scope and US-28,
+   which asked for the whole dashboard in ₽, $ or €; converting the budget
+   block too made a converted glass contradict its own share and runway and
+   left a rouble member debt non-zero in $ once repaid.
    - **A — the Bank of Russia rate of each operation's own date, frozen
      (recommended).** $ and € are available whenever the Bank of Russia rate
      store holds a rate for them; a flow figure whose item's date has no
@@ -624,4 +636,5 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
      figure — past months included — shifts whenever a new conversion is
      recorded.
 
-   Decision needed: A or B.
+   Decisions needed: (1) confirm that the budget block stays in the budget's
+   own currency and only the flow figures switch; (2) A or B.

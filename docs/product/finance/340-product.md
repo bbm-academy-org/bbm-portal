@@ -49,7 +49,7 @@ first open question.
 _Note, 2026-11-24 (spec 584, pending the owner's go on its open question 1):
 the budget dashboard's ₽/$/€ switch converts only the flow figures — the
 monthly burn, the waterline, the breakdown and its drill-down; the budget
-block (limit, spent, remaining, runway, contributed, owed, cash at cost and
+block (limit, spent, remaining, runway, contributed, income, owed, cash at cost and
 the reconciliation) always stays in the budget's own currency. Under answer
 A, spec 584 EARS-728, the switch keeps this ruling: each operation is
 converted at a rate frozen at its own date, never a period-end rate and never
@@ -352,7 +352,8 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
   entries, which differ whenever foreign money is held.
 - The per-project spend plus the exchange-result line adds up to the total
   spend.
-- The months of the spending chart add up to the total spend, and the runway
+- In the budget's own currency the months of the spending chart add up to
+  the total spend, and the runway
   can be checked by hand from the remaining limit and the average shown beside
   it.
 - The spend by category and by counterparty each add up to the total spend
