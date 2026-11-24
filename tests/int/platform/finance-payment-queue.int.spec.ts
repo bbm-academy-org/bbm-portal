@@ -466,7 +466,7 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
     expect(await transfersSettling(request.id)).toHaveLength(1)
   })
 
-  it('EARS-544: on an already-posted USD-liability request a RUB refund is refused readably', async () => {
+  it('EARS-568: an already-posted USD-liability request refunded in roubles through a payment agent settles the debt in ONE operation', async () => {
     const refs = await seedRefs()
     const request = await submitted(MEMBER, ownFunds(refs, { amount: 10_000n, currency: 'USD' }))
     await markExpenseRequestPaid(APPROVER, request.id, {
@@ -474,19 +474,89 @@ describe('the refund act books the debt and settles it at once (EARS-544/528)', 
       occurredOn: '2026-09-01',
     })
     expect((await queueRow(APPROVER, request.id)).stage).toBe('reimburse')
+    const usdBefore = (await liabilityBalances({ memberId: refs.memberMemberId })).find(
+      (row) => row.currency === 'USD',
+    )?.balance
 
+    // EARS-544 no longer refuses a foreign-currency debt: the whole sum that left
+    // the rouble account, with the agent's itemized fee.
+    await markExpenseRequestReimbursed(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
+      occurredOn: '2026-09-04',
+      accountId: refs.rubAccountId,
+      amount: 900_000n,
+      agentFeeAmount: 10_000n,
+    })
+
+    const [transfer] = await transfersSettling(request.id)
+    expect(transfer).toMatchObject({ status: 'posted', amount: '10000', currency: 'USD' })
+    const facts = await db.execute(sql`
+      select i.paid_amount::text as paid_amount, i.paid_currency, i.fee_amount::text as fee_amount,
+             i.fee_currency, i.operation_id
+        from core.finance_intake_item i where i.id = ${transfer.id}
+    `)
+    expect(facts.rows[0]).toMatchObject({
+      paid_amount: '900000',
+      paid_currency: 'RUB',
+      fee_amount: '10000',
+      fee_currency: 'RUB',
+    })
+    const operationId = Number((facts.rows[0] as { operation_id: number }).operation_id)
+    const steps = await db.execute(sql`
+      select from_currency, to_currency from core.finance_conversion_step where operation_id = ${operationId}
+    `)
+    expect(steps.rows).toEqual([{ from_currency: 'RUB', to_currency: 'USD' }])
+    const legs = await db.execute(sql`
+      select a.kind, p.currency, p.amount::text as amount, p.project_id, p.member_id
+        from core.finance_posting p join core.finance_account a on a.id = p.account_id
+       where p.operation_id = ${operationId} and a.kind in ('card', 'expense', 'liability')
+       order by p.id
+    `)
+    expect(legs.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'liability',
+          currency: 'USD',
+          amount: '10000',
+          member_id: refs.memberMemberId,
+        }),
+        expect.objectContaining({
+          kind: 'expense',
+          currency: 'RUB',
+          amount: '10000',
+          project_id: refs.projectId,
+        }),
+      ]),
+    )
+    const cardOut = (legs.rows as { kind: string; amount: string }[])
+      .filter((row) => row.kind === 'card')
+      .reduce((sum, row) => sum + BigInt(row.amount), 0n)
+    expect(cardOut).toBe(-900_000n)
+    const usdAfter = (await liabilityBalances({ memberId: refs.memberMemberId })).find(
+      (row) => row.currency === 'USD',
+    )?.balance
+    expect((usdAfter ?? 0n) - (usdBefore ?? 0n)).toBe(10_000n)
+    expect((await queueRow(APPROVER, request.id)).stage).toBe('paid')
+  })
+
+  it('EARS-568: a cross-currency refund that does not exceed the agent fee is refused and writes nothing', async () => {
+    const refs = await seedRefs()
+    const request = await submitted(MEMBER, ownFunds(refs, { amount: 10_000n, currency: 'USD' }))
+    await markExpenseRequestPaid(APPROVER, request.id, {
+      snapshot: await snapshotOf(request.id),
+      occurredOn: '2026-09-01',
+    })
     const refusal = await refusalOf(
       markExpenseRequestReimbursed(APPROVER, request.id, {
         snapshot: await snapshotOf(request.id),
         occurredOn: '2026-09-04',
         accountId: refs.rubAccountId,
-        amount: 900_000n,
+        amount: 10_000n,
+        agentFeeAmount: 10_000n,
       }),
     )
-
     expect(refusal).toBeInstanceOf(FinanceRefusal)
-    expect(String(refusal)).toContain('USD')
-    expect(String(refusal)).toContain('EARS-544')
+    expect(String(refusal)).toContain('EARS-568')
     expect(await transfersSettling(request.id)).toEqual([])
   })
 
