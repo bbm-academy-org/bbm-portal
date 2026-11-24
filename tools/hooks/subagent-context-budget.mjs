@@ -28,11 +28,11 @@
 //     `permissionDecision: "allow"` — this hook matches `.*`, and "allow" would
 //     auto-approve whichever call happened to cross the tier.
 //   - ≥ HARD_THRESHOLD → `permissionDecision: "deny"` on every tool except the
-//     hand-back allow-list (`isAllowedUnderHardCap`): chain-free git inspect /
-//     add / commit / push — no force push, ref deletion, amend, hook skip or
-//     `--output` — and writing the agent's own checkpoint file. Bash and
-//     PowerShell are both covered, PowerShell's `(…)` / `@(…)` / `{…}`
-//     evaluators included.
+//     hand-back allow-list (`isAllowedUnderHardCap`): git inspect / add /
+//     commit / push written in a plain ASCII alphabet with no quoting,
+//     escaping or shell metacharacter at all (`HARD_CAP_ALPHABET_RE`) — no
+//     force push, ref deletion, amend, hook skip or `--output` — and writing
+//     the agent's own checkpoint file. Bash and PowerShell are both covered.
 //   - `BBM_HOOKS_DISABLE=1` silences it like every other hook of the stack.
 //   FAIL-OPEN: any parse / IO / logic error — and an unresolvable child
 //   transcript — exits 0 with no output, like the rest of this stack
@@ -141,14 +141,28 @@ export function resolveSubagentTranscript(payload, exists = existsSync) {
   return exists(candidate) ? candidate : null
 }
 
-/** Characters that, ANYWHERE in the command, make a git prefix prove nothing
- * about what runs: POSIX chaining / piping / redirection / substitution
- * (`; & | < > $` and the backtick, a newline) and PowerShell's argument-mode
- * evaluators — `(…)`, `@(…)` and splats, `{…}` script blocks. PowerShell runs
- * a `(…)` even glued to a word (`git diff x(Remove-Item y)`), so these are
- * rejected outright rather than parsed. A literal paren in a quoted commit
- * message is the accepted collateral: `-m wip` still passes. */
-const HARD_CAP_REJECT_RE = /[;&|`<>$(){}@]|[\r\n]/
+/** The WHOLE alphabet a command may use above the hard cap: ASCII letters and
+ * digits, the space, and `. _ / : = + -`. Everything else is refused outright —
+ * every quoting / escaping character (`' " \` and the backtick), every
+ * chaining / piping / redirection / substitution / glob / comment character
+ * (`; & | < > $ ( ) { } [ ] * ? ! # ~ %`), PowerShell's splat (`@`) and array
+ * (`,`) operators, tab / CR / LF, and any non-ASCII character (typographic
+ * quotes, dashes, NBSP, lookalike letters).
+ *
+ * Why an ALLOW-list and no tokenizer (PR #590 review, blocker 3): Bash and
+ * PowerShell quote differently — Bash reads `\"` as a literal `"` and treats
+ * `“` as an ordinary letter, PowerShell groups on both — so any re-implemented
+ * word split disagrees with one of them, and the flag it hides (`--amend`,
+ * `--force`, `--receive-pack=<program>`) is the one that runs. With none of
+ * those characters present, a space-split IS each shell's word split. The
+ * price: a hand-back commit message is one unquoted word
+ * (`git commit -am wip-checkpoint`) and a path uses forward slashes. */
+const HARD_CAP_ALPHABET_RE = /^[A-Za-z0-9 ._/:=+-]+$/
+
+/** Windows PowerShell 5.1 splits a single-dash native argument at its first dot
+ * (`-u..` reaches git as `-u` `..`), so such a word is not one word in both
+ * shells — refused rather than modelled. A `--long.x` word is passed whole. */
+const HARD_CAP_DOT_SPLIT_RE = /^-[^-][^.]*\./
 
 /** git verbs a subagent may still run above the hard cap: inspect, stage,
  * commit, push — the WIP-commit + hand-back path. */
@@ -189,41 +203,6 @@ const HARD_CAP_BANNED_FLAGS = {
   diff: { long: ['output'], short: '', shortArg: '' },
   log: { long: ['output'], short: '', shortArg: '' },
   show: { long: ['output'], short: '', shortArg: '' },
-}
-
-const DOUBLE_QUOTES = /["“”„]/
-const SINGLE_QUOTES = /['‘’‚‛]/
-
-/** Shell-ish word split: whitespace separates, quotes group and are dropped
- * (`--fo"rce"` is `--force` to the shell, so it is to this check too), and
- * backslashes are dropped (Bash reads `--fo\rce` as `--force`). The result is
- * for MATCHING only — never executed, so lossy is fine where it fails closed.
- * PowerShell also accepts the typographic quote forms, so they group too. */
-function hardCapWords(command) {
-  const words = []
-  let word = ''
-  /** @type {RegExp | null} the quote class that closes the open quote */
-  let quote = null
-  let inWord = false
-  for (const ch of command) {
-    if (quote) {
-      if (quote.test(ch)) quote = null
-      else if (ch !== '\\') word += ch
-      continue
-    }
-    if (/\s/.test(ch)) {
-      if (inWord) words.push(word)
-      word = ''
-      inWord = false
-      continue
-    }
-    inWord = true
-    if (DOUBLE_QUOTES.test(ch)) quote = DOUBLE_QUOTES
-    else if (SINGLE_QUOTES.test(ch)) quote = SINGLE_QUOTES
-    else if (ch !== '\\') word += ch
-  }
-  if (inWord) words.push(word)
-  return words
 }
 
 function hasBannedFlag(verb, args) {
@@ -269,9 +248,11 @@ export function isAllowedUnderHardCap(toolName, toolInput, agentId = null) {
   if (toolName === 'Bash' || toolName === 'PowerShell') {
     const command = String(toolInput?.command ?? '').trim()
     // The prefix must describe the WHOLE command, else `git status && pnpm
-    // build` or PowerShell's `git status (pnpm build)` routes around the fence.
-    if (HARD_CAP_REJECT_RE.test(command)) return false
-    const words = hardCapWords(command)
+    // build`, PowerShell's `git status (pnpm build)` or a quote one shell reads
+    // differently from the other (`-m\" --amend -m\"`) routes around the fence.
+    if (!HARD_CAP_ALPHABET_RE.test(command)) return false
+    const words = command.split(' ').filter(Boolean)
+    if (words.some((word) => HARD_CAP_DOT_SPLIT_RE.test(word))) return false
     if (words[0] !== 'git') return false
     // `git -C <path>` is the form this repo mandates (`.claude/rules/dev-env.md`).
     const verbAt = words[1] === '-C' ? 3 : 1
@@ -296,7 +277,8 @@ export function softMessage(contextTokens, path) {
   const soft = Math.round(SOFT_THRESHOLD / 1000)
   return (
     `Context ≈ ${k}K (soft cap ${soft}K, tools/hooks/subagent-context-budget.mjs). Finish the ` +
-    `current atomic step only, WIP-commit on the branch, write \`${path}\` with: ` +
+    `current atomic step only, WIP-commit on the branch with a one-word unquoted message ` +
+    `(\`git commit -am wip-checkpoint\`), write \`${path}\` with: ` +
     `${CHECKPOINT_FIELDS}, then return ≤20 lines whose FIRST line is \`ROTATE: ${path}\`. ` +
     `The lead re-dispatches a fresh agent from the checkpoint. Do not start new exploration.`
   )
@@ -307,9 +289,11 @@ export function hardMessage(contextTokens, path) {
   const hard = Math.round(HARD_THRESHOLD / 1000)
   return (
     `Context ≈ ${k}K — hard cap ${hard}K reached (tools/hooks/subagent-context-budget.mjs). ` +
-    `Every tool is denied except chain-free \`git status|diff|log|show|rev-parse|add|commit|push\` ` +
-    `(no force push, ref deletion, --amend, --no-verify or --output) ` +
-    `and writing \`${path}\`. WIP-commit on the branch, write the checkpoint with: ` +
+    `Every tool is denied except \`git status|diff|log|show|rev-parse|add|commit|push\` ` +
+    `(no force push, ref deletion, --amend, --no-verify or --output) and writing \`${path}\`. ` +
+    `The git command may use only letters, digits, spaces and . _ / : = + - — no quotes, ` +
+    `backslashes, shell operators or non-ASCII; forward slashes in paths. WIP-commit on the ` +
+    `branch as \`git commit -am wip-checkpoint\`, write the checkpoint with: ` +
     `${CHECKPOINT_FIELDS}. Return now: first line \`ROTATE: ${path}\`, ≤20 lines.`
   )
 }
