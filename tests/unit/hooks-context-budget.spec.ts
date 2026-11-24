@@ -83,6 +83,9 @@ describe('decideContextBudget', () => {
     expect(d.tier).toBe('wrap')
     expect(d.message).toContain('≈405K')
     expect(d.message).toContain('/wrap')
+    // #588 retired the cost-cliff rationale: a restart saves neither money
+    // nor subscription usage, so the message must not claim it does.
+    expect(d.message).not.toMatch(/cache-read price/i)
   })
 
   it('advisory wording only — the call stays with the operator', () => {

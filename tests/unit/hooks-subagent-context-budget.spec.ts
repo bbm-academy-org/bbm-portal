@@ -249,6 +249,88 @@ describe('subagent-context-budget decide() — hard cap + allow-list', () => {
     }
   })
 
+  it('allow-list rejects PowerShell / Bash subexpressions, script blocks and splats in either shell', () => {
+    // PowerShell evaluates `(…)` / `@(…)` / `$(…)` in argument mode — even
+    // glued to a word (`x(1+1)` runs `1+1`) — so a git prefix proves nothing.
+    for (const command of [
+      'git status (pnpm test:unit)',
+      'git log (Get-Content big.ts)',
+      'git rev-parse (Write-Host INJECTED)',
+      'git status @(Remove-Item x)',
+      'git log @args',
+      'git diff HEAD(Remove-Item x)',
+      'git log -n:(1+1)',
+      'git show { Remove-Item x }',
+      'git status $(pnpm build)',
+      'git status\r\npnpm build',
+    ]) {
+      for (const tool of ['Bash', 'PowerShell']) {
+        expect(isAllowedUnderHardCap(tool, { command }), `${tool}: ${command}`).toBe(false)
+      }
+    }
+  })
+
+  it('allow-list rejects history-rewriting, ref-deleting and file-writing git flags', () => {
+    for (const command of [
+      // force push, in every spelling git accepts (incl. unique abbreviations)
+      'git push --force',
+      'git push -f origin chore/588-x',
+      'git push -uf origin chore/588-x',
+      'git push --force-with-lease',
+      'git push --force-with-lease=chore/588-x:abc123',
+      'git push --force-if-includes',
+      'git push --forc',
+      'git push origin +HEAD:main',
+      'git push origin "+chore/588-x"',
+      'git -C C:/r/.claude/worktrees/588 push --force',
+      // remote ref deletion / mirroring / pruning
+      'git push origin --delete chore/588-x',
+      'git push -d origin chore/588-x',
+      'git push origin :chore/588-x',
+      'git push --mirror',
+      'git push --prune origin',
+      // a local remote path runs --receive-pack / --exec locally
+      'git push --receive-pack=evil ../other',
+      'git push --exec=evil ../other',
+      // rewriting the last commit / skipping its hooks
+      'git commit --amend --no-edit',
+      'git commit --amen -m x',
+      'git commit "--amend" -m x',
+      'git commit --no-verify -m wip',
+      'git commit -n -m wip',
+      'git commit -anm wip',
+      // writing an arbitrary file
+      'git diff --output=out.patch',
+      'git diff --output out.patch',
+      'git log --outp=big.txt',
+      'git show HEAD --output=x',
+    ]) {
+      for (const tool of ['Bash', 'PowerShell']) {
+        expect(isAllowedUnderHardCap(tool, { command }), `${tool}: ${command}`).toBe(false)
+      }
+    }
+  })
+
+  it('allow-list keeps the ordinary hand-back flags (no false positives from the flag rules)', () => {
+    for (const command of [
+      'git push -u origin chore/588-x',
+      'git push origin HEAD:chore/588-x',
+      'git push --set-upstream origin chore/588-x',
+      'git commit -m wip',
+      'git commit -am wip',
+      'git commit -m "wip: checkpoint"',
+      'git commit -mn',
+      'git log --oneline -n 5',
+      'git diff --stat',
+      'git show --name-only HEAD',
+      'git status --porcelain',
+    ]) {
+      for (const tool of ['Bash', 'PowerShell']) {
+        expect(isAllowedUnderHardCap(tool, { command }), `${tool}: ${command}`).toBe(true)
+      }
+    }
+  })
+
   it('allow-list rejects near-misses (git-ish names, other git verbs, other writes, other tools)', () => {
     expect(isAllowedUnderHardCap('Bash', { command: 'github-cli sync' })).toBe(false)
     expect(isAllowedUnderHardCap('Bash', { command: 'git checkout main' })).toBe(false)

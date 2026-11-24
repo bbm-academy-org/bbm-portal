@@ -586,6 +586,11 @@ describe('zero-dispatch-guard: сообщение блока', () => {
     expect(text).toContain('opus')
   })
 
+  it('ведёт имплементацию в bbm-implementer, general-purpose+opus — фолбэк (#588)', () => {
+    expect(text).toContain('`bbm-implementer`')
+    expect(text).toMatch(/general-purpose[^\n]*opus/)
+  })
+
   it('называет побег и то, что он попадёт в строку stage 7', () => {
     expect(text).toContain(BYPASS_ENV)
     expect(text).toContain('Отклонения от конвенций')
