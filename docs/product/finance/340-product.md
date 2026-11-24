@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-08-30
+updated: 2026-11-24
 ---
 
 # F3 — Reports: register, P&L, cash flow, unit cost, break-even (#340)
@@ -80,6 +80,45 @@ the set of principles the reports obey either way:
 **Per project, and the fund** (decision 2): the same report with a different
 dimension filter, never a separate report per project.
 
+**BBM's budget — the first reading the owner asked for (2026-11-24, #581,
+#587).** BBM, the fund, has one fixed budget for its launch and the Doctor
+School pilot _(owner)_; every other project's spend draws on it too _(owner,
+2026-11-24, #581)_. The reading answers two questions with
+separate numbers. **Against the limit:** how much has been spent since the
+budget started — every project's expenses, fees, spend from members' own cards
+on the day it happened _(owner-confirmed)_, and the gain or loss on currency
+exchanges shown as its own line — and what remains, which goes below zero when
+the limit is exceeded rather than stopping at zero. **Against the money:** how
+much has been contributed, how much is owed back to members who paid from their
+own cards, and how much cash the accounts hold at what it cost us; income is
+shown beside them even while it is zero. The two answers reconcile exactly —
+contributed plus income equals spent plus cash at cost minus what is owed to
+members — whenever the budget starts on or before BBM's first operation; a
+budget started later leaves earlier spend and contributions out of the glass,
+and the screen then does not claim the sum. That holds because every foreign-currency
+holding carries the cost it was bought for in the budget currency, and spending it or
+converting it back uses up that cost — including chains such as RUB → USDT →
+THB. Two numbers therefore differ on purpose: the budget's «cash at cost» is
+not the cash total on `/p/finance` whenever foreign money is held — that card
+values holdings at the recorded exchange rates between currency pairs, not at
+what they cost and what is left of that cost — and the budget's exchange-result
+line is not the ledger's own exchange-result entries, which are kept per
+currency pair and miss holdings already spent. The budget reading is the one
+that adds up to the money contributed. Approved but unpaid requests are not spending (cash basis, decision 14
+stays deferred); income does not extend the limit. The limit is plan and the
+rest is fact, so the two are never blended into one line. Every number is in
+the budget's own currency and built from recorded operations (decision 18), with
+one exception the owner set: a member's card debt in a foreign currency counts
+at the Bank of Russia rate of the day it was spent, marked provisional, until it
+is paid back — then the roubles that actually left the account, the payment
+agent's fee and any withheld tax included, replace that value, and the
+difference lands in spent as the exchange and fee result _(owner, 2026-11-24,
+#581)_. Many member-paid requests are in USD or THB, so withholding them would
+blind the reading. Where money arrived directly in a foreign currency or crypto,
+or a debt's day has no Bank of Russia rate, the reading says which currency and
+withholds the number rather than guess. Definitions: spec 338 §D
+(`docs/specs/338-ledger-core.md`); the screen is #584's.
+
 The unit-cost model has one real precedent: the Doctor.School lesson-cost
 calculator, which computes a per-lesson cost from per-role payroll with
 employment-mode tax loading plus external vendors, and derives margin against a
@@ -152,6 +191,18 @@ the two that decide the rest.
 - **US-20** — As the owner, I see the accumulated invested cost — the
   capitalization — of each product, so I know what has been put into a lesson or
   a course to date, not only what it cost in one period. _(decision 22)_
+- **US-21** — As the owner, I see BBM's budget as a glass: the limit, what
+  has been spent against it since it started, and what remains — negative
+  if we have overspent. _(owner, 2026-11-24, #581)_
+- **US-22** — As the owner, I see where the budget went — spend per project,
+  BBM's own spend as the fund's line, and the currency-exchange result as a
+  line of its own — and the parts add up to the whole. _(owner, 2026-11-24,
+  #581; the exchange line is a lead reading)_
+- **US-23** — As the owner, I see how much has been contributed, how much we
+  owe members who paid from their own cards, and how much cash the accounts
+  hold at what it cost us, separately from the budget glass, and the two
+  reconcile exactly while the budget starts on or before BBM's first
+  operation. _(owner, 2026-11-24, #581)_
 
 ## Flows
 
@@ -214,6 +265,24 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
   further action.
 - No report shows a number that does not come from a posting.
 - A report states the period it covers.
+- The owner can see BBM's budget limit, what has been spent against it since
+  it started, and what remains, with the remainder shown below zero when the
+  limit is exceeded.
+- An expense paid from a member's own card counts against the budget on the
+  day it was paid, and paying the member back does not count it again.
+- Contributions, money owed to members and cash at cost are shown as separate
+  facts beside an income figure; contributed plus income equals spent plus
+  cash at cost minus money owed to members, exactly, whenever the budget
+  starts on or before BBM's first operation.
+- A member's foreign-currency card debt counts at the Bank of Russia rate of
+  its spend day, marked provisional, until it is paid back; paying it back in
+  roubles makes spent equal to the roubles actually paid for it, the agent's
+  fee included, and the four figures still reconcile before and after.
+- The budget's cash at cost and exchange result are labelled so that they are
+  not mistaken for the `/p/finance` cash total or the ledger's own exchange
+  entries, which differ whenever foreign money is held.
+- The per-project spend plus the exchange-result line adds up to the total
+  spend.
 
 ## Out of scope
 

@@ -184,6 +184,25 @@ const DEFERRALS_BY_ISSUE = {
     reason:
       'spec 339 §I (#547): the details sheet with «как оплатить», the «без чека» marker in the sheet and the queue rows, the mark-paid / reimburse forms and the bulk dialog, and the §J «Курс против рынка» block (EARS-563). The list is EMPTY because #551 landed: EARS-542/546/563 are asserted in tests/unit/finance-request-sheet-model.spec.ts, finance-request-market-block.spec.ts and finance-requests-queue-ui.spec.ts.',
   },
+  593: {
+    ids: [
+      'EARS-335',
+      'EARS-336',
+      'EARS-337',
+      'EARS-338',
+      'EARS-339',
+      'EARS-340',
+      'EARS-341',
+      'EARS-342',
+      'EARS-343',
+      'EARS-344',
+      'EARS-345',
+      'EARS-567',
+      'EARS-568',
+    ],
+    reason:
+      'spec 338 §D (budget and funding: the equity kind, the contribution operation, the budget record and the budget cost-basis reading) and spec 339 §K (the contribution intake kind) plus spec 339 EARS-568 (the cross-currency reimbursement through a payment agent), added by the #581 amendment (PR #591) before any code exists — a spec that leads its implementation, like spec 311 did. #593 builds them, with tests named after these ids on the §D CI fixtures, and drops them from this list.',
+  },
   559: {
     ids: [],
     reason:
