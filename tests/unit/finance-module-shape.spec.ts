@@ -125,6 +125,9 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
       // `settles_item_id`, the attach-after-posting link guard and the one-off
       // reimbursement link step of the payment queue (#549).
       '0019_finance_settles_item.sql',
+      // The `equity` kind, the `contribution` intake kind and `finance_budget`
+      // (spec 338 §D, spec 339 §K, #593).
+      '0021_finance_budget_funding.sql',
     ])
 
     for (const file of walk(join(REPO_ROOT, 'src/lib/finance'))) {
