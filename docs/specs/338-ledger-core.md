@@ -680,10 +680,14 @@ research answers.
      `B`) mirroring the `X` balance of all company money accounts, and, per
      member, an **owed pool** mirroring that member's `X` balance of the
      liability postings this reading counts (item 3). The owed pool is kept as
-     one **lot** per member-liability credit — the debt one posted
-     `personal_funds` item booked — carrying that debt's quantity and its
-     provisional cost in `B` (item 3); the pool's carrying cost is the sum of
-     its lots. A pool's cost may be unknown. **Drawing** `q` from a pool, a lot
+     one **lot** per posted `personal_funds` item — the debt that item booked
+     — holding the sum of ALL that item's credits on the liability: the money
+     leg and, where the item records a fee, the fee leg the shipped posting
+     books as a second credit on the same liability (spec 339 EARS-513;
+     `feePostings` in `src/lib/finance/intake/posting.ts`). The lot's
+     quantity is that item's liability amount, and its cost is the sum of the
+     per-credit provisional values (item 3), each rounded once; the pool's
+     carrying cost is the sum of its lots. A pool's cost may be unknown. **Drawing** `q` from a pool, a lot
      or a supply holding quantity `Q` at cost `K` costs `K` when `q = Q` and
      otherwise `round_half_away_from_zero(q × K ÷ Q)`; the drawn cost leaves
      `K` exactly, so every later draw prices what remains. A draw is the
@@ -692,8 +696,8 @@ research answers.
   3. **Supply and use.** Within one operation, per currency, the postings are
      read as supplies and uses. Supply of `X`: the net decrease of company money
      accounts in `X`, drawn from the holding pool; a credit on a member liability
-     (spec 339 EARS-513), which opens that debt's lot in the member's owed pool
-     (item 2); a credit on `equity` or `income`; and each conversion step's
+     (spec 339 EARS-513), which adds its quantity and cost to its item's lot
+     in the member's owed pool (item 2); a credit on `equity` or `income`; and each conversion step's
      received quantity of `X`. Use of `X`: the net increase of company money
      accounts in `X`, added to the holding pool; a debit on an `expense`
      account; a debit on a member liability (spec 339 EARS-528/568), drawn from
@@ -709,7 +713,11 @@ research answers.
      stablecoins, through RUB where `B` is not RUB, as EARS-550 does), in decimal
      arithmetic from minor units of `X` to minor units of `B`, rounded once with
      `round_half_away_from_zero`; the debt's lot carries that same amount until
-     the debt is reimbursed (owner, 2026-11-24, #581). A credit on `equity` or
+     the debt is reimbursed (owner, 2026-11-24, #581). This applies even when
+     BBM holds `X` at a recorded cost: the member's card is not BBM's holding,
+     so its cost says nothing about the member's debt — a deliberate extension
+     of the owner's rule (lead decision, shown to the owner at the go), moot
+     while BBM holds no foreign account. A credit on `equity` or
      `income` in `X ≠ B` has unknown cost — the owner's rule covers a member's
      expense only, and the investor's money arrives in roubles. A step's
      receipt, in `B` as in any other currency, carries the cost item 4 gives it.
@@ -1272,12 +1280,30 @@ every fixture whose figures are numeric also asserts EARS-344's identity.
     liability. The step draws `26_000`; the liability debit's value is the lot's
     `25_000`, so the exchange result is `1_000`. Then: «spent» `27_000` = «P»
     `25_000` + fund `1_000` + exchange result `1_000` — the roubles that left
-    the account; «owed» `0`; «cash at cost» `73_000`; and `100_000` = `27_000`
-    - `73_000` − `0`. Without an itemized fee the step converts the whole
-      `27_000` RUB, the exchange result is `2_000`, and «spent» is `27_000` all the
-      same. Moving the rate or the agent's charge moves only the exchange/fee
-      result, never the identity (EARS-340 items 3 and 5, EARS-341, EARS-343,
-      EARS-344).
+    the account; «owed» `0`; «cash at cost» `73_000`; and the identity reads
+    `100_000` = `27_000` + `73_000` − `0`. Without an itemized fee the step
+    converts the whole `27_000` RUB, the exchange result is `2_000`, and «spent»
+    is `27_000` all the same. Moving the rate or the agent's charge moves only the exchange/fee
+    result, never the identity (EARS-340 items 3 and 5, EARS-341, EARS-343,
+    EARS-344). The agent's fee sits on the fund's line and the rest of the
+    difference on the projectless «exchange result» line, so «P» stays at the
+    provisional `25_000`: a payout's cost is the overhead of the reimbursement
+    process, not of the service reimbursed (lead decision, shown to the owner
+    at the go).
+13. **A fee on the member's own charge settles with its debt.** As fixture 12,
+    but the member's THB card is also charged a `400` THB card fee recorded on
+    the request (spec 339 EARS-513), so the liability amount is `10_400` THB
+    booked as two credits — `10_000` and the fee leg `400`. At `2.5` the lot
+    holds `10_400` THB at `25_000` + `1_000` = `26_000`; «spent» `26_000`
+    («P» `26_000`: the invoice `25_000` and the card fee's own expense
+    posting on the item's project, `1_000`) and «owed» `26_000`. Reimburse it in
+    ONE operation: the bank account loses `27_000` RUB with no itemized agent
+    fee, and one step converts `27_000` RUB → `10_400` THB onto the
+    liability. The reimbursement draws the item's whole lot, `26_000`, so the
+    exchange result is `1_000`; «owed» returns to exactly `0`, «spent» is
+    `27_000`, «cash at cost» `73_000`, and `100_000` = `27_000` + `73_000` −
+    `0`. A lot per liability credit would leave the `400` THB fee lot undrawn
+    and «owed» above zero after a full reimbursement (EARS-340 items 2–3).
 
 ## Out of scope
 

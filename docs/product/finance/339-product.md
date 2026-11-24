@@ -267,8 +267,7 @@ invoices to the legal entity are paid from it. A member pays from a personal
 card what the legal entity cannot pay — a foreign service that takes only a
 foreign card, a small subscription — and files the request as paid from own
 funds, which records a debt in the currency the card was actually charged. The
-owner pays the member back in roubles through a payment agent (Konsol.Pro
-today, Solar Staff later), to the member's personal card or sole-proprietor
+owner pays the member back in roubles through a payment agent, to the member's personal card or sole-proprietor
 account → «Отметить возврат» records the roubles that left the account, the
 agent's fee and any tax it withheld included, and the agent's fee separately
 where its statement shows one → the debt is settled in full in one act, even
