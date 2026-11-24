@@ -219,7 +219,7 @@ describe('subagent-context-budget decide() — hard cap + allow-list', () => {
       '  git push  ',
       'git status',
       'git -C C:/Users/x/repo/.claude/worktrees/588 add -- tools/x.mjs',
-      'git -C "C:\\Users\\x\\repo" diff --stat',
+      'git -C C:/x/y status',
       'git rev-parse HEAD',
     ]) {
       expect(isAllowedUnderHardCap('Bash', { command })).toBe(true)
@@ -313,6 +313,56 @@ describe('subagent-context-budget decide() — hard cap + allow-list', () => {
     }
   })
 
+  it('allow-list accepts only a plain ASCII alphabet: quoting, escaping and non-ASCII are refused outright', () => {
+    // The hook does not emulate two shells' quoting (PR #590 review, blocker
+    // 3): Bash reads `\"` as a literal quote and ignores typographic quotes,
+    // PowerShell groups on both, so any tokenizer here disagrees with one of
+    // them. A command containing ANY quoting / escaping / non-ASCII character
+    // is refused before it is split.
+    for (const command of [
+      // the reviewer's reproductions — Bash runs the flag the tokenizer hid
+      'git commit -m\\" --amend -m\\"',
+      'git push --repo=\u201c --force --repo=\u201c origin HEAD:refs/heads/b',
+      'git push --repo=\u201c --receive-pack=hostname --repo=\u201c ./x HEAD',
+      'git commit -m\u201c --no-verify -m\u201c',
+      'git push -o\\" -f -o\\" origin HEAD',
+      // every quote / escape form, even a harmless one
+      'git commit -m "wip: checkpoint"',
+      "git commit -m 'wip'",
+      'git -C "C:\\Users\\x\\repo" diff --stat',
+      'git -C C:\\Users\\x\\repo status',
+      'git commit -m wip\\ --amend',
+      'git commit -m \u2018wip\u2019',
+      'git commit -m \u201ewip\u201d',
+      // non-ASCII lookalikes: en / em dash, NBSP, full-width equals, Cyrillic i
+      'git push \u2013force',
+      'git push \u2014-force',
+      'git push origin HEAD\u00a0--force',
+      'git push --repo\uff1dx --force',
+      'g\u0456t status',
+      // tab, glob, comment, history, PowerShell stop-parsing, home expansion
+      'git status\t--porcelain',
+      'git add *',
+      'git push # --force',
+      'git log !1',
+      'git log --% --force',
+      'git -C ~ status',
+      // PowerShell: a splat of an unset variable VANISHES (`@x` → no word),
+      // shifting every position after it — `diff` would become `-C`'s path.
+      'git -C @x diff push --force',
+      // Windows PowerShell 5.1 splits a single-dash word at its first dot
+      // (`-u..` → `-u` `..`), so such a word is not one word in both shells.
+      'git push -u.. HEAD:main',
+      'git commit -am.x',
+      // comma: PowerShell's array operator in argument mode
+      'git push origin,--force',
+    ]) {
+      for (const tool of ['Bash', 'PowerShell']) {
+        expect(isAllowedUnderHardCap(tool, { command }), `${tool}: ${command}`).toBe(false)
+      }
+    }
+  })
+
   it('allow-list keeps the ordinary hand-back flags (no false positives from the flag rules)', () => {
     for (const command of [
       'git push -u origin chore/588-x',
@@ -320,7 +370,8 @@ describe('subagent-context-budget decide() — hard cap + allow-list', () => {
       'git push --set-upstream origin chore/588-x',
       'git commit -m wip',
       'git commit -am wip',
-      'git commit -m "wip: checkpoint"',
+      'git commit -am wip-checkpoint',
+      'git push -u origin HEAD:branch',
       'git commit -mn',
       'git log --oneline -n 5',
       'git diff --stat',
@@ -367,6 +418,15 @@ describe('subagent-context-budget messages + paths', () => {
     expect(hardMessage(360_000, path)).toContain(`ROTATE: ${path}`)
     expect(hardMessage(360_000, path)).toContain('360K')
     expect(hardMessage(360_000, path)).toContain('350K')
+  })
+
+  it('both messages teach the quote-free commit form the hard cap still accepts', () => {
+    const path = checkpointPath('a1')
+    for (const message of [softMessage(260_000, path), hardMessage(360_000, path)]) {
+      expect(message).toContain('git commit -am wip-checkpoint')
+    }
+    expect(hardMessage(360_000, path)).toMatch(/no quotes/)
+    expect(hardMessage(360_000, path)).toMatch(/forward slashes/)
   })
 
   it('checkpoint file names are filename-safe', () => {
