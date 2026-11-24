@@ -397,4 +397,6 @@ export type {
   FinanceBudgetView,
   UpdateFinanceBudgetInput,
 } from './budget/budgets'
+export { getBudgetReading } from './budget/reading'
+export type { BudgetFigure, BudgetReading } from './budget/replay'
 export type { MarketChainFact, MarketChainLeg, MarketIntakeFact } from './market-facts'
