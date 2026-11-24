@@ -309,6 +309,11 @@ export function absolutePath(value, cwd) {
  * `hook-compat.mjs`). A path that is not absolute for this platform (a `C:/…`
  * fixture on Linux) and any IO error return the path unchanged: canonicalisation
  * only ever adds precision, it never turns into a reason to block.
+ *
+ * The ancestor is resolved with `realpathSync.native` (review PR #595): unlike
+ * the JS `realpathSync` it expands an 8.3 short name (`BBM-PO~1` → `bbm-portal`)
+ * and returns the on-disk case, so the short form of a checkout compares equal
+ * to its registered root. If the native call fails, the JS one is the fallback.
  */
 export function canonicalPath(value) {
   try {
@@ -321,9 +326,17 @@ export function canonicalPath(value) {
       tail.unshift(parent.slice(up.length).replace(/^[\\/]/, ''))
       parent = up
     }
-    return join(realpathSync(parent), ...tail)
+    return join(realAncestor(parent), ...tail)
   } catch {
     return String(value)
+  }
+}
+
+function realAncestor(p) {
+  try {
+    return realpathSync.native(p)
+  } catch {
+    return realpathSync(p)
   }
 }
 

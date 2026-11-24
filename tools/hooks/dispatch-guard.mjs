@@ -40,6 +40,8 @@
 // Контракт: stdin — JSON PreToolUse. WARN = exit 0 + JSON на stdout. Никогда не
 // блокирует. FAIL-OPEN.
 
+import { createHash } from 'node:crypto'
+
 import {
   DISPATCH_STATE_DIR_REL,
   emitWarn,
@@ -75,13 +77,20 @@ export function isCarveOut(env = process.env) {
 /**
  * State key of the actor: the lead keys by `session_id`; a subagent (payload
  * carries `agent_id`) gets `<session>--agent-<id>` so its streak and latch are
- * its own. Empty when the payload names no session.
+ * its own. A `transcript_path` adds `--t-<hash>` (ds-platform `actorIdentity`):
+ * a Codex subagent shares the lead's `session_id` and carries no `agent_id`, so
+ * its transcript is the only thing that tells it apart. Empty when the payload
+ * names no session.
  */
 export function dispatchStateKey(payload) {
   const session = (payload && payload.session_id) || ''
   if (!session) return ''
   const agent = payload && payload.agent_id
-  return agent ? `${session}--agent-${agent}` : session
+  const transcript = payload && payload.transcript_path
+  const actor = agent ? `${session}--agent-${agent}` : session
+  if (!transcript) return actor
+  const hash = createHash('sha256').update(String(transcript)).digest('hex').slice(0, 12)
+  return `${actor}--t-${hash}`
 }
 
 /** The once-per-session latch. Missing / corrupt → `false` (fail-open: a lost
