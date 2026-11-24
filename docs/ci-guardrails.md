@@ -499,6 +499,24 @@ writes when their target is statically recognized from `Set-Content`,
 recognized safe target keeps the existing carve-outs. The owner approved this
 scope expansion in #475. Demotion follows §4 on the first confirmed false block.
 
+**`worktree-path` — BLOCK scope expanded again on 2026-11-24 (#594, v2).** Ported from
+ds-platform's guard (their `#1453` / `#2373`). The target is now classified against the
+checkout roots git has registered (`git worktree list`) and at its real location (junction
+and symlink ancestors resolved), so a new file under a junction that leads out of a worktree
+is caught. Two verdicts join the main-tree escape, each with its own message: `wrong-worktree`
+(a worktree session writing another registered worktree) and `unparseable-shell` (a Codex
+shell write the bounded parser cannot isolate, refused only when the command visibly reaches
+the shared checkout or another worktree). What stays allowed, and why, is the guard's own
+header and the row in [`tools/hooks/README.md`](../tools/hooks/README.md); in short, a
+main-checkout session and a session's own worktree are never refused, and every hook error
+or unavailable git is still fail-open. Owner go: Антон, 2026-11-24, in session (#594).
+Demotion follows §4 on the first confirmed false block.
+
+**`dispatch-guard` — WARN, latched to one warning per session on 2026-11-24 (#594).** Ported
+from ds-platform (`#1700`). The streak still counts and still resets on a dispatch; only the
+repeat warnings are gone. State is kept per actor, so a subagent's edits do not spend the
+lead's warning. Severity unchanged.
+
 **`secret-echo` — a BLOCK hook this register names, widened by #262.** It is a §3
 class-2 guard (documented security mandate: a printed secret is a leaked secret and is
 rotated, so a WARN soak would itself be the risk), and it therefore never appears in the

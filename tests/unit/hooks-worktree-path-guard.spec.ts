@@ -126,6 +126,17 @@ describe('owningRoot / gitWorktreeRoots', () => {
     expect(gitWorktreeRoots('C:/repo', () => out)).toEqual(['C:/repo', A])
   })
 
+  it('drops a prunable entry — its directory is gone, so it is nobody`s checkout', () => {
+    const out = [
+      'worktree C:/repo',
+      '',
+      'worktree C:/repo/.claude/worktrees/172',
+      'prunable gitdir file points to non-existent location',
+      '',
+    ].join('\n')
+    expect(gitWorktreeRoots('C:/repo', () => out)).toEqual(['C:/repo'])
+  })
+
   it('fails open to [] when git cannot run', () => {
     expect(
       gitWorktreeRoots('C:/repo', () => {
