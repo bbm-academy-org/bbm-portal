@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: mixed # F1a ledger backend + F1b /p/finance current-money card and /p/admin references
-updated: 2026-08-30
+updated: 2026-11-24
 ---
 
 # F1 — Ledger core: accounts, project dimension, postings, currencies, reversal (#338)
@@ -86,6 +86,24 @@ purpose linked to its expense category** — «максимально упрощ
 систематизируем всё». The purpose is **a reference pick, not free text**. F1 owns
 the reference table and the link from purpose to category; the request form that
 picks from it is F2 (#339).
+
+**BBM's budget and its funding — owner decisions, 2026-11-24 (#581).** BBM is
+the umbrella: the fund row «Фонд BBM», with Doctor School and the other
+projects one flat level under it; BBM's own infrastructure is the fund's
+spend, kept apart from the Doctor School project. A **fixed initial budget**
+is allocated to BBM for its launch and the Doctor School pilot, and every
+project's spend draws on it. The budget is a **limit**, and the money is
+brought onto the company account **as needed** — so the ledger keeps two
+separate facts: the limit, which is plan and moves no balance, and each
+**contribution**, a dated inflow onto a company account recorded like any
+other operation. A contribution is neither income nor an opening balance:
+the books still start at zero (decision 17), and money arrives in them only
+as dated movements. Spending counts on the date the money moved (cash
+basis; decision 14 keeps accrual deferred), and an expense paid from a
+member's own card counts on that date too — paying the member back settles
+a debt and is not a second expense. The budget amount itself is recorded by
+the owner as data, never written into this repository. The exact rules are
+spec 338 §D (`docs/specs/338-ledger-core.md`).
 
 ## Expense taxonomy — derived from the fact, not invented upfront
 
@@ -190,6 +208,13 @@ external vendors and a contingency buffer (prior art §4).
   has reproducible recorded cost in that view; if it does not, I see which
   currencies are unvalued rather than a plausible but partial number.
   _(decisions 4, 13, 18; F1b #357)_
+- **US-21** — As the owner, I record BBM's budget once as a limit with its
+  currency and start date, and it stays plan: it moves no account and is
+  never mistaken for money we have. _(owner, 2026-11-24, #581)_
+- **US-22** — As the owner, each time money is brought onto the company
+  account to fund spending, it is recorded on its own date as a contribution
+  — not as income and not as an opening balance — so I can see how much has
+  been put in and when. _(owner, 2026-11-24, #581; decision 17)_
 
 ## Flows
 
@@ -204,6 +229,14 @@ register (F3) from that moment.
 The owner names BBM's first operation; that date starts the books. Every account
 is created at zero and reaches its real balance only through backfilled
 operations (F2). No opening-balance entry is ever posted. _(decision 17)_
+
+**Funding the books.**
+The owner records BBM's budget as a limit on the fund → spending starts and
+is paid from the company account → when money is needed, it is brought onto
+that account, and the inflow is recorded as a contribution on the day it
+landed, with its bank document → the account balance grows by exactly that
+sum; nothing appears as income, and the budget limit does not change.
+_(owner, 2026-11-24, #581; spec 338 §D)_
 
 **Filing what an expense is for.**
 The purpose is picked from the purpose reference; its expense category comes with
@@ -290,6 +323,11 @@ per-operation report-rate semantics. _(decisions 13, 18; spec 338 EARS-325)_
   offered reporting currency, and every offered currency produces a numeric
   result derived only from actual rates recorded on operations. Native balances
   do not change when the reporting currency changes.
+- BBM's budget is recorded once as a limit on the fund and moves no account
+  balance; its amount lives in the data, not in the repository.
+- Every inflow that funds BBM is a dated contribution onto a company account:
+  it raises that account's balance, never appears as income, and is never an
+  opening balance.
 
 ## Out of scope
 

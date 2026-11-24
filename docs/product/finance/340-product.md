@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-08-30
+updated: 2026-11-24
 ---
 
 # F3 — Reports: register, P&L, cash flow, unit cost, break-even (#340)
@@ -80,6 +80,24 @@ the set of principles the reports obey either way:
 **Per project, and the fund** (decision 2): the same report with a different
 dimension filter, never a separate report per project.
 
+**BBM's budget — the first reading the owner asked for (2026-11-24, #581,
+#587).** BBM, the fund, has one fixed budget for its launch and the Doctor
+School pilot, and every project's spend draws on it. The reading answers two
+questions with separate numbers. **Against the limit:** how much has been
+spent since the budget started — every project's expenses, fees, spend from
+members' own cards on the day it happened, and the gain or loss on currency
+exchanges — and what remains, which goes below zero when the limit is
+exceeded rather than stopping at zero. **Against the money:** how much has
+been contributed, how much is owed back to members who paid from their own
+cards, and how much cash the accounts hold. Approved but unpaid requests are
+not spending (cash basis, decision 14 stays deferred); income does not
+extend the limit. The limit is plan and the rest is fact, so the two are
+never blended into one line. Amounts are read at recorded rates only
+(decision 18); the limit and its spend stay in the budget's own currency,
+while contributed, owed and cash follow the reporting-currency switch
+(decision 13). Definitions: spec 338 §D (`docs/specs/338-ledger-core.md`);
+the screen is #584's.
+
 The unit-cost model has one real precedent: the Doctor.School lesson-cost
 calculator, which computes a per-lesson cost from per-role payroll with
 employment-mode tax loading plus external vendors, and derives margin against a
@@ -152,6 +170,15 @@ the two that decide the rest.
 - **US-20** — As the owner, I see the accumulated invested cost — the
   capitalization — of each product, so I know what has been put into a lesson or
   a course to date, not only what it cost in one period. _(decision 22)_
+- **US-21** — As the owner, I see BBM's budget as a glass: the limit, what
+  has been spent against it since it started, and what remains — negative
+  if we have overspent. _(owner, 2026-11-24, #581)_
+- **US-22** — As the owner, I see where the budget went — spend per project,
+  BBM's own infrastructure as the fund's line — and the parts add up to the
+  whole. _(owner, 2026-11-24, #581)_
+- **US-23** — As the owner, I see how much has been contributed, how much we
+  owe members who paid from their own cards, and how much cash the accounts
+  hold, separately from the budget glass. _(owner, 2026-11-24, #581)_
 
 ## Flows
 
@@ -214,6 +241,13 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
   further action.
 - No report shows a number that does not come from a posting.
 - A report states the period it covers.
+- The owner can see BBM's budget limit, what has been spent against it since
+  it started, and what remains, with the remainder shown below zero when the
+  limit is exceeded.
+- An expense paid from a member's own card counts against the budget on the
+  day it was paid, and paying the member back does not count it again.
+- Contributions, money owed to members and cash are shown as separate facts,
+  and the per-project spend adds up to the total spend.
 
 ## Out of scope
 

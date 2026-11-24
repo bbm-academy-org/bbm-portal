@@ -2,7 +2,7 @@
 status: Draft
 epic: finance (#115) — see ./brief.md
 surface: user-facing
-updated: 2026-11-18
+updated: 2026-11-24
 ---
 
 # F2 — Filling the ledger: manual entry, expense requests and one-time history reconstruction (#339)
@@ -185,6 +185,9 @@ The manual-entry surface still needs a Stage-A pick vendored into
 - **US-22** — As an owner backfilling history, I start from BBM's first operation
   and carry it forward; the accounts stand at zero until the backfilled
   operations move them, so I never enter an opening balance. _(decision 17)_
+  _(2026-11-24, #581: money brought onto the company account to fund
+  spending is a dated contribution — a real movement, entered like any
+  other operation (US-25) — and so is not an opening balance either.)_
 - **US-23** — As the owner, for a request paid in a foreign currency I see what
   it would have cost at the Bank of Russia rate of the payment date, what it
   actually cost us with fees, and the overpayment in roubles and in percent.
@@ -193,6 +196,11 @@ The manual-entry surface still needs a Stage-A pick vendored into
   the Bank of Russia rate in total, by month and by payee or route — currency
   conversions included — weighted by amount, with the payments that have no
   rate or no actual amount counted separately. _(decision 41)_
+- **US-25** — As a finance-entry holder, when money is brought onto the
+  company account to fund BBM, I enter it as a contribution — the account it
+  landed on, the amount, the date, who contributed, and the bank document —
+  and a finance-approve holder posts it; it never goes through the request
+  form. _(owner, 2026-11-24, #581; spec 339 §K)_
 
 ## Flows
 
@@ -245,6 +253,13 @@ runner and private working files are removed after verification. Every account
 starts at zero; **no opening-balance entry is created**. No reusable backfill
 backend, CLI or UI is shipped.
 
+**Recording a contribution.**
+Money lands on the company account → a finance-entry holder enters it as a
+contribution with the bank statement or payment order attached → a
+finance-approve holder posts it → the account balance grows on the date the
+money landed; nothing appears as income. A contribution without its document
+waits, like any directly entered item. _(owner, 2026-11-24, #581)_
+
 **A new source arrives.**
 A source declares what it produces; intake validates and posts it through the
 same path as every other source. No existing source changes.
@@ -283,6 +298,8 @@ same path as every other source. No existing source changes.
 - A request for an expense attributable to a product cannot be submitted without
   a product.
 - A backfilled operation is distinguishable from one captured live.
+- A contribution is entered by the entry role with its bank document, posted
+  by the approve role, and never appears as income.
 - Every operation in the register names the source that produced it.
 - A wrong operation from any source is corrected by reversal, never by editing.
 - A posted foreign-currency request shows its market cost, its actual cost and
