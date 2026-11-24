@@ -260,6 +260,24 @@ finance-approve holder posts it → the account balance grows on the date the
 money landed; nothing appears as income. A contribution without its document
 waits, like any directly entered item. _(owner, 2026-11-24, #581)_
 
+**How BBM's money moves, and paying a member back.**
+BBM's only money account is the rouble bank account of the company's Russian
+legal entity; the investor's transfers onto it are the contributions, and rouble
+invoices to the legal entity are paid from it. A member pays from a personal
+card what the legal entity cannot pay — a foreign service that takes only a
+foreign card, a small subscription — and files the request as paid from own
+funds, which records a debt in the currency the card was actually charged. The
+owner pays the member back in roubles through a payment agent (Konsol.Pro
+today, Solar Staff later), to the member's personal card or sole-proprietor
+account → «Отметить возврат» records the roubles that left the account, the
+agent's fee and any tax it withheld included, and the agent's fee separately
+where its statement shows one → the debt is settled in full in one act, even
+when it was booked in the currency of the member's foreign card. What the
+member does with the money afterwards — moving it abroad, exchanging it, buying
+crypto — is personal and stays outside BBM's books. Whether a payment agent
+holds a prepaid BBM balance is an open data question for #583; if it does, that
+balance is a money account. _(owner, 2026-11-24, #581; spec 339 EARS-544/568)_
+
 **A new source arrives.**
 A source declares what it produces; intake validates and posts it through the
 same path as every other source. No existing source changes.
@@ -300,6 +318,9 @@ same path as every other source. No existing source changes.
 - A backfilled operation is distinguishable from one captured live.
 - A contribution is entered by the entry role with its bank document, posted
   by the approve role, and never appears as income.
+- A member's debt booked in a foreign currency is paid back in roubles through
+  a payment agent in one act that settles it in full, with the roubles actually
+  paid — the agent's fee included — on record.
 - Every operation in the register names the source that produced it.
 - A wrong operation from any source is corrected by reversal, never by editing.
 - A posted foreign-currency request shows its market cost, its actual cost and

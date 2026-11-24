@@ -82,8 +82,8 @@ dimension filter, never a separate report per project.
 
 **BBM's budget — the first reading the owner asked for (2026-11-24, #581,
 #587).** BBM, the fund, has one fixed budget for its launch and the Doctor
-School pilot _(owner)_; every other project's spend draws on it too _(lead
-reading, pending the owner's go)_. The reading answers two questions with
+School pilot _(owner)_; every other project's spend draws on it too _(owner,
+2026-11-24, #581)_. The reading answers two questions with
 separate numbers. **Against the limit:** how much has been spent since the
 budget started — every project's expenses, fees, spend from members' own cards
 on the day it happened _(owner-confirmed)_, and the gain or loss on currency
@@ -107,8 +107,15 @@ currency pair and miss holdings already spent. The budget reading is the one
 that adds up to the money contributed. Approved but unpaid requests are not spending (cash basis, decision 14
 stays deferred); income does not extend the limit. The limit is plan and the
 rest is fact, so the two are never blended into one line. Every number is in
-the budget's own currency and built only from recorded operations (decision 18) — no market or Bank of Russia rate; where money arrived in a foreign
-currency with no recorded rouble cost, the reading says which currency and
+the budget's own currency and built from recorded operations (decision 18), with
+one exception the owner set: a member's card debt in a foreign currency counts
+at the Bank of Russia rate of the day it was spent, marked provisional, until it
+is paid back — then the roubles that actually left the account, the payment
+agent's fee and any withheld tax included, replace that value, and the
+difference lands in spent as the exchange and fee result _(owner, 2026-11-24,
+#581)_. Many member-paid requests are in USD or THB, so withholding them would
+blind the reading. Where money arrived directly in a foreign currency or crypto,
+or a debt's day has no Bank of Russia rate, the reading says which currency and
 withholds the number rather than guess. Definitions: spec 338 §D
 (`docs/specs/338-ledger-core.md`); the screen is #584's.
 
@@ -267,6 +274,10 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
   facts beside an income figure; contributed plus income equals spent plus
   cash at cost minus money owed to members, exactly, whenever the budget
   starts on or before BBM's first operation.
+- A member's foreign-currency card debt counts at the Bank of Russia rate of
+  its spend day, marked provisional, until it is paid back; paying it back in
+  roubles makes spent equal to the roubles actually paid for it, the agent's
+  fee included, and the four figures still reconcile before and after.
 - The budget's cash at cost and exchange result are labelled so that they are
   not mistaken for the `/p/finance` cash total or the ledger's own exchange
   entries, which differ whenever foreign money is held.

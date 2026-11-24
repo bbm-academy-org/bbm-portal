@@ -99,12 +99,32 @@ two separate facts: the limit, which is plan and moves no balance, and each
 other operation. An expense paid from a member's own card is reimbursed to that
 member, counts against the budget on the day it was paid, and the
 reimbursement settles a debt rather than counting a second time
-_(owner-confirmed in session, 2026-11-24)_. The budget amount itself is
-recorded by the owner as data, never written into this repository.
+_(owner-confirmed in session, 2026-11-24)_. Every project under the fund draws
+on the same budget; a member's card debt stays owed until it is reimbursed; the
+investor's money is funding, not a loan; and the approve role records the limit
+_(owner, 2026-11-24, #581)_. The budget amount itself is recorded by the owner
+as data, never written into this repository.
 
-_Lead readings, pending the owner's go:_ every other project under the fund
-draws on the same budget; a contribution is neither income nor an opening
-balance — the books still start at zero (decision 17), and money arrives in
+**How the money actually moves** _(owner, 2026-11-24, #581)_. BBM has one money
+account of its own: the rouble bank account of the company's Russian legal
+entity. The investor funds BBM by transfers onto it — those are the
+contributions — and rouble invoices issued to the legal entity are paid from it.
+What the legal entity cannot pay — a foreign service that takes only a foreign
+card, a small subscription — a member pays from a personal card, a foreign one
+included, and that is a debt to the member. The legal entity pays it back in
+roubles through a payment agent, to the member's card or to the member's
+sole-proprietor account under a services contract. What the member does with
+the money afterwards — moving it abroad, exchanging it, buying crypto — is
+personal and outside BBM's books: BBM holds no foreign or crypto account. A debt
+in a foreign currency has no rouble cost yet, so until it is paid back it counts
+at the Bank of Russia rate of the day it was spent; once paid back, it costs the
+roubles that actually left the account, the agent's fee and any withheld tax
+included, and the difference shows as an exchange and fee result. Whether a
+payment agent holds a prepaid BBM balance is still an open data question
+(#583); if it does, that balance is a money account like any other.
+
+_Lead readings, pending the owner's go:_ a contribution is neither income nor
+an opening balance — the books still start at zero (decision 17), and money arrives in
 them only as dated movements; spending counts on the date the money moved
 (cash basis — decision 14 keeps accrual deferred). The exact rules are spec 338
 §D (`docs/specs/338-ledger-core.md`).
