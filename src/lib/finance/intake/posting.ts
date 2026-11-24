@@ -51,6 +51,7 @@ import {
   ensureSystemAccount,
   requireAccount,
   requireCurrency,
+  requireFundProject,
   type FinanceAccountView,
 } from '../references'
 import {
@@ -58,6 +59,7 @@ import {
   assertIntakeSettlement,
   isReimbursementTransfer,
 } from './account-placement'
+import { contributionItemRefusal } from './contribution'
 import {
   intakeItemToView,
   intakeMoneyFactsRefusal,
@@ -418,6 +420,8 @@ async function recordItemOperation(tx: PlatformTx, item: PostingItem): Promise<R
       return recordTransfer(tx, item)
     case 'conversion':
       return recordOwnConversion(tx, item)
+    case 'contribution':
+      return recordContribution(tx, item)
     default:
       throw new FinanceRefusal(`Вид позиции «${item.kind}» не проводится.`)
   }
@@ -515,6 +519,39 @@ async function recordIncome(tx: PlatformTx, item: PostingItem): Promise<Recorded
     ...(await feePostings(tx, item, money)),
   ]
   return recordOperationInTransaction(tx, operationInput(item, postings))
+}
+
+/**
+ * Spec 339 §K EARS-567 → spec 338 EARS-336: a contribution posts as one debit on
+ * the receiving company money account and one credit on the module's `equity`
+ * account of that currency, on the fund, carrying the contributor's
+ * `member_id` where a member contributed. Never income.
+ */
+async function recordContribution(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {
+  const refusal = contributionItemRefusal(item)
+  if (refusal !== null) throw new FinanceRefusal(refusal)
+  const fund = await requireFundProject(tx)
+  if (item.projectId !== fund.id) {
+    throw new FinanceRefusal(
+      `Проект взноса — фонд «${fund.name}»: деньги вносятся в BBM, а не в проект (EARS-567).`,
+    )
+  }
+  const money = await requireMoneyAccount(tx, item.accountId as number, 'счёта зачисления')
+  assertAccountCurrency(money, item.currency, 'счёта зачисления')
+  const equity = await ensureSystemAccount(tx, 'equity', item.currency)
+  return recordOperationInTransaction(
+    tx,
+    operationInput(item, [
+      { accountId: money.id, amount: item.amount, currency: item.currency },
+      {
+        accountId: equity.id,
+        amount: -item.amount,
+        currency: item.currency,
+        projectId: fund.id,
+        memberId: item.memberId,
+      },
+    ]),
+  )
 }
 
 async function recordTransfer(tx: PlatformTx, item: PostingItem): Promise<RecordedOperation> {

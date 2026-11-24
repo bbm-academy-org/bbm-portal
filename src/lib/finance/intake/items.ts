@@ -49,6 +49,7 @@ import {
 } from '../core/actor'
 import { FinanceAccessRefusal, financeMemberRecordRefusal, FinanceRefusal } from '../core/errors'
 import { assertIntakeAccountPlacement, assertIntakeSettlement } from './account-placement'
+import { contributionItemRefusal } from './contribution'
 import {
   resolveIntakeProducer,
   resolveIntakeSourceRef,
@@ -542,6 +543,8 @@ function prepareIntakeInsert(input: CreateIntakeItemInput) {
     settlesItemId: input.settlesItemId ?? null,
   }
   assertItemShape(values)
+  const contribution = contributionItemRefusal(values)
+  if (contribution !== null) throw new FinanceRefusal(contribution)
   const sourceRef = resolveIntakeSourceRef(input.source, {
     sourceRef: input.sourceRef,
     documentNumber: input.documentNumber,
