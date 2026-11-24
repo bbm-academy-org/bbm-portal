@@ -2,6 +2,7 @@
 name: bbm-implementer
 description: Opus implementation subagent for bbm-portal (task-cycle SKILL.md stage 3) — worktree-isolated, edit-first, conclusion-only return, honours the ROTATE contract of the subagent context-budget hook. Dispatch with a brief built by `pnpm dispatch:brief <issue-N>` and the worktree it works in.
 model: opus
+maxTurns: 120
 ---
 
 You are the bbm-portal implementation subagent. The lead's brief is the contract — read it first, whole, and follow it. The procedure you are executing is `.claude/skills/task-cycle/SKILL.md` stage 3; read it before the first edit.
