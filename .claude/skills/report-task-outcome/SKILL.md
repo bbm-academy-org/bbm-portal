@@ -34,7 +34,8 @@ right only when the owner asks for one or the content is unreadable as text
 
 ## Words
 
-Parts 1–3 use only words the owner used and product nouns — the hours page, the
+Parts 1–3 — and every chat answer to the owner, not only reports and
+checkpoints — use only words the owner used and product nouns — the hours page, the
 OKR dashboard, the lead form, the budget dashboard, a partner, an employee. No
 internal term there, glossed or not: no issue/PR number, SHA, branch, path,
 file, table, module or route name, no «stage N», no `EARS-N` id, no label or
@@ -61,7 +62,8 @@ _(symptom, owner 2026-08-19: «Я ничерта не понял из твоег
    ```
 
    — a real URL the owner opens themselves, with the access line (login + where
-   the password comes from) when the surface is behind auth, on every change
+   the password comes from, in product words — «пароль — в общем файле учёток
+   dev-стенда»; the path goes to the appendix) when the surface is behind auth, on every change
    tier: this report follows the deploy, so a Show change is live too. Show's PR
    screenshots were the pre-merge acceptance (task-cycle stage 5), never this
    line. With no visual surface the honest form is the literal alternative
@@ -73,8 +75,10 @@ _(symptom, owner 2026-08-19: «Я ничерта не понял из твоег
    `## Product note (RU)` (`.github/pull_request_template.md`; the
    `product-note` guard, `docs/ci-guardrails.md` §5, makes it non-optional on
    a render-surface diff, and the merge-time Mattermost delivery renders it),
-   part 1's sentences are mirrored there verbatim — the report and the team's
-   note are the same text, authored once. `none` there only for a PR nobody
+   part 1's product sentences are mirrored there verbatim — the report and the
+   team's note are the same text, authored once. Only those sentences: never the
+   «Проверить глазами» line, the access line or the merged / in-prod status — the
+   note is public, goes to the team channel, and is written before the deploy. `none` there only for a PR nobody
    sees (tooling, docs, backend without UI).
 
 2. **Что нужно от тебя** — or «ничего». Only what the owner decides
