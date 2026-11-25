@@ -57,6 +57,7 @@ import {
   mayAttachDocument,
   receiptRefusal,
   refundAccounts,
+  refundCrossesCurrency,
   refundCurrencyFixed,
   refundPrefill,
   reimburseDefaults,
@@ -495,6 +496,7 @@ function ReimburseSection({
   const fixed = refundCurrencyFixed(request)
   const accountId = form.watch('accountId')
   const account = accounts.find((row) => String(row.id) === accountId) ?? null
+  const crosses = refundCrossesCurrency(request, references, accountId)
 
   return (
     <ActSection
@@ -543,13 +545,21 @@ function ReimburseSection({
                     const prefill = refundPrefill(request, references, next)
                     if (prefill !== '' || form.getValues('amount') === '') {
                       form.setValue('amount', prefill)
+                    } else if (refundCrossesCurrency(request, references, next)) {
+                      // A booked sum carried over from the debt's own account is not the roubles.
+                      form.setValue('amount', '')
+                    }
+                    if (!refundCrossesCurrency(request, references, next)) {
+                      form.setValue('agentFee', '')
+                      form.clearErrors('agentFee')
                     }
                   }}
                   disabled={pending || accounts.length === 0}
                 />
                 {fixed === null ? null : (
                   <FormDescription>
-                    Долг записан в {fixed} — возврат со счёта в этой валюте.
+                    Долг записан в {fixed}. Вернуть можно со счёта в {fixed} или в другой валюте —
+                    например, в рублях через платёжного агента.
                   </FormDescription>
                 )}
                 <FormMessage />
@@ -568,14 +578,41 @@ function ReimburseSection({
                   <Input {...field} inputMode="decimal" placeholder="0,00" disabled={pending} />
                 </FormControl>
                 <FormDescription>
-                  {account !== null && account.currency !== request.currency && fixed === null
-                    ? `Заявка в ${request.currency}, возврат в ${account.currency}: сумма — факт, столько ушло сотруднику.`
-                    : 'Весь долг по заявке, с комиссией, если она записана.'}
+                  {crosses && account !== null
+                    ? `Долг в ${fixed}, возврат в ${account.currency}: вся сумма, ушедшая со счёта, вместе с комиссией агента. Долг закрывается целиком.`
+                    : account !== null && account.currency !== request.currency && fixed === null
+                      ? `Заявка в ${request.currency}, возврат в ${account.currency}: сумма — факт, столько ушло сотруднику.`
+                      : 'Весь долг по заявке, с комиссией, если она записана.'}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
+          {crosses && account !== null ? (
+            <FormField
+              control={form.control}
+              name="agentFee"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Комиссия агента, {account.currency} — если есть</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      disabled={pending}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Если агент выделил комиссию в отчёте: она входит в сумму выше и запишется
+                    отдельным расходом.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : null}
           <ReceiptField pending={pending} />
           <ActFailure message={failure} />
           <ActFooter>
