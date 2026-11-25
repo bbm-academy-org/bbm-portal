@@ -1488,7 +1488,7 @@ register, that dependency is named in the step:
    requests in every stage: the page opens on «В работе» with «Ждёт
    решения», «К оплате», «Вернуть сотруднику» and a collapsed «Черновики»;
    the three sums on top match the group totals; clicking «К оплате» leaves
-   only that group. Search «#<id>» finds the one request; the period filter
+   only that group. Search «#\<id\>» finds the one request; the period filter
    narrows the rows but not the sums. As a member without `finance-approve`
    the same groups show with no buttons (EARS-535…541).
 9. **One currency.** Switch ₽ → $: every amount and sum changes; a USD request

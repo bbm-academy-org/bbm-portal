@@ -227,7 +227,7 @@ decimal, rounded half away from zero.
   create action of EARS-724 there, and any other session the sentence that the
   limit is set by the `finance-approve` role.
 - **EARS-705.** IF a budget exists and no operation counts in the window, THEN
-  every figure shall show zero and the page shall say «С <starts_on> операций
+  every figure shall show zero and the page shall say «С \<starts_on\> операций
   нет» rather than leave a blank that could mean «not loaded» (340-product,
   «An empty period»).
 
@@ -295,8 +295,8 @@ decimal, rounded half away from zero.
   converted items (EARS-722 item 1, EARS-728). Contributions shall enter
   neither series.
 - **EARS-711.** Today's month shall be shown as incomplete — «неполный месяц,
-  по <today>» — and so shall the month of `starts_on` when `starts_on` is not
-  its first day — «неполный месяц, с <starts_on>»; neither enters the trailing
+  по \<today\>» — and so shall the month of `starts_on` when `starts_on` is not
+  its first day — «неполный месяц, с \<starts_on\>»; neither enters the trailing
   averages.
 - **EARS-712.** A month is **complete** when it ended before today's month and
   `starts_on` is on or before its first day. The **trailing average gross
@@ -343,7 +343,7 @@ months available)`, months with no spend counted as zero, each rounded once
   burn chart, the waterline's visible range — whose values stay cumulative
   from `starts_on` and never reset at the period start — and the breakdown; it
   shall not change the glass, the money tier, the trailing averages or the
-  runway, and those blocks shall say «с <starts_on>».
+  runway, and those blocks shall say «с \<starts_on\>».
 
 ### E. Where the money went
 
@@ -451,11 +451,11 @@ view in shape up to the differences between the operations' own rates.
      nearest previous one at most 14 days older, through RUB, with USDT and
      USDC as USD. The conversion is an exact rational rounded half away from
      zero once to `D`'s minor units, and each such figure carries «по курсу ЦБ
-     на <date>». Remaining shall be computed in `B` first (EARS-342) and then
+     на \<date\>». Remaining shall be computed in `B` first (EARS-342) and then
      converted, never as converted limit − converted spent, so it is always
      the money actually left. The −limit level of the waterline is the
      converted limit. IF no rate qualifies, THEN every stock figure in `D`
-     shall be withheld with «нет курса ЦБ на <today>», and the flow figures
+     shall be withheld with «нет курса ЦБ на \<today\>», and the flow figures
      are unaffected.
   3. **Ratios and states** — the share used, the runway with its EARS-707
      case, the glass's state (EARS-706), the number of open debts in the
@@ -467,9 +467,9 @@ view in shape up to the differences between the operations' own rates.
      that joins flow figures to stock figures holds only up to the difference
      between the operations' rates and the latest rate. The relations, and
      what each shows:
-     - limit = spent + remaining: the glass shall carry «в <D> лимит ≠
-       потрачено + остаток на <difference>: лимит и остаток — по курсу ЦБ на
-       <date>, расходы — по курсу операций; точно — в <B>», where
+     - limit = spent + remaining: the glass shall carry «в \<D\> лимит ≠
+       потрачено + остаток на \<difference\>: лимит и остаток — по курсу ЦБ на
+       \<date\>, расходы — по курсу операций; точно — в \<B\>», where
        `<difference>` = limit − (spent + remaining), all three as shown in
        `D`, with its sign;
      - the EARS-344 equation (EARS-709): the money tier shall show both
@@ -477,9 +477,9 @@ view in shape up to the differences between the operations' own rates.
        `<difference>` = (contributed + income) − (spent + cash at cost − owed
        to members), as shown in `D`, with its sign;
      - spent = «paid out» + owed to members (EARS-344, EARS-708): wherever
-       «paid out» is shown, beside it «в <D> потрачено ≠ выплачено + долги
-       участникам на <difference>: долги участникам — по курсу ЦБ на <date>,
-       расходы и выплаты — по курсу операций; точно — в <B>», where
+       «paid out» is shown, beside it «в \<D\> потрачено ≠ выплачено + долги
+       участникам на \<difference\>: долги участникам — по курсу ЦБ на \<date\>,
+       расходы и выплаты — по курсу операций; точно — в \<B\>», where
        `<difference>` = spent − («paid out» + owed to members), all three as
        shown in `D`, with its sign;
      - the provisional part vs owed to members (EARS-719, EARS-343): in `B`
@@ -488,9 +488,9 @@ view in shape up to the differences between the operations' own rates.
        provisional value in both, EARS-344); in `D` the first is a flow at
        the operations' rates and the second a stock at the latest rate, so
        they can differ either way. The glass shall carry, beside the
-       provisional part, «в <D> предварительная часть ≠ её доле в долгах
-       участникам на <difference>: долги участникам — по курсу ЦБ на <date>,
-       предварительная часть — по курсу операций; точно — в <B>», where
+       provisional part, «в \<D\> предварительная часть ≠ её доле в долгах
+       участникам на \<difference\>: долги участникам — по курсу ЦБ на \<date\>,
+       предварительная часть — по курсу операций; точно — в \<B\>», where
        `<difference>` = the provisional part as shown − (that part of owed
        to members, converted as item 2 converts owed to members), with its
        sign;
@@ -505,10 +505,10 @@ view in shape up to the differences between the operations' own rates.
      EARS-720 withholds the reconciliation.
 
   5. **The rate line** beside the switch shall say, WHILE `D` is `B`, «все
-     суммы в <B>, точно, без пересчёта». Otherwise it shall say «операции,
+     суммы в \<B\>, точно, без пересчёта». Otherwise it shall say «операции,
      выплаты и предварительная часть — по фактическому курсу каждой
      операции; лимит, остаток, долги участникам и деньги на счетах — по
-     курсу ЦБ на <date>; графики совпадают по форме с видом в <B>
+     курсу ЦБ на \<date\>; графики совпадают по форме с видом в \<B\>
      с точностью до разницы курсов операций», followed by EARS-729's count.
 
   _(Owner, 2026-11-25: every figure follows the switch, the budget block
@@ -587,7 +587,7 @@ view in shape up to the differences between the operations' own rates.
   a payment from roubles into baht has no euro on its chain, so its roubles
   are converted at the Bank of Russia euro rate of its date._
   1. **Item mark.** A drill-down row whose amount in `D` is converted this
-     way shall carry «по курсу ЦБ на <date>», the date being the rate's
+     way shall carry «по курсу ЦБ на \<date\>», the date being the rate's
      effective date.
   2. **Aggregate mark.** A flow figure that sums at least one such item shall
      carry «частично по курсу ЦБ» with the sum of those items in `D`, or «по
@@ -600,14 +600,14 @@ view in shape up to the differences between the operations' own rates.
      none was.
   3. **No rate.** IF no rate qualifies under EARS-558's rule, THEN the item
      has no amount in `D`, and every flow figure in `D` that sums it shall be
-     withheld with «нет курса ЦБ на <date>» — never converted 1:1, never a
+     withheld with «нет курса ЦБ на \<date\>» — never converted 1:1, never a
      silent zero (as in spec 339 EARS-560) — «paid out», the glass's
      provisional part and the waterline from that month on included; the stock figures, ratios and states of EARS-722 items 2–3
      are unaffected. A fallback amount changes
      only when the ledger changes or when a rate is newly stored inside its
      date's window.
   4. **Disabled candidate.** A candidate `D` shall be shown disabled with
-     «нет курса ЦБ для <D>» only WHERE no operation's own chain reaches `D`
+     «нет курса ЦБ для \<D\>» only WHERE no operation's own chain reaches `D`
      and the rate store holds no rate for the `B` → `D` conversion.
   5. The Bank of Russia rates read here are display only: this fallback
      requires the pending note on spec 339 EARS-553, written out there, and
@@ -699,7 +699,7 @@ ledger is written into the repo or the PR.
    last points match tiers 1–2 (EARS-713).
 7. **Period.** Switch to «Последние 12 месяцев» and to «Этот месяц»: the URL
    carries the period, the burn and breakdown narrow; the glass, money tier and
-   runway do not move and say «с <starts_on>» (EARS-715, EARS-714's note
+   runway do not move and say «с \<starts_on\>» (EARS-715, EARS-714's note
    visible).
 8. **Where it went.** By project, by category, by counterparty: each grouping's
    lines plus «курсовой результат» add up to the period's spent; open the
@@ -713,13 +713,13 @@ ledger is written into the repo or the PR.
     Switch to $ in the header: every amount on every tier changes into
     dollars, while the share used, the runway, the glass's fill and the
     charts' shape do not. The limit, remaining, owed to members and cash at
-    cost carry «по курсу ЦБ на <date>». Remaining equals the `B` remaining
+    cost carry «по курсу ЦБ на \<date\>». Remaining equals the `B` remaining
     converted at that rate, and the glass shows the one-line note on how
     limit differs from spent + remaining. The waterline's −limit level is the
     converted limit. The rate line names both rules and how many of the
     period's operations fell back to the Bank of Russia rate. Open a
     drill-down: a row paid in or invoiced in $ shows its recorded dollars
-    unmarked, a rouble-only row carries «по курсу ЦБ на <date>», and a line
+    unmarked, a rouble-only row carries «по курсу ЦБ на \<date\>», and a line
     or month summing both carries «частично по курсу ЦБ» (where the real data
     holds no such row, CI covers it); € is offered or shown disabled with its
     reason (EARS-713, EARS-721, EARS-722, EARS-728, EARS-729).
