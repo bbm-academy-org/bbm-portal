@@ -978,6 +978,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-11-25-606-ship-path-only-tsx -->
 
+- [ ] 2026-11-25 Budget dashboard Stage A (#585, PR #611): the researched-but-unbuilt whitelist section for the chart and KPI-tile class lives in `design-source/finance/BudgetDashboard.research.md`, beside the vendored pick, although `design-source/` is documented as the home of vendored design originals and no rule names where a researched section waits between Stage A and Stage B (`research-ui-element` says only that the row is added after the build passes Stage B). Placed there so the pick, its token proposal and its contrast audit survive the session as one hand-off to #586. Return condition: #586's PR adds the whitelist row — at that point the section's settled content moves into `docs/design/ui-whitelist.md` and the research file is either removed (with its passport-row mention) or kept as the row's backing record by an explicit decision in that PR.
+
+<!-- debt-entry-end: 2026-11-25-585-research-in-design-source -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
