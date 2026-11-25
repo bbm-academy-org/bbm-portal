@@ -232,20 +232,11 @@ jobs:
   # the same PR (#355). Severity of record: docs/ci-guardrails.md §5, row
   # `tdd-order` — read that row, not this comment.
   #
-  # WARN by the §3 DEFAULT, settled 2026-08-27 — and the reasoning is kept because
-  # an earlier draft of this job got it wrong. A day-0 BLOCK was claimed under §3
-  # class 1; class 1 excludes this guard by name, because its only input is PR
-  # metadata fetched over the network and judged with a substring match, which is
-  # exactly what §3's closing line sends to a WARN soak. No owner class-3 mandate
-  # was sought or granted: the canon's own default decided it, so there is nothing
-  # contested left here. Promotion to BLOCK follows §4 (≥4 clean weeks) —
-  # earliest 2026-09-24, the usual three edits (drop `continue-on-error`, add the
-  # job to the `ci` needs-list, update the §5 row).
-  #
-  # The PRE-COMMIT half of this same guard (`--staged`, on the simple-git-hooks
-  # line) is untouched by that and blocks locally from day one: it reads only the
-  # local tree and index through git plumbing, meeting class 1 on its own terms.
-  # Two enforcement points, two severities, both recorded in the §5 row.
+  # WARN, and never promoted (#621, owner decision 2026-11-25): commit order is
+  # not the evidence of TDD — tests that cover the change, green, and confirmed
+  # by the stage-4 review are. The job reports; `pnpm pr:land` reads a failing
+  # `continue-on-error` job as non-blocking. The PRE-COMMIT half of this same
+  # guard (`--staged`) prints notes at exit 0 and blocks nothing either.
   #
   # The guard header enumerates the false-positive class honestly — two paths
   # closed in code (merge-commit first-parent diffs, truncated commit file lists),
@@ -259,7 +250,7 @@ jobs:
   # files` — the shallow checkout has no base ref to walk), hence the auth block
   # workflow-auth enforces. `pull-requests: read` covers both endpoints.
   tdd-order:
-    continue-on-error: true # WARN since 2026-08-27 — canon §5, earliest promotion 2026-09-24
+    continue-on-error: true # WARN since 2026-08-27, never promoted (#621) — canon §5
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

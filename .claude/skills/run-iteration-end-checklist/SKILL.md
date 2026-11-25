@@ -63,9 +63,11 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
    collections/globals/endpoints changed and `pnpm test:e2e` when a UI route or
    an auth flow changed.
 2. **TDD evidence** — for platform-module code (`src/lib/**`, `src/app/(frontend)/p/**`),
-   the commit order shows a failing test before the implementation
-   (`.claude/skills/task-cycle/SKILL.md` stage 3). N/A for docs, tooling and
-   CMS-contract work.
+   tests in the PR (or already on `main`) cover the changed behaviour and are
+   green (item 1); the stage-4 review confirms that coverage, and `pnpm pr:land`
+   will not merge without its APPROVE. Commit order is not evidence: a separate
+   red commit before the implementation is welcome, never required, and its
+   absence is never a FAIL. N/A for docs, tooling and CMS-contract work.
 3. **`pnpm typecheck`** green.
 4. **`pnpm lint`** and **`pnpm format:check`** green; `pnpm lint:css` when
    `*.css` was touched.
@@ -149,8 +151,9 @@ The lead may advance past a `BLOCKED` verdict to exactly ONE next stage, and
 only when all three hold:
 
 1. **That next stage IS the remedy for the blocking item** — dispatching the
-   stage-4 review whose mandate is precisely the FAIL (e.g. "item 2 has no
-   verifiable TDD order — the reviewer rules on it"). A stage that merely
+   stage-4 review whose mandate is precisely the FAIL (e.g. "item 2 — it is
+   unclear whether the tests cover the changed behaviour; the reviewer rules on
+   it"). A stage that merely
    happens to come next, and `pnpm pr:land` in every case, is not a remedy.
 2. **The decision is recorded on the PR as its own comment**, in the same place
    the gate's verdict table goes — one line naming the blocked item number, the
@@ -159,13 +162,11 @@ only when all three hold:
 3. **The item stays FAIL, and exactly ONE thing releases it: the re-run of the
    dispatched gate turning it PASS or N/A.** The escape buys ordering, never a
    verdict, and the lead never clears its own blocking item — that is this
-   file's "dispatch, never self-check" applied to the escape it grants. The one
-   alternative is not an acceptance the lead may issue: it is an **owner
-   write-off recorded on the PR by the owner**, naming the item. Absent that
-   comment, the re-run is the only door, and `pnpm pr:land` waits for it.
-
-Precedent: PR #354 (2026-08-26) — the gate blocked on unverifiable TDD order and
-the review it was blocking was the very thing that could rule on it.
+   file's "dispatch, never self-check" applied to the escape it grants.
+   `pnpm pr:land` waits for that re-run. No item is ever released by an owner
+   comment or owner action: every item here is an engineering item, which
+   AGENTS.md §3 leaves to the agent — the owner's part is item 12's «принято»
+   and nothing else.
 
 ## Failure modes
 

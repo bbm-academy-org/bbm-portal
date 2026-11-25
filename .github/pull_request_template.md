@@ -27,7 +27,7 @@ none
 
 - [ ] Owner's "go" was given in-session on this scope (stage 2) — or this is a chore inside an already-granted scope
 - [ ] Spec in `docs/specs/` (only if new module / user-facing behavior)
-- [ ] TDD for platform-module code: tests first (or no module code touched)
+- [ ] TDD for platform-module code: tests cover the changed behaviour and are green (or no module code touched)
 - [ ] Owner-visible change → acceptance planned/recorded where the tier puts it (stage 5: Ask live stand, Show PR screenshots) — or invisible, stage skipped
 - [ ] Deviations from conventions: none / listed in the results comment
 

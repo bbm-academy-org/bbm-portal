@@ -9,7 +9,7 @@
 // to stop: §3 class 1 requires "no network, no PR metadata, no heuristics", and
 // the CI plane's ONLY input is PR metadata fetched over the network, judged with
 // a substring match — which is why that plane is WARN and soaks. (The staged
-// plane below is the class-1 half and does block.) Three concrete paths to a
+// plane below prints notes only and blocks nothing, #621.) Three concrete paths to a
 // false BLOCK were named in review of PR #394; later incidents extended that
 // list. The closed cases stay named so the same bug class does not return:
 //
@@ -119,11 +119,8 @@
 //       - a multi-line `} from './x'` inside an index file is read as a
 //         re-export even when it closes a plain `import`. Same direction —
 //         a wider PASS, never a rejection.
-//   * The STAGED plane does not resolve barrels. It only ever blocks on MIXED
-//     (module + citing test in one commit), so a barrel citation it cannot see
-//     lets the commit through and the CI plane judges the order. Adding the
-//     resolution there would move a heuristic into the rejecting direction,
-//     which is exactly what `evaluateStaged` refuses to do.
+//   * The STAGED plane does not resolve barrels. It blocks nothing (#621), so
+//     a barrel citation it cannot see only changes which note it prints.
 //
 // ── Two enforcement points, one rule (#355) ──────────────────────────────────
 // `pnpm lint:tdd-order`                 the PR plane — the commit graph, in CI.
@@ -152,15 +149,16 @@
 // how every pre-commit edit behaves here — but it is why the hook was NOT
 // force-installed while this branch is open.
 //
-// WHAT THE STAGED PLANE BLOCKS ON, and why it is only that: a MIXED commit — a
-// new module staged together with a staged test citing it, the literal #354
-// shape and the #355 retro mandate's literal wording. A new module that NO test
-// cites is an ADVISORY at exit 0, not a rejection. Round-2 review of PR #394
-// measured why: rejecting on «no citation found» runs the `needlesFor` substring
-// matcher in the REJECTING direction, where every miss is a false BLOCK, and 41
-// of 78 platform files on `main` (53%) carry no name-citing test — barrels are
-// structurally uncitable, and route layouts and Drizzle tables are not imported
-// by path. See `evaluateStaged` for the full reasoning.
+// THE STAGED PLANE BLOCKS NOTHING (#621). It prints two kinds of note at exit 0:
+// a MIXED commit — a new module staged together with a staged test citing it —
+// and a new module that NO test cites. MIXED used to be a refusal (the #354
+// shape, the #355 retro mandate), which made commit order the proof of TDD; the
+// owner retired that as ceremony on 2026-11-25. Evidence of TDD is tests that
+// cover the change, green, and confirmed by the stage-4 review — not history.
+// The uncited case was demoted earlier, for a different reason: round-2 review
+// of PR #394 measured 41 of 78 platform files on `main` (53%) with no
+// name-citing test — barrels are structurally uncitable, and route layouts and
+// Drizzle tables are not imported by path. See `evaluateStaged`.
 //
 // A MERGE being concluded (#565) is read against EVERY parent, not HEAD alone.
 // Read against HEAD, each module `origin/main` brought in arrived together with
@@ -172,19 +170,11 @@
 // SQUASH_MSG; its squashed branch tips are read from there and stand in for the
 // parents — see `squashHeads`.
 //
-// TWO SEVERITIES, and the split is the design rather than a compromise. The
-// staged plane reads only the local tree and index through git plumbing — no
-// network, no PR metadata — and its ONE blocking rule (mixed) has a false-BLOCK
-// class that is empty by construction, because a miss of the matcher there lets
-// a commit through rather than stopping one. Those together are §3 class 1, so
-// it BLOCKS from day one. Note what the class-1 claim rests on: not «git is
-// deterministic» — a heuristic run in the rejecting direction would fail clause
-// three however local its input is, which is exactly what round-2 review caught. The CI plane is WARN v1 by the §3 DEFAULT, settled
-// 2026-08-27, with promotion to BLOCK per §4 no earlier than 2026-09-24: it
-// reads PR metadata over the network and matches with a substring, so it has a
-// real false-positive class and soaks like anything else that does. The
-// deterministic half stops the violation where it is cheap to fix (one more
-// commit); the heuristic half only reports until it has earned more.
+// BOTH PLANES ARE ADVISORY. The staged plane prints notes and exits 0 (above);
+// the CI plane is WARN (`continue-on-error`, read as non-blocking by
+// `pnpm pr:land`): it reads PR metadata over the network and matches with a
+// substring, so it has a real false-positive class. Neither may gate a merge on
+// commit order (#621).
 //
 // PR-event-gated: the commit sequence comes from the REST API through `gh`,
 // because the Actions checkout is shallow and carries no base ref to walk. On a
@@ -192,7 +182,7 @@
 // `test-presence` (canon §4: greenness on push runs is vacuous).
 //
 // Run: `pnpm lint:tdd-order` (PR plane) or with `--staged` (pre-commit plane).
-// Findings: stderr + exit 1. Clean/skip: exit 0. Same contract on both planes.
+// PR plane: findings on stderr + exit 1 (a WARN job). Staged plane: notes on stdout, always exit 0.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -549,33 +539,14 @@ export function findOrderViolations(commits) {
 // ── The pre-commit plane (`--staged`) ────────────────────────────────────────
 
 /**
- * The staged verdict, in two buckets: what BLOCKS and what merely advises.
- * Pure seam: no git, no IO.
- *
- * ── Why only MIXED blocks (round-2 review of PR #394) ────────────────────────
- * This plane once rejected a new module NO test cites. That rule ran the
- * `needlesFor` substring matcher in the REJECTING direction, which inverts its
- * error mode: on the CI plane a missed citation is a false PASS, here it was a
- * false BLOCK. The class was measured against `main` and is large — 41 of 78
- * platform files (53%) are not name-cited by any test. A barrel is
- * STRUCTURALLY uncitable (a test importing `@/lib/hours` never contains the
- * string `lib/hours/index`); a route-group `layout.tsx` and a Drizzle table are
- * not imported by path either. None of them is a TDD violation, and a gate whose
- * correct-usage answer is «reach for `--no-verify`» is precisely the dead end §3
- * clause 3(d) forbids.
- *
- * MIXED — a new module staged together with a staged test citing it — inverts
- * back: a miss of the matcher lets a commit through (a false PASS the CI plane
- * still catches), and it can never wrongly stop one. THAT is a false-BLOCK class
- * empty by construction, so this plane keeps its day-1 BLOCK under §3 class 1.
- * It is also the #355 retro mandate word for word: «rejecting a single commit
- * that introduces a NEW module's implementation and its tests together».
- *
- * The uncited-module case survives as an ADVISORY at exit 0 — it is real
- * information, just not a verdict this matcher is entitled to enforce.
+ * The staged notes, in two buckets. Pure seam: no git, no IO. Neither bucket
+ * blocks (#621): `mixed` is a module staged with its own test, `advisory` a
+ * module no test cites. The second can never be a verdict anyway — the
+ * `needlesFor` substring matcher run in the rejecting direction false-BLOCKed
+ * 41 of 78 platform files on `main` (round-2 review of PR #394).
  *
  * A test already in HEAD discharges the obligation even if one is also staged:
- * the RED commit happened, and what is staged now is the implementation plus
+ * the test came first, and what is staged now is the implementation plus
  * whatever that test grew into.
  *
  * @param {{path: string, headTests: string[], indexTests: string[]}[]} modules
@@ -783,31 +754,21 @@ function runStaged(out, root) {
     )
   }
 
-  if (mixed.length === 0) {
-    out.ok(
-      `PASS — ${newModules.length} new platform module(s) staged, none of them together with its own test` +
-        (advisory.length ? ` (${advisory.length} advisory note(s) above).` : '.'),
+  // MIXED is a note too, never a refusal (#621). Proof of red-first by commit
+  // order is not required: tests that cover the change, green, and confirmed by
+  // review are the evidence. Kept as a nudge toward the practice, not a gate.
+  for (const m of mixed) {
+    out.info(
+      `mixed commit  ${m.path}  is staged together with its test (${m.tests.join(', ')}). ` +
+        `Fine — a separate RED commit is welcome, not required.` +
+        (merging ? ` Introduced by this ${kind} resolution itself, not by ${side}.` : ''),
     )
   }
 
-  for (const m of mixed) {
-    out.finding(
-      `mixed commit   ${m.path}  is staged together with its test (${m.tests.join(', ')})`,
-    )
-  }
-  // The way on is spelled out so that nobody needs a hook bypass to find one: an
-  // agent shown «the escape hatch is --no-verify» used it (PR #564, #565).
-  out.fail(
-    `${mixed.length} new platform module(s) staged together with their own tests` +
-      (merging ? `, introduced by this ${kind} resolution itself (not by ${side}). ` : '. ') +
-      'task-cycle stage 3: commit the failing test first, then the implementation on top of it — ' +
-      'two commits, in that order, so the RED run is a real artifact rather than a claim. ' +
-      'How to proceed without `--no-verify`: unstage the module (`git restore --staged <file>`; ' +
-      'the file stays in your working tree), ' +
-      (merging ? `conclude the ${kind} with the test alone, ` : 'commit the test alone, ') +
-      'then `git add` the module and commit it on top. No hook bypass is needed — ' +
-      '`--no-verify` / `SKIP_SIMPLE_GIT_HOOKS=1` would skip EVERY pre-commit check, not just ' +
-      'this one. Canon: docs/ci-guardrails.md §5.',
+  const notes = advisory.length + mixed.length
+  out.ok(
+    `PASS — ${newModules.length} new platform module(s) staged` +
+      (notes ? ` (${notes} advisory note(s) above).` : '.'),
   )
 }
 
@@ -874,10 +835,8 @@ function readCommit(sha, root) {
 async function main() {
   const out = reporter(TAG)
 
-  // The pre-commit plane. Reads the local index only — no gh, no network — which
-  // is what lets it block from day one while the CI plane's severity is still
-  // with the owner: §3 class 1 is about determinism, and this half genuinely has
-  // no network input.
+  // The pre-commit plane. Reads the local index only — no gh, no network — and
+  // prints notes at exit 0 (#621).
   if (process.argv.includes('--staged')) {
     runStaged(out, repoRoot())
     return

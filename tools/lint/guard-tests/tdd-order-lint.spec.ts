@@ -793,7 +793,7 @@ describe('evaluateStaged', () => {
     ).toEqual({ mixed: [], advisory: [] })
   })
 
-  it('BLOCKS a MIXED commit — module and its test staged together', () => {
+  it('classifies a MIXED commit — module and its test staged together', () => {
     expect(
       evaluateStaged([
         {
@@ -896,6 +896,7 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     const res = staged(root)
     expect(res.code).toBe(0)
     expect(res.stdout).toContain('PASS')
+    expect(res.stdout).not.toContain('mixed commit')
   })
 
   it('ADVISES but exits 0 when a new module is staged with no test anywhere', () => {
@@ -925,25 +926,26 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     expect(staged(root).code).toBe(0)
   })
 
-  it('exits 1 on a MIXED commit and explains the two-commit order', () => {
+  it('exits 0 on a MIXED commit and names module and test in a note', () => {
     const root = repo((r) => {
       put(r, MODULE, 'export const intake = () => true\n')
       put(r, TEST, testBody)
       git(r, 'add', '.')
     })
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain(MODULE)
-    expect(res.stderr).toContain(TEST)
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain(MODULE)
+    expect(res.stdout).toContain(TEST)
   })
 
   // #570: on Windows the guard ran git through cmd.exe, which split an argument
   // with a space — the `git grep -e '<module path>'` needle came apart, no test
-  // was found citing the module, and the MIXED commit passed as an advisory.
+  // was found citing the module, and the MIXED commit was reported as the uncited advisory instead.
   it.each([
     ['a directory', 'src/lib/lead forms/intake.ts', '@/lib/lead forms/intake'],
     ['a file name', 'src/lib/leads/lead intake.ts', '@/lib/leads/lead intake'],
-  ])('exits 1 on a MIXED commit whose module path has a space in %s', (_, module, cite) => {
+  ])('notes a MIXED commit whose module path has a space in %s', (_, module, cite) => {
     const spacedTest = 'tests/unit/lead forms.spec.ts'
     const root = repo((r) => {
       put(r, module, 'export const intake = () => true\n')
@@ -951,9 +953,10 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
       git(r, 'add', '.')
     })
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain(module)
-    expect(res.stderr).toContain(spacedTest)
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain(module)
+    expect(res.stdout).toContain(spacedTest)
   })
 
   // #573: with git's default `core.quotepath=true`, `git diff --name-only` and
@@ -971,16 +974,17 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     ['a directory', 'src/lib/лиды/intake.ts', '@/lib/лиды/intake', 'tests/unit/leads.spec.ts'],
     ['a file name', 'src/lib/leads/заявка.ts', '@/lib/leads/заявка', 'tests/unit/leads.spec.ts'],
     ['the test path too', 'src/lib/лиды/intake.ts', '@/lib/лиды/intake', 'tests/unit/лиды.spec.ts'],
-  ])('exits 1 on a MIXED commit whose path is non-ASCII in %s', (_, mod, cite, test) => {
+  ])('notes a MIXED commit whose path is non-ASCII in %s', (_, mod, cite, test) => {
     const root = cyrillic((r) => {
       put(r, mod, 'export const intake = () => true\n')
       put(r, test, `import { intake } from '${cite}'\nit('reds', () => intake())\n`)
       git(r, 'add', '.')
     })
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain(mod)
-    expect(res.stderr).toContain(test)
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain(mod)
+    expect(res.stdout).toContain(test)
   })
 
   it('exits 0 when the non-ASCII test is already committed — the ritual followed', () => {
@@ -996,6 +1000,7 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     const res = staged(root)
     expect(res.code).toBe(0)
     expect(res.stdout).toContain('PASS')
+    expect(res.stdout).not.toContain('mixed commit')
   })
 
   it('exits 0 when nothing new lands under the platform-module scope', () => {
@@ -1035,19 +1040,21 @@ describe('tdd-order --staged (spawned against a real git index)', () => {
     expect(res.code).toBe(0)
   })
 
-  // #565: the refusal is the developer's next step, so it must name a way on that
-  // is not a hook bypass — an agent that read «the escape hatch is --no-verify»
-  // used it (PR #564, 60e38e82).
-  it('the MIXED refusal says how to proceed without --no-verify', () => {
+  // #621: a MIXED commit is a note, never a refusal — commit order is not the
+  // evidence of TDD, so nothing here may push a developer into a rebase or a
+  // hook bypass.
+  it('a MIXED commit exits 0 and says a separate RED commit is not required', () => {
     const root = repo((r) => {
       put(r, MODULE, 'export const intake = () => true\n')
       put(r, TEST, testBody)
       git(r, 'add', '.')
     })
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain('git restore --staged')
-    expect(res.stderr).toContain('without `--no-verify`')
+    expect(res.code).toBe(0)
+    expect(res.stderr).toBe('')
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain('not required')
+    expect(res.stdout).toContain('PASS')
   })
 })
 
@@ -1128,6 +1135,15 @@ describe('tdd-order --staged during a merge (#565)', () => {
   }
 
   const staged = (root: string) => runGuard('tdd-order-lint.mjs', root, { extraArgs: ['--staged'] })
+  // Every plane exits 0 since #621, so the NOTE is what tells the cases apart.
+  const expectMixed = (res: { code: number | null; stdout: string }) => {
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+  }
+  const expectClean = (res: { code: number | null; stdout: string }) => {
+    expect(res.code).toBe(0)
+    expect(res.stdout).not.toContain('mixed commit')
+  }
 
   it('exits 0 concluding a CONFLICTED merge of main that brings a module and its test', () => {
     const root = diverged()
@@ -1136,7 +1152,7 @@ describe('tdd-order --staged during a merge (#565)', () => {
     git(root, 'add', 'shared.md')
     const res = staged(root)
     expect(res.stderr).toBe('')
-    expect(res.code).toBe(0)
+    expectClean(res)
   })
 
   it('exits 0 even when main itself landed its module and test in one commit', () => {
@@ -1145,10 +1161,10 @@ describe('tdd-order --staged during a merge (#565)', () => {
     expect(gitTry(root, 'merge', '--no-edit', 'main')).not.toBe(0)
     put(root, 'shared.md', 'resolved\n')
     git(root, 'add', 'shared.md')
-    expect(staged(root).code).toBe(0)
+    expectClean(staged(root))
   })
 
-  it('still BLOCKS a resolution that itself introduces a new module together with its test', () => {
+  it('still notes a resolution that itself introduces a new module together with its test', () => {
     const root = diverged()
     gitTry(root, 'merge', '--no-edit', 'main')
     put(root, 'shared.md', 'resolved\n')
@@ -1156,12 +1172,13 @@ describe('tdd-order --staged during a merge (#565)', () => {
     put(root, 'tests/unit/evil-merge.spec.ts', "import { evil } from '@/lib/evil/merge'\n")
     git(root, 'add', '.')
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain('src/lib/evil/merge.ts')
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain('src/lib/evil/merge.ts')
     // main's module arrived unchanged from the other parent — not this commit's authorship.
-    expect(res.stderr).not.toContain(MODULE)
-    expect(res.stderr).toContain('merge')
-    expect(res.stderr).toContain('without `--no-verify`')
+    expect(res.stdout).not.toContain(MODULE)
+    expect(res.stdout).toContain('merge')
+    expect(res.stdout).toContain('not required')
   })
 
   it('exits 0 when the resolution adds a module whose RED test was committed on the merged parent', () => {
@@ -1170,7 +1187,7 @@ describe('tdd-order --staged during a merge (#565)', () => {
     put(root, 'shared.md', 'resolved\n')
     put(root, EXTRA, 'export const extra = 1\n')
     git(root, 'add', '.')
-    expect(staged(root).code).toBe(0)
+    expectClean(staged(root))
   })
 
   it('without MERGE_HEAD, the same files staged by hand are still a MIXED commit', () => {
@@ -1178,7 +1195,7 @@ describe('tdd-order --staged during a merge (#565)', () => {
     put(root, MODULE, 'export const intake = () => true\n')
     put(root, TEST, testBody)
     git(root, 'add', '.')
-    expect(staged(root).code).toBe(1)
+    expectMixed(staged(root))
   })
 
   it('a cherry-pick continuation of an honest module commit exits 0 — the plain rule applies', () => {
@@ -1187,7 +1204,7 @@ describe('tdd-order --staged during a merge (#565)', () => {
     expect(gitTry(root, 'cherry-pick', 'main')).not.toBe(0) // module + shared.md conflict
     put(root, 'shared.md', 'resolved\n')
     git(root, 'add', 'shared.md')
-    expect(staged(root).code).toBe(0)
+    expectClean(staged(root))
   })
 
   // ── `git merge --squash` (#569) ──────────────────────────────────────────────
@@ -1202,7 +1219,7 @@ describe('tdd-order --staged during a merge (#565)', () => {
     git(root, 'add', 'shared.md')
     const res = staged(root)
     expect(res.stderr).toBe('')
-    expect(res.code).toBe(0)
+    expectClean(res)
     expect(res.stdout).toContain('squash')
   })
 
@@ -1211,7 +1228,7 @@ describe('tdd-order --staged during a merge (#565)', () => {
     expect(gitTry(root, 'merge', '--squash', 'main')).not.toBe(0)
     put(root, 'shared.md', 'resolved\n')
     git(root, 'add', 'shared.md')
-    expect(staged(root).code).toBe(0)
+    expectClean(staged(root))
   })
 
   it('exits 0 for a squash merge concluded from a LINKED worktree, whose .git is a file (#569)', () => {
@@ -1223,10 +1240,10 @@ describe('tdd-order --staged during a merge (#565)', () => {
     expect(gitTry(wt, 'merge', '--squash', 'main')).not.toBe(0)
     put(wt, 'shared.md', 'resolved\n')
     git(wt, 'add', 'shared.md')
-    expect(staged(wt).code).toBe(0)
+    expectClean(staged(wt))
   })
 
-  it('still BLOCKS a squash resolution that itself introduces a module with its test (#569)', () => {
+  it('still notes a squash resolution that itself introduces a module with its test (#569)', () => {
     const root = diverged()
     gitTry(root, 'merge', '--squash', 'main')
     put(root, 'shared.md', 'resolved\n')
@@ -1234,11 +1251,12 @@ describe('tdd-order --staged during a merge (#565)', () => {
     put(root, 'tests/unit/evil-merge.spec.ts', "import { evil } from '@/lib/evil/merge'\n")
     git(root, 'add', '.')
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain('src/lib/evil/merge.ts')
-    expect(res.stderr).not.toContain(MODULE)
-    expect(res.stderr).toContain('squash')
-    expect(res.stderr).toContain('without `--no-verify`')
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain('src/lib/evil/merge.ts')
+    expect(res.stdout).not.toContain(MODULE)
+    expect(res.stdout).toContain('squash')
+    expect(res.stdout).toContain('not required')
   })
 
   it('a SQUASH_MSG naming no readable commit leaves the plain rule in force (#569)', () => {
@@ -1252,8 +1270,9 @@ describe('tdd-order --staged during a merge (#565)', () => {
     put(root, TEST, testBody)
     git(root, 'add', '.')
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain(MODULE)
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain(MODULE)
   })
 
   it('a `rebase -i` squash-step conflict is NOT a squash merge, even if a message cites a sha (#569)', () => {
@@ -1292,8 +1311,9 @@ describe('tdd-order --staged during a merge (#565)', () => {
     git(root, 'checkout', 'main', '--', 'src', 'tests')
     git(root, 'add', '.')
     const res = staged(root)
-    expect(res.code).toBe(1)
-    expect(res.stderr).toContain(MODULE)
+    expect(res.code).toBe(0)
+    expect(res.stdout).toContain('mixed commit')
+    expect(res.stdout).toContain(MODULE)
     expect(res.stdout).not.toContain('squash merge in progress')
   })
 })

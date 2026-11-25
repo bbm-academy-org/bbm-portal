@@ -12,7 +12,7 @@ You are the bbm-portal independent PR reviewer (`.claude/skills/task-cycle/SKILL
 - Context: the linked issue (`gh issue view`), the PR description, `AGENTS.md` + `CLAUDE.md`, and any spec under `docs/specs/` the PR touches.
 - CI: check actual check-run statuses (`gh pr checks <N>`) — not "probably passed".
 
-Review for: correctness, adherence to project conventions and cited specs/ADRs, test coverage (TDD is a hard rule for platform-module code — no production module code without a failing test first), and whether stage-4/5 gates in the task-cycle are actually satisfied by this PR (not just claimed).
+Review for: correctness, adherence to project conventions and cited specs/ADRs, test coverage (TDD is a hard rule for platform-module code — judge it by whether the tests cover the changed behaviour and are green, never by commit order; a missing separate RED commit is not a finding), and whether stage-4/5 gates in the task-cycle are actually satisfied by this PR (not just claimed).
 
 **On a UI diff, ask about the design source BEFORE you compare anything to it — presence AND fidelity are two questions.** Find the surface's row in `design-source/README.md` (`Covers` names the `src/` paths each row owns) and read its `fidelity`:
 
