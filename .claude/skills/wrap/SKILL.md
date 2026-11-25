@@ -239,10 +239,10 @@ that missed this rule.
 - **"Done" = verified on the surface the owner sees (prod), not just the dev DB.**
   For seeds/deploys, hit the prod URL (e.g. `cms.bbm.academy`) before reporting
   done — «мы же не локально работем». _(symptom: «А где? я всё ещё вижу пустой
-  Payload CMS» — dev DB seeded, prod empty.)_ **And a screenshot is never the
-  acceptance**: a screenshot/localhost render is evidence for the agent, not the
-  hand-off proof — a product artifact is delivered only when the owner can reach
-  it on a real stand. _(symptom: «А мне не нужен скриншот — дай мне реальный
+  Payload CMS» — dev DB seeded, prod empty.)_ **And the acceptance is the one the
+  change tier names** (task-cycle stage 5): on an Ask PR a screenshot/localhost
+  render is evidence for the agent, not the hand-off proof — that artifact is
+  delivered only when the owner can reach it on a real stand. _(symptom: «А мне не нужен скриншот — дай мне реальный
   стенд, где посмотреть. Что за странный метод сдачи-приёмки?».)_
 - **A deploy config / task text is NOT an owner decision.** Never assert a
   domain, scope, or "already agreed" claim by extrapolating from a Caddyfile,
