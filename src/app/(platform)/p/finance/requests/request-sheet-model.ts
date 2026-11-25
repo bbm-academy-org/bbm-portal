@@ -738,9 +738,10 @@ export function refundPrefill(
 }
 
 /**
- * The amount field after the account changes: an empty field, or one still
- * holding the previous account's prefill, takes the new account's prefill
- * (possibly none); a sum the user typed is kept.
+ * The amount field after the account changes: an account with a required sum
+ * (the debt's own currency) always takes it; otherwise an empty field, or one
+ * still holding the previous account's prefill, is cleared, and a sum the user
+ * typed between cross-currency accounts is kept.
  */
 export function refundAmountAfterSwitch(
   request: RequestBoardItem,
@@ -749,9 +750,11 @@ export function refundAmountAfterSwitch(
   nextAccountId: string,
   current: string,
 ): string {
+  const required = refundPrefill(request, references, nextAccountId)
+  if (required !== '') return required
   const untouched =
     current.trim() === '' || current === refundPrefill(request, references, previousAccountId)
-  return untouched ? refundPrefill(request, references, nextAccountId) : current
+  return untouched ? '' : current
 }
 
 export function reimburseDefaults(
