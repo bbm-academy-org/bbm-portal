@@ -1200,8 +1200,9 @@ the corpus's «потерялась в канале» case).
   the Bank of Russia rate of its operation's date, under EARS-558's rate
   rule, frozen with that date and labelled as spec 584 EARS-729 items 1–2
   prescribe; no flow figure is converted at a rate fetched for the day of
-  reading. A stock figure with no operation behind it (the limit,
-  remaining, owed to members, cash at cost) is converted from the budget
+  reading. A stock figure — a balance as of today, not a sum of dated
+  operations (the limit, remaining, «paid out», owed to members, cash at
+  cost) — is converted from the budget
   currency at the latest stored rate under EARS-558's rule, as EARS-550
   converts an unpaid request at today's rate, and is labelled with that
   rate's date (spec 584 EARS-722 item 2). The conversion is display only: the

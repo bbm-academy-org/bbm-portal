@@ -58,8 +58,9 @@ where an operation recorded nothing in the chosen currency (a rouble-only
 payment shown in euros) is its budget-currency amount converted at the Bank
 of Russia rate of its own date, frozen, and every figure that includes such
 an amount says so (EARS-729). The limit, remaining, the debts to members and
-the cash have no operation behind them, so they are converted at the latest
-Bank of Russia rate and say so; remaining is the budget-currency remaining
+the cash are balances as of today, not sums of dated operations, so they are
+converted at the latest Bank of Russia rate and say so — a display-only
+narrowing of this ruling, recorded in spec 584's Prior decisions; remaining is the budget-currency remaining
 converted, so it is always the money actually left (EARS-722). The
 conversion is display only._
 
@@ -353,17 +354,15 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 - The budget's cash at cost and exchange result are labelled so that they are
   not mistaken for the `/p/finance` cash total or the ledger's own exchange
   entries, which differ whenever foreign money is held.
-- In the budget's own currency the per-project spend plus the
-  exchange-result line adds up to the total spend; in another currency, to
-  the breakdown's own total.
+- In every display currency the per-project spend plus the exchange-result
+  line adds up to the total spend.
 - In the budget's own currency the months of the spending chart add up to
   the total spend, and the runway
   can be checked by hand from the remaining limit and the average shown beside
   it.
 - The spend by category and by counterparty each add up, with the
-  exchange-result line, to the total spend in the budget's own currency and
-  to the breakdown's own total in another, and every line opens to operations that add
-  up to it.
+  exchange-result line, to the total spend in every display currency, and
+  every line opens to operations that add up to it.
 - Only the approve role can set, change or close the limit; every member can
   read it.
 
