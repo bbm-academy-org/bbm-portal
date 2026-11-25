@@ -57,9 +57,9 @@ import {
   mayAttachDocument,
   receiptRefusal,
   refundAccounts,
+  refundAmountAfterSwitch,
   refundCrossesCurrency,
   refundCurrencyFixed,
-  refundPrefill,
   reimburseDefaults,
   sheetActs,
   sheetAmount,
@@ -540,15 +540,18 @@ function ReimburseSection({
                   accounts={accounts}
                   value={field.value}
                   onChange={(next) => {
+                    const previous = field.value
                     field.onChange(next)
-                    // The required sum follows the account where the request fixes it.
-                    const prefill = refundPrefill(request, references, next)
-                    if (prefill !== '' || form.getValues('amount') === '') {
-                      form.setValue('amount', prefill)
-                    } else if (refundCrossesCurrency(request, references, next)) {
-                      // A booked sum carried over from the debt's own account is not the roubles.
-                      form.setValue('amount', '')
-                    }
+                    form.setValue(
+                      'amount',
+                      refundAmountAfterSwitch(
+                        request,
+                        references,
+                        previous,
+                        next,
+                        form.getValues('amount'),
+                      ),
+                    )
                     if (!refundCrossesCurrency(request, references, next)) {
                       form.setValue('agentFee', '')
                       form.clearErrors('agentFee')
@@ -556,12 +559,6 @@ function ReimburseSection({
                   }}
                   disabled={pending || accounts.length === 0}
                 />
-                {fixed === null ? null : (
-                  <FormDescription>
-                    Долг записан в {fixed}: со счёта в {fixed} возвращается ровно его сумма, со
-                    счёта в другой валюте — столько, сколько фактически ушло.
-                  </FormDescription>
-                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -579,7 +576,7 @@ function ReimburseSection({
                 </FormControl>
                 <FormDescription>
                   {crosses && account !== null
-                    ? `Долг в ${fixed}, возврат в ${account.currency}: вся сумма, ушедшая со счёта, вместе с комиссией агента. Долг закрывается целиком.`
+                    ? `Долг в ${fixed}, возврат в ${account.currency}: всё, что ушло со счёта, с комиссией агента. Долг закроется целиком.`
                     : account !== null && account.currency !== request.currency && fixed === null
                       ? `Заявка в ${request.currency}, возврат в ${account.currency}: сумма — факт, столько ушло сотруднику.`
                       : 'Весь долг по заявке, с комиссией, если она записана.'}

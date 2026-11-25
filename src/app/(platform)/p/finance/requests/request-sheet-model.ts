@@ -737,13 +737,34 @@ export function refundPrefill(
   return fromMinorUnits(due.amount, currencyPrecision(references.currencies, due.currency))
 }
 
+/**
+ * The amount field after the account changes: an empty field, or one still
+ * holding the previous account's prefill, takes the new account's prefill
+ * (possibly none); a sum the user typed is kept.
+ */
+export function refundAmountAfterSwitch(
+  request: RequestBoardItem,
+  references: RequestBoardReferences,
+  previousAccountId: string,
+  nextAccountId: string,
+  current: string,
+): string {
+  const untouched =
+    current.trim() === '' || current === refundPrefill(request, references, previousAccountId)
+  return untouched ? refundPrefill(request, references, nextAccountId) : current
+}
+
 export function reimburseDefaults(
   request: RequestBoardItem,
   references: RequestBoardReferences,
   today: string,
 ): ReimburseFormValue {
   const accounts = refundAccounts(request, references)
-  const accountId = accounts.length === 1 ? String(accounts[0].id) : ''
+  // A booked debt with ONE account in its own currency starts there, at the booked sum.
+  const fixed = refundCurrencyFixed(request)
+  const own = fixed === null ? [] : accounts.filter((account) => account.currency === fixed)
+  const accountId =
+    own.length === 1 ? String(own[0].id) : accounts.length === 1 ? String(accounts[0].id) : ''
   return {
     occurredOn: today,
     accountId,

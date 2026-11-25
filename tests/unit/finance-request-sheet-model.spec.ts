@@ -26,6 +26,7 @@ import {
   noteHasPaymentDetails,
   receiptAfterActFailed,
   refundAccounts,
+  refundAmountAfterSwitch,
   refundCrossesCurrency,
   refundDue,
   refundPrefill,
@@ -758,10 +759,22 @@ describe('«Отметить возврат» form (EARS-544)', () => {
     expect(refundCrossesCurrency(usdDebt, REFERENCES, '3')).toBe(false)
     expect(reimburseDefaults(usdDebt, REFERENCES, '2026-11-18')).toEqual({
       occurredOn: '2026-11-18',
-      accountId: '',
-      amount: '',
+      accountId: '3',
+      amount: '100,00',
       agentFee: '',
     })
+  })
+
+  it('EARS-544: switching accounts replaces an untouched prefill and keeps a typed amount', () => {
+    const usdDebt = item({ ...owed, status: 'posted', operationId: 9 })
+    // From the debt's own account (prefill 100,00) to a rouble one: the prefill goes.
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '3', '1', '100,00')).toBe('')
+    // A typed sum survives the switch.
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '3', '1', '95,00')).toBe('95,00')
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '1', '2', '9 500')).toBe('9 500')
+    // Back to the debt's own account: an empty or untouched field takes the booked sum.
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '1', '3', '')).toBe('100,00')
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '1', '3', '9 500')).toBe('9 500')
   })
 
   it('EARS-544: an unbooked request refunded in another currency is not the agent-fee case', () => {
