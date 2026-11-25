@@ -1,0 +1,5 @@
+{
+  "number": 7,
+  "body": "## Why\n\nCloses #1\n",
+  "files": [{ "path": "docs/a.md", "additions": 1, "deletions": 1, "status": "modified" }]
+}
