@@ -972,6 +972,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-11-24-594-worktree-guard-path-forms -->
 
+- [ ] 2026-11-25 Change tiers (#597): Ship is prose-only — a view-layer `*.tsx` / `*.css` floors at Show — which is stricter than ds-platform, where a small presentational tweak may Ship; applied without owner confirmation, asked in session 2026-11-25. Return condition: the owner's answer — widen the Ship list in `tools/lint/lib/change-tier.mjs` + `.claude/rules/change-tiers.md`, or delete this line as confirmed.
+
+<!-- debt-entry-end: 2026-11-25-597-ship-prose-only -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43

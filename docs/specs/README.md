@@ -59,7 +59,8 @@ EARS clauses, each with a stable `EARS-N` id (see "EARS" below). Constraints
 Numbered "how the owner verifies it works" walkthroughs: the real URL,
 what he opens, clicks, and sees. Each names the `EARS-N` clauses it
 exercises. These double as the TDD test scenarios (task-cycle stage 3) and
-the stage-5 live-stand acceptance script.
+the stage-5 acceptance script (live stand or PR screenshots, by change tier —
+`.claude/rules/change-tiers.md`).
 
 ## Out of scope
 

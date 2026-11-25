@@ -416,7 +416,7 @@ the session that landed it, not by the lead afterwards.
 **`ux-record` is the agent half of the design split, and `stage-b` is the owner half.**
 They read the same UI diff (`ux-record` imports `renderFiles` from `stage-b`, so the two
 can never disagree about what a UI diff is) and ask different questions: `stage-b` asks
-whether the OWNER accepted the surface on a live stand, `ux-record` asks whether the AGENT
+whether the OWNER accepted the surface (on a live stand, or on the PR screenshots for a Show-tier PR), `ux-record` asks whether the AGENT
 recorded the decisions the owner ruling of 2026-09-02 handed it
 (`.claude/rules/design-process.md` §1; the facet list and the procedure that produces the
 block: `.claude/skills/build-ui-from-design-system/SKILL.md` step 4). It is WARN v1 by the §3

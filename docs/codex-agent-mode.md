@@ -102,8 +102,8 @@ the Codex brief. Translate harness vocabulary as follows:
 
 The acceptance contract remains task-cycle stage 5: drive every named journey,
 capture its desktop/mobile and light/dark matrix, exercise the required
-interaction states, inspect the evidence, and keep the live stand reachable for
-the owner. Under Codex, use the repository's installed Playwright CLI when it
+interaction states, inspect the evidence, and — on an Ask-tier PR — keep the
+live stand reachable for the owner (`.claude/rules/change-tiers.md`). Under Codex, use the repository's installed Playwright CLI when it
 can reproduce the journey. Otherwise use the available browser or CUA tool and
 record the limitation honestly. A tool that cannot force a pseudo-state through
 CDP does not prove that state; use Playwright/CDP for that row or report it as

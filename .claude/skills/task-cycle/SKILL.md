@@ -1,6 +1,6 @@
 ---
 name: task-cycle
-description: Mandatory lifecycle for every tracked task in this repo — issue → proportional plan → design gate (UI) → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
+description: Mandatory lifecycle for every tracked task in this repo — issue → proportional plan → design gate (UI) → owner "go" → implementation (TDD) → review → acceptance routed by change tier → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
 ---
 
 # task-cycle — the task lifecycle regulation
