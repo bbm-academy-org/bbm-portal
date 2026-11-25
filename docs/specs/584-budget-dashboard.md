@@ -443,12 +443,18 @@ currency, and every figure it enters says so (EARS-729).
   2. **The actual amount in `D`.** WHERE `D` is the item's own currency, the
      converted amount shall be the item's own amount. Otherwise, WHERE a path
      of the item's own steps links its own currency to `D` — a step may be
-     walked in either direction; the path with the fewest steps wins, then
-     the one with the lowest first `step_no` — the amount shall be the own
+     walked in either direction; the path with the fewest steps wins, and
+     among equally short paths the one whose sequence of `step_no` values,
+     in path order, is lexicographically lowest — the amount shall be the own
      amount multiplied, for each step on the path, by the step's recorded
      amount on the side toward `D` divided by its recorded amount on the
      other side, as an exact rational rounded half away from zero once to
-     `D`'s minor units. Otherwise EARS-729 applies. _Example, `B` = RUB: a
+     `D`'s minor units. WHERE `D` is USD, a USDT or USDC currency on the
+     chain counts as reaching `D`, its amount read as the same number of
+     dollars, one to one — the peg of decision 41, extended to USDC on #559,
+     that EARS-558 applies (lead's decision) — so a chain RUB → USDT → THB
+     shows in $ the USDT it actually cost. Otherwise EARS-729 applies.
+     _Example, `B` = RUB: a
      USD invoice paid from the baht account posts a USD expense and one
      THB → USD step. In $ its row shows the invoice's dollars; in ฿, the
      baht the step disposed; the fee, posted in baht, shows in $ at that
@@ -473,7 +479,7 @@ currency, and every figure it enters says so (EARS-729).
   nearest previous one at most 14 days older, never a later one; cross pairs
   through RUB; USDT and USDC as USD), as an exact rational rounded half away
   from zero once to `D`'s minor units, and frozen with that date. This is the
-  same rate §J calls «Рынок» for that date; the dashboard shows no Рынок or
+  rate §J uses for «Рынок» on that date; the dashboard shows no Рынок or
   Переплата figure of its own, and the rate line shall link to «Курс против
   рынка» (spec 339 EARS-564) for that comparison. _Example, `B` = RUB: in €,
   a payment from roubles into baht has no euro on its chain, so its roubles
@@ -498,7 +504,7 @@ currency, and every figure it enters says so (EARS-729).
      date's window.
   4. **Disabled candidate.** A candidate `D` shall be shown disabled with
      «нет курса ЦБ для <D>» only WHERE no operation's own chain reaches `D`
-     and the rate store holds no rate for `D`.
+     and the rate store holds no rate for the `B` → `D` conversion.
   5. The Bank of Russia rates read here are display only: this fallback
      requires the pending note on spec 339 EARS-553, written out there, and
      EARS-703's stale-rate notice applies WHILE a fallback amount is shown.
@@ -650,7 +656,8 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
   amount through its own step; a fee in the paid currency and a
   reimbursement's exchange result convert at their own operation's step
   ratio; a multi-step chain (RUB → USDT → THB) resolves along the
-  fewest-step path; a holding bought by an earlier conversion is not traced
+  fewest-step path, equal-length paths by their `step_no` sequences, and
+  shows in $ through its USDT leg one to one; a holding bought by an earlier conversion is not traced
   and falls back; every expense value, exchange result, income posting and
   contribution posting (equity debits included) is converted once, and
   months, waterline points, lines and drill-down rows sum exactly in `D`, a

@@ -1198,7 +1198,8 @@ the corpus's «потерялась в канале» case).
   recorded (spec 584 EARS-728), which read no rate. Only an item whose own
   operation recorded nothing in the chosen currency is converted from the
   budget currency at the Bank of Russia rate of its operation's date, under
-  EARS-558's rate rule, frozen with that date and labelled «по курсу ЦБ»;
+  EARS-558's rate rule, frozen with that date and labelled as spec 584
+  EARS-729 items 1–2 prescribe;
   the budget block (the limit and every spec 338 EARS-340…344 total) is
   never converted. No figure is converted at a rate fetched for the day of
   reading. The conversion is display only: the
