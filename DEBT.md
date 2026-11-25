@@ -170,10 +170,8 @@ Entry format:
       defect is not fixed,** and its cost changed direction — at BLOCK the gate
       now certifies test presence it never actually verified. Return condition,
       superseding the above: the first `test-presence` or `tdd-order` finding
-      disputed as false, the next edit to `needlesFor`, or the `tdd-order`
-      WARN→BLOCK promotion review (earliest 2026-09-24,
-      `docs/ci-guardrails.md` §5), which reads this same matcher — whichever
-      comes first.
+      disputed as false, or the next edit to `needlesFor` — whichever comes
+      first.
 
 <!-- debt-entry-end: 2026-08-05-8fa8f75d9b -->
 
@@ -742,25 +740,7 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-27-5c8f2a1d94 -->
 
-- [ ] 2026-08-30 `pnpm lint:tdd-order` cannot complete its PR-mode GitHub
-      pagination on Windows: the guard's shell-backed `ghRun` passes an API URL
-      containing `&page=` through `cmd.exe`, which executes `page=` as a second
-      command (`'page' is not recognized`). Exact-head Linux CI still runs the
-      same guard successfully, so this is a local-verification gap rather than a
-      release blocker — return condition: the next edit to `tdd-order-lint.mjs`'s
-      GitHub pagination/runner, or the next Windows session that needs a local
-      PR-mode verdict before CI is available (#317)
-
 <!-- debt-entry-end: 2026-08-30-317-tdd-order-windows -->
-
-- [ ] 2026-08-31 PR #402 merged with a genuine historical TDD-order inversion:
-      production route code preceded its test, the exact-head `tdd-order` guard
-      was red, and the final review acknowledged the finding rather than
-      classifying it as a false positive. Rewriting merged history is not a
-      remedy; this record closes only when recurrence is mechanically prevented
-      — return condition: the `tdd-order` WARN→BLOCK promotion review (earliest
-      2026-09-24), or the next proposed merge with a genuine `tdd-order` finding,
-      whichever comes first (#382, PR #402, #416)
 
 <!-- debt-entry-end: 2026-08-31-416-tdd-order-402 -->
 
@@ -947,8 +927,6 @@ Entry format:
 - [ ] 2026-09-15 `interaction-states` (#483, PR #488) can now INVENT a finding in one bounded case, which is a break with this family's «the guard can miss, it cannot invent» direction (canon §8) and is written down rather than left to be found. `resolveComponentNames` reads the diff's ADDED lines only, so a file whose import lines are not part of the diff, rendering an APP-LOCAL component whose name the kit also exports (`Card`, `Table`, `Badge`, `Alert` are all plausible local names), falls through `shadowed` and is judged as kit because `kit.has(name)` is true from the tree. The tree lookup is deliberately NOT weakened to close this: it is what catches PR #470's row when the import line is outside the diff. Bounded by the name collision, the WARN dial and the call-site `interaction-states-ok: <reason>` escape — return condition: the FIRST confirmed false positive of this shape (which under §4 clause 3 also blocks promotion), or the guard's §4 promotion review on 2026-10-13, whichever comes first; the fix is resolving names against the file at HEAD rather than against added lines.
 
 <!-- debt-entry-end: 2026-09-15-483-samename-collision -->
-
-- [ ] 2026-09-03 The `tdd-order` guard's WARN on `src/app/(platform)/p/finance/requests/request-board-contract.ts` (#388, PR #470) is ACCEPTED rather than fixed. The file is a pure type module that arrived with the backend half ported verbatim from the superseded #430 branch (`c74b477`/`152690a` tests →`e40de0a`/`8d38e87` impl →`aeff020`); those ported tests cite the API route and the board MODEL, never the type file by path, so the first commit naming it is this session's UI test commit `5368c62` — later than `e40de0a`, hence the verdict. The guard's prescribed fix is an interactive rebase, which would rewrite four ported commits whose hashes the stop-state comment on #388 records as the branch's state, to reorder work this session did not do. The real gap is in the guard: it has no notion of a verbatim port, and a second port will trip it the same way — return condition: the next branch that ports commits verbatim from a superseded branch and trips `tdd-order`, or the guard's §4 promotion review to BLOCK (earliest 2026-09-24), whichever comes first (#388, PR #470). The SAME WARN also names `src/app/(platform)/p/finance/requests/request-board-provider.ts`, and that file is NOT the ported case: its 68 lines were written in this session's implementation commit `a01a441` before any test named it — implementation-first, plainly, and recorded here rather than under a rationale that does not apply to it (review of PR #470). It is not untested today: the multipart increment was test-first (`58b585a` RED → `b99c965`), and the JSON path, the refusal mapping and — since the review — the five CRUD `501` refusals are all asserted by `tests/unit/finance-request-board-provider.spec.ts`. Same return condition as above. Wave 3 (2026-09-14…16) widened the SAME WARN to three more paths, recorded here on 2026-09-16 under the same return condition: `constants.ts` and `loading.tsx` were created in the 2026-09-03 board commit `43c40a3` with no test naming them by path, and the first tests that do are wave-3 RED commits (`1c9a73d` the status colours → `8768671`; `f311c12` the loading view → `93ede37`) — the BEHAVIOUR was test-first, the module path predates its first citing test, which is what the guard reads; `RequestsTable.tsx` arrived in `2b1de5b` (2026-09-14) after the table view was specified RED in `8fd30aa` through its parent shell, and is first named by path in the defect-A test `5366b39` — implementation-first by path, plainly, and recorded as such. Not rewritten: the interactive rebase the guard prescribes would reorder the 60+ commits the owner's Stage-B «Принято» of 2026-09-16 was given on.
 
 <!-- debt-entry-end: 2026-09-03-388-tdd-order-ported-contract -->
 
@@ -1225,3 +1203,15 @@ those gates ran. #589 retired all three Stop gates (owner decision, Anton,
 2026-11-24; register: `docs/ci-guardrails.md` §6 «Retired hook guards»), so the
 function and its evidence list no longer exist and neither return condition can
 fire.)_
+
+_(Written off 2026-11-25 (#621, PR #622), bodies removed, anchors kept:
+`2026-08-31-416-tdd-order-402` and `2026-09-03-388-tdd-order-ported-contract`.
+Both recorded commit-order inversions — a module committed before, or together
+with, its first citing test — and both waited on the `tdd-order` WARN→BLOCK
+promotion. #621 retired commit order as evidence of TDD (owner decision, Anton,
+2026-11-25): the criterion is tests that cover the change, green, and confirmed
+by review, which both entries already said held. The guard's CI job is removed
+and the promotion cancelled, so neither premise nor return condition remains.
+The same change removed the guard's PR mode, whose pagination on Windows
+`2026-08-30-317-tdd-order-windows` was about; that body is removed too, anchor
+kept — its subject no longer exists.)_
