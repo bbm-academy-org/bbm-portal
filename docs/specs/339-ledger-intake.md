@@ -1189,20 +1189,22 @@ the corpus's «потерялась в канале» case).
   route; #593 adds it to the isolation test and keeps the other lines as
   they are._
 
-  _Pending narrowing, proposed by spec 584 EARS-729
+  _Pending narrowing, proposed by spec 584 EARS-722 and EARS-729
   (`docs/specs/584-budget-dashboard.md`), in force with the owner's go on
-  that spec. The budget dashboard (`/p/finance/reports/budget`) shows its
-  flow figures — the monthly burn, the waterline, the breakdown and its
-  drill-down — in the chosen currency item by item, each item at the actual
-  rate of its own operation: the amounts and conversion steps that operation
-  recorded (spec 584 EARS-728), which read no rate. Only an item whose own
-  operation recorded nothing in the chosen currency is converted from the
-  budget currency at the Bank of Russia rate of its operation's date, under
-  EARS-558's rate rule, frozen with that date and labelled as spec 584
-  EARS-729 items 1–2 prescribe;
-  the budget block (the limit and every spec 338 EARS-340…344 total) is
-  never converted. No figure is converted at a rate fetched for the day of
-  reading. The conversion is display only: the
+  that spec. The budget dashboard (`/p/finance/reports/budget`) shows every
+  figure in the chosen currency (owner, 2026-11-25). A flow figure is
+  converted item by item, each item at the actual rate of its own operation:
+  the amounts and conversion steps that operation recorded (spec 584
+  EARS-728), which read no rate. Only an item whose own operation recorded
+  nothing in the chosen currency is converted from the budget currency at
+  the Bank of Russia rate of its operation's date, under EARS-558's rate
+  rule, frozen with that date and labelled as spec 584 EARS-729 items 1–2
+  prescribe; no flow figure is converted at a rate fetched for the day of
+  reading. A stock figure with no operation behind it (the limit,
+  remaining, owed to members, cash at cost) is converted from the budget
+  currency at the latest stored rate under EARS-558's rule, as EARS-550
+  converts an unpaid request at today's rate, and is labelled with that
+  rate's date (spec 584 EARS-722 item 2). The conversion is display only: the
   figures are computed in the budget currency by spec 338 §D, every converted
   value is computed at read time, shown and never stored, and no figure of
   spec 338 EARS-340…345, no posting, conversion step, balance or stored

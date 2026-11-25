@@ -83,7 +83,8 @@ form EARS-339 placed on this surface.
   account actually lost. **Owner, 2026-11-25 (on PR #600):** the dashboard's
   ₽/$/€ switch converts at the actual rate — what was really paid — and the
   Bank of Russia rate serves only where no actual figure exists, labelled
-  (EARS-728, EARS-729).
+  (EARS-728, EARS-729); and the switch converts every figure on the page,
+  the budget block included, the charts changing only their units (EARS-722).
 - **`.claude/rules/design-process.md` §1** — composition, grouping, states and
   feedback are the agent's and are recorded below; the visual language of the
   charts is the owner's and arrives through #585.
@@ -93,7 +94,7 @@ form EARS-339 placed on this surface.
 (spec 339 §A, EARS-339), no new role; who may read → the `platform-user` gate
 (spec 311 EARS-416); currency display → each operation's own recorded amounts
 and conversion steps (spec 338 EARS-318), with the existing Bank of Russia
-rate store (spec 339 EARS-552) as the labelled fallback (EARS-729); drill-down
+rate store (spec 339 EARS-552) as the labelled fallback (EARS-729) and for the stock figures (EARS-722); drill-down
 links → the request source link the queue already renders (spec 339
 EARS-542); success feedback → the whitelist's Feedback row (toasts through
 Refine's notification provider, `docs/design/ui-whitelist.md`). No table, role,
@@ -130,20 +131,19 @@ The screen answers three questions in this order, and the order is the
 hierarchy: **how much is left** (dominant), **where the cash stands**, **how fast
 it goes and where it went**.
 
-| Tier              | Block                                                                                                                                                                                                                                                                                                                  | Chart form (input to #585)                                                                                                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Header            | Title «Бюджет BBM», the budget's name, currency and start date, the moment computed; the limit action for `finance-approve`                                                                                                                                                                                            | —                                                                                                                                                                                            |
-| 1 — dominant      | **The glass**: limit, spent, remaining, share used; beside it **runway** in months with the gross burn it divides by, and the net burn as the cash view; always in `B`, with the line «Бюджет ведётся в <B> и не пересчитывается»                                                                                      | **F1** fill gauge / bullet bar with an overflow state (spent past the limit); **F2** KPI tile                                                                                                |
-| 2 — money         | **Contributed vs spent**: contributed, spent, owed to members, cash at cost, income; the reconciliation line; always in `B`                                                                                                                                                                                            | **F2** KPI tiles in one row + a one-line equation                                                                                                                                            |
-| 3 — dynamics      | **Monthly burn** (gross and net per month, the trailing average) and **the waterline** (cumulative net result, cumulative contributions, the −limit reference level — drawn in `B` only, EARS-713); the period selector and the reporting-currency switch with its rate line sit on this tier and govern tiers 3 and 4 | **F3** monthly columns, two series, negative values allowed, with a line overlay; **F4** cumulative line with a zero baseline, a negative region, a second step series and a reference level |
-| 4 — where it went | **Breakdown** with three tabs — project · category · counterparty — each with the exchange-result line; a line opens its operations                                                                                                                                                                                    | **F5** ranked horizontal bar list (label, value, share); the drill-down is the whitelist's settled data-table block in a sheet                                                               |
+| Tier              | Block                                                                                                                                                                                                                                 | Chart form (input to #585)                                                                                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Header            | Title «Бюджет BBM», the budget's name, currency and start date, the moment computed; the reporting-currency switch with its rate line, governing every tier (EARS-721); the limit action for `finance-approve`                        | —                                                                                                                                                                                            |
+| 1 — dominant      | **The glass**: limit, spent, remaining, share used; beside it **runway** in months with the gross burn it divides by, and the net burn as the cash view; follows the switch (EARS-722)                                                | **F1** fill gauge / bullet bar with an overflow state (spent past the limit); **F2** KPI tile                                                                                                |
+| 2 — money         | **Contributed vs spent**: contributed, spent, owed to members, cash at cost, income; the reconciliation line; follows the switch (EARS-722)                                                                                           | **F2** KPI tiles in one row + a one-line equation                                                                                                                                            |
+| 3 — dynamics      | **Monthly burn** (gross and net per month, the trailing average) and **the waterline** (cumulative net result, cumulative contributions, the −limit reference level); the period selector sits on this tier and governs tiers 3 and 4 | **F3** monthly columns, two series, negative values allowed, with a line overlay; **F4** cumulative line with a zero baseline, a negative region, a second step series and a reference level |
+| 4 — where it went | **Breakdown** with three tabs — project · category · counterparty — each with the exchange-result line; a line opens its operations                                                                                                   | **F5** ranked horizontal bar list (label, value, share); the drill-down is the whitelist's settled data-table block in a sheet                                                               |
 
 Grouping rationale: tiers 1–2 are cumulative since the budget started and do
 not move with the period selector; tiers 3–4 are period readings, so the
 selector is placed on tier 3, not in the header, where it would read as
-governing the glass. The currency switch sits beside it for the same reason:
-it converts the flow figures of tiers 3–4 only, and tiers 1–2 stay in `B`
-(EARS-722). The limit form opens in a sheet from the header, beside the
+governing the glass. The currency switch sits in the header because it
+converts every figure on the page (EARS-722). The limit form opens in a sheet from the header, beside the
 figure it governs (EARS-339), and is the kit's settled Form block; its outcome
 is the kit's Feedback row. Each of F1–F5 also needs its withheld and
 provisional rendering (EARS-719/720); how any of it looks is #585's whitelist
@@ -206,7 +206,7 @@ decimal, rounded half away from zero.
 - **EARS-703.** The header shall show the budget's name, its currency `B`, its
   `starts_on`, and the moment the reading was computed (US-14). WHILE any
   shown figure includes a provisional value (EARS-719), or a Bank of Russia
-  rate converts what is shown (the fallback of EARS-729), and EARS-552's staleness condition
+  rate converts what is shown (EARS-722 item 2, EARS-729), and EARS-552's staleness condition
   holds, the header shall also say the Bank of Russia rates are stale and from
   which date.
 - **EARS-704.** IF no unretired budget exists, THEN the page shall show no
@@ -227,8 +227,9 @@ decimal, rounded half away from zero.
   shall show the overflow past the limit — never clipped at full. The limit and
   the fact shall be labelled as plan and fact and never summed into one figure
   (decision 14, US-17). The glass's state — the share filled, the overflow,
-  «лимит исчерпан» — is decided in `B`, the only currency the glass is shown
-  in (EARS-722).
+  «лимит исчерпан» — and the share used are decided in `B` in every display
+  currency, so the glass keeps its shape when the switch moves (EARS-722
+  item 3).
 - **EARS-707.** Runway shall be remaining (EARS-342) divided by the trailing
   average **gross** burn (EARS-712), in months, computed exactly as
   `remaining × N ÷ Σ gross burn of those N months` and shown with one decimal,
@@ -246,7 +247,9 @@ decimal, rounded half away from zero.
   6. otherwise the number.
 
   Runway shall not depend on the period selector, and shall carry the
-  provisional mark under EARS-719.
+  provisional mark under EARS-719. It is computed in `B` and is the same
+  number in every display currency; in another currency the averages beside
+  it are the converted ones (EARS-722 items 3 and 4).
 
 ### C. Contributed vs spent (cash)
 
@@ -269,12 +272,11 @@ decimal, rounded half away from zero.
   (a) values of expense debits and the part (b) exchange results whose
   operation's `occurred_on` falls in `m` and on or after `starts_on`; **income**
   shall be the EARS-343 income credits in `m`; **net burn** shall be gross burn
-  − income, and may be negative. In `B` the months' gross burn shall sum
-  exactly to spent, because each item enters exactly one month at the value
-  the replay gave it; in a converted view spent is not shown in that currency
-  (EARS-722), and the months sum exactly only among themselves and to the
-  period's breakdown total (EARS-728). Contributions shall enter neither
-  series.
+  − income, and may be negative. The months' gross burn shall sum exactly to
+  spent in every display currency: each item enters exactly one month at the
+  value the replay gave it, and in another currency spent is the same sum of
+  converted items (EARS-722 item 1, EARS-728). Contributions shall enter
+  neither series.
 - **EARS-711.** Today's month shall be shown as incomplete — «неполный месяц,
   по <today>» — and so shall the month of `starts_on` when `starts_on` is not
   its first day — «неполный месяц, с <starts_on>»; neither enters the trailing
@@ -284,10 +286,10 @@ decimal, rounded half away from zero.
   burn** and the **trailing average net burn** shall be the mean gross and the
   mean net burn of the same last `N` complete months, `N = min(3, complete
 months available)`, months with no spend counted as zero, each rounded once
-  half away from zero to minor units of `B`. They appear twice: in `B` beside
-  the runway, which is part of the budget block (EARS-722), and on the chart
-  as levels over the `N` months they average, which follow the switch
-  (EARS-728, EARS-729).
+  half away from zero to minor units of the shown currency. They are shown
+  beside the runway and on the chart as levels over the `N` months they
+  average, and follow the switch as the months do (EARS-722 item 1); the
+  runway itself divides by the `B` averages (EARS-707).
 - **EARS-713.** The waterline shall show, at the end of each month of
   EARS-710 and at today, the **cumulative net result** — Σ (income − gross
   burn) from `starts_on` through that point, which lies below zero while income
@@ -298,11 +300,12 @@ months available)`, months with no spend counted as zero, each rounded once
   limit; at that moment the waterline stands at −limit + cumulative income, so
   the waterline crossing −limit coincides with the glass running empty only
   while cumulative income is zero, and the chart shall say so in those words
-  whenever cumulative income is not zero. In `B` the final points shall equal
-  income − spent and contributed of tiers 1–2. WHILE the reporting currency
-  is not `B` (EARS-722), the level −limit and its note shall not be drawn —
-  the limit is kept in `B` only — and the final points are the converted
-  sums, not compared with tiers 1–2, which stay in `B`.
+  whenever cumulative income is not zero. In every display currency the final
+  points shall equal income − spent and contributed of tiers 1–2, all being
+  sums of the same converted items (EARS-722 item 1). WHILE the display
+  currency is not `B`, the level −limit is the converted limit, a stock
+  figure (EARS-722 item 2), and the moment the glass runs empty is the one
+  decided in `B` (EARS-722 item 3).
 - **EARS-714.** The dynamics tier shall say that a reversal removes the
   original operation from its own month (spec 338 EARS-341): a vendor's refund
   lowers the month the expense was in, not the month of the refund, so a past
@@ -378,47 +381,84 @@ months available)`, months with no spend counted as zero, each rounded once
 
 ### G. Reporting currency
 
-The switch converts the **flow figures** only; the **budget block** is always
-shown in `B`. A flow figure is converted at the **actual rate**: each item at
-what its own operation really recorded (EARS-728 — decision 18's «each
-operation's own actual rate» and decision 41's «Факт»). The Bank of Russia
-rate enters only where an item's own operation recorded nothing in the chosen
-currency, and every figure it enters says so (EARS-729).
+The switch converts **every amount on the page** into the display currency
+`D`, the budget block included; the charts keep their shape and change only
+their units (owner, 2026-11-25). Each amount takes the rate that fits what it
+is. A **flow figure** is a sum of operations, and each operation is converted
+at the **actual rate**, which is what its own operation really recorded
+(EARS-728 — decision 18's «each operation's own actual rate» and decision
+41's «Факт»). The Bank of Russia rate of the operation's date enters only
+where that operation recorded nothing in `D`, labelled (EARS-729). A **stock
+figure** has no operation behind it, so it is converted at the latest Bank of
+Russia rate, labelled (EARS-722 item 2). With `B` selected every figure is
+exact and nothing is converted. In another currency the charts match the `B`
+view in shape up to the differences between the operations' own rates.
 
-- **EARS-721.** The dynamics tier shall offer a reporting-currency switch over
-  ₽, $ and € (and `B` where it is none of them), beside the period selector,
-  RUB by default (decision 13); the choice shall travel in the page URL as
-  `currency`. An unknown or unavailable value shall fall back to RUB, or to
-  `B` WHERE RUB is unavailable. A candidate other than `B` that EARS-728 and
-  EARS-729 together cannot convert to shall be shown disabled with the
-  reason of EARS-729 item 4.
-- **EARS-722.** The computation stays in `B`, and the switch converts only
-  what is shown, at read time; no converted value shall be stored.
-  1. The **budget block** — the limit, spent, remaining, share used, the
-     runway with the trailing averages shown beside it (EARS-707), and the
-     whole money tier: contributed, income, owed to members, cash at cost and
-     the reconciliation of EARS-709 — shall always be shown in `B`, whatever
-     the switch says, and shall carry the line «Бюджет ведётся в <B> и не
-     пересчитывается». Every state of the glass (EARS-706), every case of
-     EARS-707 and the EARS-344 identity are therefore decided and shown in
-     `B` only.
-  2. The **flow figures** — the monthly gross and net burn and the chart's
-     trailing-average levels (EARS-710, EARS-712), the waterline's two series
-     (EARS-713), the breakdown lines (EARS-716, EARS-717) and the drill-down
-     rows (EARS-718) — shall follow the switch. A breakdown line's share is
-     its shown value divided by the grouping's shown total, in the shown
-     currency. An expense's own-currency amount in a drill-down row is shown
-     as recorded.
-  3. The switch's rate line shall name the conversion rule in EARS-728's
-     words, carry EARS-729's count, and say that it does not apply to the
-     budget block.
+- **EARS-721.** The header shall offer a reporting-currency switch over ₽, $
+  and € (and `B` where it is none of them), beside the budget's currency, RUB
+  by default (decision 13); it governs every tier, and the choice shall
+  travel in the page URL as `currency`. An unknown or unavailable value shall
+  fall back to RUB, or to `B` WHERE RUB is unavailable. A candidate other
+  than `B` that EARS-722, EARS-728 and EARS-729 together cannot convert to
+  shall be shown disabled with the reason of EARS-729 item 4.
+- **EARS-722.** The computation stays in `B`, and the switch converts what is
+  shown, at read time; no converted value shall be stored. WHILE `D` is `B`,
+  nothing is converted.
+  1. **Flow figures** — spent, contributed and income (tiers 1–2), the monthly
+     gross and net burn and the trailing averages wherever they are shown
+     (EARS-707, EARS-710, EARS-712), the waterline's two series (EARS-713), the
+     breakdown lines (EARS-716, EARS-717) and the drill-down rows (EARS-718) —
+     shall each be the integer sum of their items converted by EARS-728, or by
+     EARS-729 where an item's own chain misses `D`. So in every display
+     currency spent equals the months' gross burn and every grouping's total,
+     and the waterline's final points equal income − spent and contributed.
+     A breakdown line's share is its shown value divided by the grouping's
+     shown total. An expense's own-currency amount in a drill-down row is
+     shown as recorded.
+  2. **Stock figures** — the limit, remaining, owed to members and cash at
+     cost — shall each be taken in `B` and converted once from `B` to `D` at
+     the **latest Bank of Russia rate**. That rate is found by spec 339
+     EARS-558's rule applied to today: the stored rate of today or the
+     nearest previous one at most 14 days older, through RUB, with USDT and
+     USDC as USD. The conversion is an exact rational rounded half away from
+     zero once to `D`'s minor units, and each such figure carries «по курсу ЦБ
+     на <date>». Remaining shall be computed in `B` first (EARS-342) and then
+     converted, never as converted limit − converted spent, so it is always
+     the money actually left. The −limit level of the waterline is the
+     converted limit. IF no rate qualifies, THEN every stock figure in `D`
+     shall be withheld with «нет курса ЦБ на <today>», and the flow figures
+     are unaffected.
+  3. **Ratios and states** — the share used, the runway with its EARS-707
+     case, the glass's state (EARS-706) and the waterline's glass-empty note
+     (EARS-713) — shall be computed in `B` and be the same in every display
+     currency, so the glass and the runway keep their shape when the switch
+     moves.
+  4. **Relations across the two kinds.** WHILE `D` is not `B`, a relation
+     that adds flow figures to stock figures holds only up to the difference
+     between the operations' rates and the latest rate. Those relations are
+     limit = spent + remaining, the EARS-344 equation, and remaining ÷ the
+     shown average beside the runway. The glass shall then carry one line:
+     «в <D> лимит ≠ потрачено + остаток на <difference>: лимит и остаток — по
+     курсу ЦБ на <date>, расходы — по курсу операций; точно — в <B>». The
+     money tier shall show the EARS-709 equation with both sides' values and
+     the same kind of line in place of «equal». Where the difference rounds
+     to zero, no line is shown.
+  5. **The rate line** beside the switch shall say, WHILE `D` is `B`, «все
+     суммы в <B>, точно, без пересчёта». Otherwise it shall say «операции — по
+     фактическому курсу каждой операции; лимит, остаток, долги и деньги на
+     счетах — по курсу ЦБ на <date>; графики совпадают по форме с видом в <B>
+     с точностью до разницы курсов операций», followed by EARS-729's count.
 
-  _(This narrows the last sentence of spec 338 EARS-344 — «none follows the
-  reporting-currency switch of decision 13» — to the computation and the
-  budget block; the amendment note sits on EARS-344.)_
-  _(Lead decision, 2026-11-24, shown to the owner at the go: the budget block
-  staying in `B` answers review findings B4 and B5 on PR #600, and narrows
-  #584's scope and US-28; open question 2 asks the owner to confirm it.)_
+  _(Owner, 2026-11-25: every figure follows the switch, the budget block
+  included, as in the owner's own budgeting app. The lead's decisions are
+  the split into flow and stock figures, the latest Bank of Russia rate for
+  stock figures, remaining computed in `B` first, and ratios and states
+  decided in `B`. The last keeps review findings B4 and B5 on PR #600
+  closed. A repaid rouble member debt is zero in `B`, so it is zero in every
+  currency. And no converted glass can contradict its own share or runway.
+  This narrows the last sentence of spec 338 EARS-344, «none follows the
+  reporting-currency switch of decision 13», to the computation; the
+  amendment note sits on EARS-344.)_
 
 - **EARS-728.** WHILE the reporting currency `D` is not `B`, every item behind
   a flow figure — an EARS-341 part (a) expense value, a part (b) exchange
@@ -427,8 +467,7 @@ currency, and every figure it enters says so (EARS-729).
   converted once into `D` at the **actual rate of its own operation**: the
   amounts that operation recorded, which are what the account actually lost,
   fees included (decision 41's Факт, spec 339 EARS-557, and for a chain
-  EARS-561), never a rate fetched at read time (decision 18). WHILE `D` is
-  `B`, every item is its `B` value and nothing is converted.
+  EARS-561), never a rate fetched at read time (decision 18).
   1. **The item's own chain** is the item's own currency and amount — the
      posting's currency and amount for an expense, income or contribution
      item; `B` and the result itself for a part (b) exchange result — plus
@@ -461,13 +500,14 @@ currency, and every figure it enters says so (EARS-729).
      step's own baht-to-dollar ratio; in ₽ both show the roubles the replay
      drew. A reimbursement's exchange result, in `B`, shows in $ at the
      reimbursement step's own rouble-to-dollar ratio._
-  3. Every flow amount — a month's gross burn, income and net burn, a
-     waterline point, a breakdown line, a drill-down row — shall be the
+  3. Every flow amount — spent, contributed, income, a month's gross burn,
+     income and net burn, a waterline point, a breakdown line, a drill-down
+     row — shall be the
      integer sum of its converted items, so the sums of EARS-710, EARS-716
      and EARS-718 hold exactly in `D`; the chart's trailing averages are the
      means of the converted months, rounded as EARS-712 rounds.
-  4. The rate line shall say «динамика и разбивка в <D> — по фактическому
-     курсу каждой операции, только для показа».
+  4. The rate line (EARS-722 item 5) names this rule as «по фактическому
+     курсу каждой операции».
   5. Past figures shall not move with the market: an actual amount is a
      recorded fact and changes only when the ledger changes (a reversal,
      EARS-714).
@@ -490,7 +530,8 @@ currency, and every figure it enters says so (EARS-729).
   2. **Aggregate mark.** A flow figure that sums at least one such item shall
      carry «частично по курсу ЦБ» with the sum of those items in `D`, or «по
      курсу ЦБ» WHERE every item it sums is one; a figure that sums none
-     carries no mark. The marks propagate as the sums do: a month column, a
+     carries no mark. The marks propagate as the sums do: spent, contributed
+     and income, a month column, a
      breakdown line, the trailing-average levels WHERE any averaged month is
      marked, and every waterline point from the first marked month on. The
      rate line shall add «по курсу ЦБ: N из M операций периода», or say that
@@ -499,7 +540,8 @@ currency, and every figure it enters says so (EARS-729).
      has no amount in `D`, and every flow figure in `D` that sums it shall be
      withheld with «нет курса ЦБ на <date>» — never converted 1:1, never a
      silent zero (as in spec 339 EARS-560) — the waterline from that month
-     on included; the budget block is unaffected. A fallback amount changes
+     on included; the stock figures, ratios and states of EARS-722 items 2–3
+     are unaffected. A fallback amount changes
      only when the ledger changes or when a rate is newly stored inside its
      date's window.
   4. **Disabled candidate.** A candidate `D` shall be shown disabled with
@@ -507,7 +549,8 @@ currency, and every figure it enters says so (EARS-729).
      and the rate store holds no rate for the `B` → `D` conversion.
   5. The Bank of Russia rates read here are display only: this fallback
      requires the pending note on spec 339 EARS-553, written out there, and
-     EARS-703's stale-rate notice applies WHILE a fallback amount is shown.
+     EARS-703's stale-rate notice applies WHILE a fallback amount or a stock
+     figure in `D` is shown.
 
 ### H. The budget limit form (spec 338 EARS-339)
 
@@ -604,12 +647,15 @@ ledger is written into the repo or the PR.
    data, spent, remaining, runway and the debt's line carry «предварительно»
    and the glass names the provisional part; owed to members is marked too
    (EARS-719, EARS-708).
-10. **Currency.** Switch to $ on the dynamics tier: the monthly burn, the
-    waterline, the breakdown and its drill-down change; the glass, the runway
-    and the money tier do not, and carry «Бюджет ведётся в <B> и не
-    пересчитывается»; the waterline's −limit level disappears; the rate line
-    says the figures are at each operation's actual rate and how many of the
-    period's operations fell back to the Bank of Russia rate; open a
+10. **Currency.** With `B` selected the rate line says every figure is exact.
+    Switch to $ in the header: every amount on every tier changes into
+    dollars, while the share used, the runway, the glass's fill and the
+    charts' shape do not. The limit, remaining, owed to members and cash at
+    cost carry «по курсу ЦБ на <date>». Remaining equals the `B` remaining
+    converted at that rate, and the glass shows the one-line note on how
+    limit differs from spent + remaining. The waterline's −limit level is the
+    converted limit. The rate line names both rules and how many of the
+    period's operations fell back to the Bank of Russia rate. Open a
     drill-down: a row paid in or invoiced in $ shows its recorded dollars
     unmarked, a rouble-only row carries «по курсу ЦБ на <date>», and a line
     or month summing both carries «частично по курсу ЦБ» (where the real data
@@ -644,13 +690,20 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
   Russia rate (EARS-720; real data may hold neither);
 - provisional marks appearing on every derived figure and clearing across a
   reimbursement (EARS-719);
-- **the budget block ignores the switch**: with `currency` set to $ and to
-  €, every figure of tiers 1–2 — limit, spent, remaining, share used, runway
-  and the averages beside it, contributed, income, owed to members, cash at
-  cost and the reconciliation — equals its `B` reading byte for byte, the
-  glass's state and EARS-707's case are the `B` ones, the «Бюджет ведётся
-  в <B>» line is present, and the waterline draws no −limit level
-  (EARS-713, EARS-722);
+- **every figure follows the switch** (EARS-713, EARS-722): with `currency`
+  set to $ and to €, spent, contributed and income are sums of converted
+  items. They equal the months' sum and every grouping's total, and the
+  waterline's final points equal them. The limit, remaining, owed to members
+  and cash at cost are their `B` figures converted once at the latest Bank of
+  Russia rate under EARS-558's rule, each labelled. Remaining is
+  convert(remaining in `B`), never converted limit − converted spent, and a
+  repaid rouble member debt is zero in every currency. The share used,
+  runway, EARS-707's case and the glass's state equal their `B` readings
+  byte for byte. The limit ≠ spent + remaining line and the equation's
+  difference line appear only when the difference does not round to zero.
+  The stock figures are withheld when no rate qualifies, and −limit is the
+  converted limit. With `B` selected nothing is converted and the «точно»
+  rate line shows;
 - the actual-rate conversion of the flow figures (EARS-728): an item in `D`
   shows its own amount; a cross-currency payment shows its other recorded
   amount through its own step; a fee in the paid currency and a
@@ -694,15 +747,8 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
    its own operation's recorded amounts (EARS-728); the Bank of Russia rate
    serves only where an item's own operation recorded nothing in the chosen
    currency, and every figure it enters is labelled (EARS-729).
-2. **Confirm that the budget block stays in the budget's own currency.** The
-   switch converts only the flow figures: the monthly burn, the waterline,
-   the breakdown and its drill-down. The budget block — the limit, spent,
-   remaining, share used, runway, contributed, income, owed to members, cash
-   at cost and the reconciliation — always stays in the budget's own
-   currency, with a line saying so, so the glass, the runway and the
-   reconciliation never disagree with each other in any currency. This split
-   is the lead's decision (EARS-722) and narrows #584's scope and US-28,
-   which asked for the whole dashboard in ₽, $ or €; converting the budget
-   block too made a converted glass contradict its own share and runway and
-   left a rouble member debt non-zero in $ once repaid. Decision needed:
-   confirm the split, or ask for the whole dashboard to switch.
+2. **Does the budget block follow the switch — answered (owner,
+   2026-11-25).** Yes: the switch converts every figure on the dashboard,
+   the limit, spent, remaining, contributed and cash included, as in the
+   owner's own budgeting app; the charts keep their shape and change only
+   their units (EARS-722).

@@ -849,17 +849,22 @@ research answers.
   _(Amendment proposed 2026-11-24 by spec 584 EARS-722
   (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec:
   the figures are
-  still computed only in `B`, and every figure of EARS-338…344 — the limit,
-  spent, remaining, contributed, income, owed to members, cash at cost and
-  this relation — is always shown in `B`, so this relation is read and shown
-  in `B` alone. The dashboard's switch converts only the flow figures built
-  from these items — the monthly series, the cumulative series and the
-  EARS-345 breakdown with its drill-down — at read time, never stored: each
-  item at the actual rate of its own operation, that is, by the amounts and
-  conversion steps that operation recorded (EARS-728), and only an item whose
-  operation recorded nothing in the chosen currency at the Bank of Russia
-  rate of its date, labelled as such (EARS-729). That fallback narrows spec
-  339 EARS-553, by the pending note written there. The dashboard lives at
+  still computed only in `B`, and this relation holds exactly in `B`. The
+  dashboard's switch shows every figure of EARS-338…345 in the chosen
+  currency (owner, 2026-11-25) at read time, never stored. The flow figures
+  — spent, contributed, income, the monthly and cumulative series and the
+  EARS-345 breakdown with its drill-down — are converted item by item at the
+  actual rate of each item's own operation, that is, by the amounts and
+  conversion steps that operation recorded (spec 584 EARS-728). Only an item
+  whose operation recorded nothing in the chosen currency is converted at the
+  Bank of Russia rate of its date, labelled (EARS-729). The stock figures —
+  the limit, remaining, owed to members and cash at cost — are converted
+  from `B` at the latest Bank of Russia rate, labelled, and remaining is
+  computed in `B` first. Ratios and states (share used, runway, the glass)
+  stay the `B` ones (EARS-722). In another currency this relation therefore
+  holds only up to the labelled rate difference, and the dashboard says so.
+  The Bank of Russia conversions narrow spec 339 EARS-553, by the pending
+  note written there. The dashboard lives at
   `/p/finance/reports/budget`, inside the `/p/finance` subtree, and its limit
   form is the one EARS-339 places «on `/p/finance`».)_
 - **EARS-345.** The breakdown of «spent» shall be one line per project — each
