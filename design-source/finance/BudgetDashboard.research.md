@@ -98,11 +98,13 @@ Palette validation (`dataviz/scripts/validate_palette.js`): B pair `#2370cd,#f47
 }
 ```
 
+The mockup's `--mark-cbr-bg` (the CBR chip ground) is a literal equal to the kit's `--muted` in both themes: the build uses `--muted`, not a new token.
+
 If Tailwind utilities are wanted, the new names also go into the theme's `@theme inline` block (`--color-chart-6: var(--chart-6)` … `--color-chart-11`, `--color-mark-provisional*`); `pnpm lint:ui-tokens` keeps literals in `theme.css` only.
 
 Researcher's recommendation (before the pick): **B** — it answers «сколько осталось» with the owner's own metaphor (the glass) as the one dominant figure, keeps colour to one accent plus one identity colour (passes CVD with margin, consistent across F1/F3/F4/F5 per Carbon), and is the only option verified in dark mode and at 390 px.
 
-**Implementation here.**
+**Implementation here** — _written before the pick and kept as the research record. Where it disagrees with the owner-pick sections above, those win: F1 is B's vertical glass (not a `Progress` bar), F5 is the treemap plus the bar rows (`BreakdownTreemap.tsx` + `BreakdownList.tsx`, see «Implementation (Recharts finding)»), and the colours are the oklch token block, not the hex list below._
 
 - Adopt via the CLI into the kit (owned code, MIT): `pnpm dlx shadcn@4.19.0 add chart progress` (style per `components.json` `radix-nova`; check the generated `chart.tsx` against `new-york-v4` as the Form row did) → `src/ui/chart.tsx`, `src/ui/progress.tsx`; dependency `recharts` pinned exactly (`3.8.0` as the registry item declares, or the current `3.11.x` after a typecheck). The block sources (`chart-bar-multiple`, `chart-bar-negative`, `chart-line-step`, `chart-area-default`, `chart-tooltip-default`) are copied as starting code into the screen, not the kit.
 - Tokens (superseded by the oklch token block in the owner-pick section above): replace the stock neutral `--chart-1..5` in `src/ui/theme.css` (the one place colour literals may live, `pnpm lint:ui-tokens`) with the picked option's validated light + dark steps — for B: `#2370cd/#84b9f3/#0f4a96/#1b64be/#f47230` light, `#338ced/#1757ac/#9dc8f7/#6aabf1/#e76624` dark; marks-chip colours as `--chart-*`-adjacent tokens, not inline.
