@@ -151,7 +151,10 @@ implementer commissioned for its own PR does not satisfy this gate and is
 re-run by the lead. (2026-07-24: PR #72's implementer self-commissioned its
 «independent» review; the lead's re-review was still required.) On
 REQUEST_CHANGES: address every point — fix it, or reject it with reasoning in
-the thread — then re-review, looping until APPROVE. **TDD extends to review
+the thread — then re-review, looping until APPROVE. **A re-review is delta-only by
+default** — the lead re-dispatches `bbm-reviewer` on the same PR; scope and
+full-review fallbacks are owned by `.claude/agents/bbm-reviewer.md` («Re-review:
+delta mode»); add «full review» to the brief to force one. **TDD extends to review
 fixes: every blocker gets a RED test before its fix**, asserting the behaviour
 the reviewer said is missing or wrong, and the fix commit is what turns it green.
 A blocker rejected with reasoning needs no test; a blocker that is genuinely
