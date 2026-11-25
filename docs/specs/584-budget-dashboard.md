@@ -270,7 +270,11 @@ decimal, rounded half away from zero.
   beside spent; cash at cost shall carry the label «по себестоимости» and owed
   to members its provisional mark per EARS-343. WHERE a line needs «paid out»,
   it shall be spent − owed to members (EARS-344) in `B`, and in another
-  display currency the flow sum of EARS-722 item 1.
+  display currency the flow sum of EARS-722 item 1. «Paid out» and its
+  EARS-722 item 4 line shall be shown only WHERE the budget's `starts_on` is
+  on or before BBM's first operation (the EARS-709 condition): owed to
+  members is an all-time balance while spent is windowed, so with a later
+  `starts_on` the two would not reconcile.
 - **EARS-709.** WHERE the budget's `starts_on` is on or before BBM's first
   operation, the tier shall show the EARS-344 relation as an equation with both
   sides' values, equal. WHERE `starts_on` is later, the tier shall show the
@@ -432,7 +436,8 @@ view in shape up to the differences between the operations' own rates.
      EARS-728, or by EARS-729 where an item's own chain misses `D`. «Paid
      out» is a cumulative outflow, not a balance: in `B` it is spent − owed
      to members (EARS-344), and its items are spent's items less the part
-     still owed to members, each converted at its own operation's rate. So
+     still owed to members, each converted at its expense operation's rate
+     (EARS-728). So
      in every display
      currency spent equals the months' gross burn and every grouping's total,
      and the waterline's final points equal income − spent and contributed.
@@ -486,8 +491,8 @@ view in shape up to the differences between the operations' own rates.
        provisional part, «в <D> предварительная часть ≠ её доле в долгах
        участникам на <difference>: долги участникам — по курсу ЦБ на <date>,
        предварительная часть — по курсу операций; точно — в <B>», where
-       `<difference>` = (that part of owed to members, converted as item 2
-       converts owed to members) − the provisional part as shown, with its
+       `<difference>` = the provisional part as shown − (that part of owed
+       to members, converted as item 2 converts owed to members), with its
        sign;
      - the waterline crossing −limit (EARS-713): the chart's rate note of
        EARS-713 applies;
@@ -762,7 +767,9 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
   figure they need is withheld. «Paid out» is a sum of converted items (its
   `B` value spent − owed to members), and beside it the spent ≠ «paid out» +
   owed to members line carries the signed difference of EARS-722 item 4 under
-  the same show/hide rules. The provisional part's amount is a sum of
+  the same show/hide rules; with a `starts_on` later than BBM's first
+  operation and an open member debt from before it, neither «paid out» nor
+  that line is shown (EARS-708). The provisional part's amount is a sum of
   converted items and its count is the `B` one; on a ledger whose open
   foreign debt is converted at a rate that differs from the latest one, the
   provisional-part-vs-owed line carries the signed difference of item 4,
