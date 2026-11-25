@@ -356,9 +356,9 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
   entries, which differ whenever foreign money is held.
 - In every display currency the per-project spend plus the exchange-result
   line adds up to the total spend.
-- In the budget's own currency the months of the spending chart add up to
-  the total spend, and the runway
-  can be checked by hand from the remaining limit and the average shown beside
+- In every display currency the months of the spending chart add up to the
+  total spend.
+- In the budget's own currency the runway can be checked by hand from the remaining limit and the average shown beside
   it.
 - The spend by category and by counterparty each add up, with the
   exchange-result line, to the total spend in every display currency, and
