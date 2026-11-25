@@ -225,6 +225,11 @@ export function normalizeFilesPage(data) {
             additions: Number(f?.additions ?? 0),
             deletions: Number(f?.deletions ?? 0),
             status: f?.status,
+            // A rename's SOURCE path: `change-tier` classifies it too, so a
+            // file moved out of an Ask path does not drop to a lower tier.
+            ...((f?.previous_filename ?? f?.previousPath)
+              ? { previousPath: f.previous_filename ?? f.previousPath }
+              : {}),
           },
     )
     .filter((f) => f.path)

@@ -31,6 +31,17 @@ none
 - [ ] Owner-visible change → live-stand acceptance planned/recorded (stage 5) — or invisible, stage skipped
 - [ ] Deviations from conventions: none / listed in the results comment
 
+## Change tier
+
+<!-- Replace the line below with exactly ONE line, at or above the minimum the
+     changed files require (raise it freely, never lower it):
+       Change-tier: Ship — <reason>   (prose / typos / behaviour-free, or test-only)
+       Change-tier: Show — <reason>   (ordinary UI or logic, no Ask path)
+       Change-tier: Ask               (auth, money, migrations, infra, .claude/, tools/, deps, API)
+     Rule: .claude/rules/change-tiers.md · check: `pnpm lint:change-tier <PR>` -->
+
+Change-tier: <Ship | Show | Ask> — <reason>
+
 ## Stage B
 
 <!-- Replace the line below with exactly ONE of:
