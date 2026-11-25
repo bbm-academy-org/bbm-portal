@@ -57,8 +57,9 @@ import {
   mayAttachDocument,
   receiptRefusal,
   refundAccounts,
+  refundAmountAfterSwitch,
+  refundCrossesCurrency,
   refundCurrencyFixed,
-  refundPrefill,
   reimburseDefaults,
   sheetActs,
   sheetAmount,
@@ -495,6 +496,7 @@ function ReimburseSection({
   const fixed = refundCurrencyFixed(request)
   const accountId = form.watch('accountId')
   const account = accounts.find((row) => String(row.id) === accountId) ?? null
+  const crosses = refundCrossesCurrency(request, references, accountId)
 
   return (
     <ActSection
@@ -538,20 +540,25 @@ function ReimburseSection({
                   accounts={accounts}
                   value={field.value}
                   onChange={(next) => {
+                    const previous = field.value
                     field.onChange(next)
-                    // The required sum follows the account where the request fixes it.
-                    const prefill = refundPrefill(request, references, next)
-                    if (prefill !== '' || form.getValues('amount') === '') {
-                      form.setValue('amount', prefill)
+                    form.setValue(
+                      'amount',
+                      refundAmountAfterSwitch(
+                        request,
+                        references,
+                        previous,
+                        next,
+                        form.getValues('amount'),
+                      ),
+                    )
+                    if (!refundCrossesCurrency(request, references, next)) {
+                      form.setValue('agentFee', '')
+                      form.clearErrors('agentFee')
                     }
                   }}
                   disabled={pending || accounts.length === 0}
                 />
-                {fixed === null ? null : (
-                  <FormDescription>
-                    Долг записан в {fixed} — возврат со счёта в этой валюте.
-                  </FormDescription>
-                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -568,14 +575,41 @@ function ReimburseSection({
                   <Input {...field} inputMode="decimal" placeholder="0,00" disabled={pending} />
                 </FormControl>
                 <FormDescription>
-                  {account !== null && account.currency !== request.currency && fixed === null
-                    ? `Заявка в ${request.currency}, возврат в ${account.currency}: сумма — факт, столько ушло сотруднику.`
-                    : 'Весь долг по заявке, с комиссией, если она записана.'}
+                  {crosses && account !== null
+                    ? `Долг в ${fixed}, возврат в ${account.currency}: всё, что ушло со счёта, с комиссией агента. Долг закроется целиком.`
+                    : account !== null && account.currency !== request.currency && fixed === null
+                      ? `Заявка в ${request.currency}, возврат в ${account.currency}: сумма — факт, столько ушло сотруднику.`
+                      : 'Весь долг по заявке, с комиссией, если она записана.'}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
+          {crosses && account !== null ? (
+            <FormField
+              control={form.control}
+              name="agentFee"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Комиссия агента, {account.currency} — если есть</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      disabled={pending}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Если агент выделил комиссию в отчёте: она входит в сумму выше и запишется
+                    отдельным расходом.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : null}
           <ReceiptField pending={pending} />
           <ActFailure message={failure} />
           <ActFooter>
