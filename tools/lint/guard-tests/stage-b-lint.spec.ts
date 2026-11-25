@@ -452,7 +452,7 @@ describe('stage-b-lint: runner contract', () => {
       '--repo',
       'bbm-academy-org/bbm-portal',
       '--json',
-      'number,body,comments',
+      'number,body,comments,changedFiles',
     ])
     // The file list is NOT read off that view — it is paged (canon §8).
     expect(ghFilesArgs(92, 2, 100)).toEqual([

@@ -9,8 +9,9 @@
 // SEVERITY: WARN since 2026-11-25. The script gives a REAL signal — a finding
 // exits 1 (canon §4 clause 1: a guard that prints and exits 0 is a stub and is
 // not promotable) — and the CI job carries `continue-on-error`, so the plane is
-// WARN. Promotion to BLOCK is the second slice of #597, together with routing
-// `pr:land` and `stage-b` by tier.
+// WARN. Promotion to BLOCK follows docs/ci-guardrails.md §4 (the §5 row holds the
+// earliest date). The merge gate does not wait for it: `pr:land` refuses a
+// declaration below the minimum on its own, through the same `resolveTier`.
 //
 // Findings (exit 1): no `Change-tier:` line, more than one, a malformed value,
 // a Ship/Show line with no reason, or a declared tier below the minimum.
@@ -20,7 +21,7 @@
 // `PR_NUMBER` set (CI).
 
 import { ghPrFiles, ghViewJson } from './lib/gh.mjs'
-import { classifyChangeTier, meetsMinimum, parseDeclaration } from './lib/change-tier.mjs'
+import { resolveTier } from './lib/change-tier.mjs'
 import {
   isEntryPoint,
   isPrEvent,
@@ -45,20 +46,20 @@ const PROBLEM_TEXT = {
  * @param {{ body: string, files: import('./lib/change-tier.mjs').ChangeTierFile[], changedFiles?: number }} pr
  */
 export function verdict({ body, files, changedFiles }) {
-  const declaration = parseDeclaration(body)
-  const { minimum, reasons, testOnly } = classifyChangeTier(files, changedFiles)
+  const tier = resolveTier(body, files, changedFiles)
   const problems = []
-  if (declaration.problem) problems.push(PROBLEM_TEXT[declaration.problem])
-  const declared = declaration.problem ? null : declaration.tier
-  if (declared && !meetsMinimum(declared, minimum)) {
-    problems.push(`declared ${declared} is below the minimum ${minimum} its changes require`)
+  if (tier.problem) problems.push(PROBLEM_TEXT[tier.problem])
+  if (tier.below) {
+    problems.push(
+      `declared ${tier.declared} is below the minimum ${tier.minimum} its changes require`,
+    )
   }
   return {
     ok: problems.length === 0,
-    declared,
-    minimum,
-    reasons,
-    testOnly: Boolean(testOnly),
+    declared: tier.declared,
+    minimum: tier.minimum,
+    reasons: tier.reasons,
+    testOnly: tier.testOnly,
     problems,
   }
 }
