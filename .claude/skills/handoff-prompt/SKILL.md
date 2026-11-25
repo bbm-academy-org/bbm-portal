@@ -35,8 +35,9 @@ The issue/PR record is the canonical continuation point; a handoff that exists
 only in chat is not one. Post the primary issue comment — the closing shape of
 `.claude/skills/write-iteration-summary/SKILL.md`, or the §5 stop-state comment
 for a task left open — in English (the Russian owner report is not pasted into
-it) and cite its URL in the block. Remove the main
-checkout's `.claude/lead-budget-override` if this session ran under it
+it) and cite its URL in the block. If the main checkout holds
+`.claude/lead-budget-override`, quote its reason line in the block; never delete
+it — the marker is box-wide and only the owner creates or removes it
 (`docs/ci-guardrails.md` §6, lead-context-budget).
 
 ## Step 2 — gather
@@ -57,6 +58,9 @@ checkout's `.claude/lead-budget-override` if this session ran under it
   Caddyfile — «откуда вообще такой контекст?»)_ A handoff that authorizes work
   through merge says: «чекпойнт с владельцем до начала имплементации — handoff ≠
   согласие владельца на объём».
+- **Blocking prerequisite:** an issue that must land before the next task of
+  its class (e.g. a `channel:retro` cure from `/wrap` phase 2) — named here,
+  never among the Next suggestions.
 - **Open questions:** only unresolved owner decisions.
 
 ## Step 3 — output
@@ -65,7 +69,8 @@ Exactly one fenced block, ≤300 tokens, and nothing after it — it IS the fina
 chat message, copied by the owner into the next session. Sections, omitting
 only empty optional ones: `## Current task` (always `Session goal (owner):
 <verbatim or "none recorded">` and `Origin task: <issue/PR/spec>`),
-`## Progress so far`, `## Where we stopped`, `## Next (suggestions, not
+`## Progress so far`, `## Where we stopped` (plus `Prerequisite (blocking): #N
+— <why>`, omitted when none), `## Next (suggestions, not
 priority)` — never restating or replacing the session goal — and optional
 `## Confirm before acting`, `## Context references` (the record URL, the
 worktree/branch/port, the active spec), `## Open questions`. Terse bullets,

@@ -86,9 +86,9 @@ recurred inside 24 hours.)_
 
 **A `channel:retro` issue is the mechanical cure for a REPEAT theme
 (`recurrence: yes`), and it is scheduled the moment it is filed:** milestone
-**«Platform: operations and hardening»**, and it is named in the session
-handoff's «Next steps» as a **blocking prerequisite of the next task of that
-class**. An issue filed without both is parked, not scheduled. Live example:
+**«Platform: operations and hardening»**, and it is named on the handoff's
+`Prerequisite (blocking):` line (`.claude/skills/handoff-prompt/SKILL.md`) as a
+**blocking prerequisite of the next task of that class**. An issue filed without both is parked, not scheduled. Live example:
 #322 «Hook: block a lead that mutates repeatedly with zero Agent dispatches» is
 the mechanical cure for the orchestration themes that the 2026-08-25 audit
 could only fold with prose — a folded theme whose hook is still open is named
