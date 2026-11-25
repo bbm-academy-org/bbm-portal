@@ -46,11 +46,11 @@ that. Tracker artifacts (issues, PRs, comments) keep their numbers.
    коллекции»): «гард ЧЕГО?» must be answerable from the sentence itself. The
    shorthand ban and the two opening lines this point starts with are the
    «Owner-report form» section below.
-2. **«Проверить глазами: \<URL\>»** — what the owner opens themselves, in the
-   showing the PR's change tier puts it on (task-cycle stage 5): a live URL,
-   with the access line (login + where the password comes from) when the
-   surface is behind auth, on Ask; the link to the PR comment carrying the
-   screenshots on Show. If the change has no visual surface, the honest form is
+2. **«Проверить глазами: \<URL\>»** — a real URL the owner opens themselves,
+   with the access line (login + where the password comes from) when the surface
+   is behind auth, on every change tier: this report follows the deploy, so a
+   Show change is live too. Show's PR screenshots were the pre-merge acceptance
+   (stage 5), never this line. If the change has no visual surface, the honest form is
    the literal alternative: **«визуально ничего не меняется; проверяется так:
    \<тест / поведение / команда\>»** — do NOT fill the point with PR/repo links
    to make it look satisfied.
