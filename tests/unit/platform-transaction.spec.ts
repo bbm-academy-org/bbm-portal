@@ -43,6 +43,14 @@ vi.mock('@/lib/platform/db/client', () => ({
   }),
 }))
 
+// EARS-24 reads OUR block of `eslint.config.mjs`, not the Next presets it
+// spreads first. Loading those presets pulls in every Next/React/TS ESLint
+// plugin — measured 2026-11-25 on the Windows dev box at ~4.2 s of the case's
+// 4.3 s alone, so a loaded box pushed it past Vitest's 5 s default (#599).
+// Empty presets leave the repo's own blocks exactly as written.
+vi.mock('eslint-config-next/core-web-vitals', () => ({ default: [] }))
+vi.mock('eslint-config-next/typescript', () => ({ default: [] }))
+
 const { platformTransaction } = await import('@/lib/platform/db/transaction')
 
 beforeEach(() => {

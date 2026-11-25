@@ -1,10 +1,10 @@
 // @vitest-environment node
-import { spawnSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 /**
  * The SHAPE of the finance module (spec 338 EARS-323, EARS-334).
@@ -28,16 +28,42 @@ const DEPCRUISE_BIN = resolve(
   'dependency-cruise.mjs',
 )
 
+type Cruise = { code: number; output: string }
+
+let cruise: Cruise | undefined
+let financeApi: Record<string, unknown> | undefined
+
+beforeAll(
+  async () => {
+    const run = new Promise<Cruise>((settle) => {
+      execFile(
+        process.execPath,
+        [DEPCRUISE_BIN, 'src', '--config', CONFIG, '--output-type', 'err'],
+        { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+        (error, stdout, stderr) => {
+          // A non-zero exit arrives as a numeric `error.code`; a failed spawn or
+          // a signal reads as -1, as `spawnSync`'s null status did.
+          const code = error ? (typeof error.code === 'number' ? error.code : -1) : 0
+          settle({ code, output: `${stdout ?? ''}${stderr ?? ''}` })
+        },
+      )
+    })
+    // The cruise runs in a child process, so the module graph loads alongside it.
+    ;[cruise, financeApi] = await Promise.all([run, import('@/lib/finance')])
+  },
+  // Both costs are inherent: a real dependency-cruiser run over the real tree
+  // and a cold load of the whole finance module graph. Measured 2026-11-25 on
+  // the Windows dev box: the cruise 4-9.7 s and the module load ~1.9 s alone,
+  // each inside a case and past Vitest's 5 s default under machine load (#599).
+  // Paid once here; 60 s still fails a genuinely hung cruise.
+  60_000,
+)
+
 describe('the finance module lives inside its boundary (EARS-323)', () => {
   it('EARS-323: `pnpm boundaries` is green over the real tree with the finance module in it', () => {
-    const res = spawnSync(
-      process.execPath,
-      [DEPCRUISE_BIN, 'src', '--config', CONFIG, '--output-type', 'err'],
-      { cwd: REPO_ROOT, encoding: 'utf8' },
-    )
-    const output = `${res.stdout ?? ''}${res.stderr ?? ''}`
-    expect(output).not.toContain('finance')
-    expect(res.status).toBe(0)
+    expect(cruise).toBeDefined()
+    expect(cruise?.output).not.toContain('finance')
+    expect(cruise?.code).toBe(0)
   })
 
   it('EARS-323: the module has a public API at src/lib/finance/index.ts, and it is the only door', () => {
@@ -56,8 +82,9 @@ describe('the finance module lives inside its boundary (EARS-323)', () => {
     }
   })
 
-  it('EARS-516/523: the public API exposes neither raw document storage nor storage keys', async () => {
-    const api = await import('@/lib/finance')
+  it('EARS-516/523: the public API exposes neither raw document storage nor storage keys', () => {
+    const api = financeApi
+    expect(api).toBeDefined()
     expect(api).not.toHaveProperty('resolveFinanceDocumentStorage')
     expect(api).not.toHaveProperty('buildFinanceDocumentStorageKey')
     expect(api).not.toHaveProperty('FINANCE_DOCUMENTS_DEFAULT_DIR')
