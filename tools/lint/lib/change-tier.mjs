@@ -113,7 +113,7 @@ const SERVER_ROUTE_RES = [
   /(?:^|\/)server\//,
   /(?:^|\/)actions\//,
   /(?:^|\/)[^/]*action[^/]*\.[cm]?[jt]sx?$/i,
-  /(?:^|\/)app\/(?:.*\/)?(?:page|layout|route|template|default|loading|error|not-found|global-error)\.[cm]?[jt]sx?$/,
+  /(?:^|\/)app\/(?:.*\/)?(?:page|layout|route|template|default|loading|error|not-found|global-error|global-not-found|forbidden|unauthorized|opengraph-image|twitter-image|icon|apple-icon)\.[cm]?[jt]sx?$/,
 ]
 
 /** A view-layer source whose change is presentational by its path. */

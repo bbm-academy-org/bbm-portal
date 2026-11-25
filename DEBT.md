@@ -974,6 +974,10 @@ Entry format:
 
 <!-- debt-entry-end: 2026-11-25-597-ship-prose-only -->
 
+- [ ] 2026-11-25 Change tiers (#606, PR #607): the presentational Ship class reads paths only, so a modified plain `*.tsx` under `src/` that adds a data fetch, a `'use server'` directive or an async server component classifies as Ship and merges with no review; ds-platform's classifier has the same gap. Recorded rather than fixed because the owner asked for the ds-platform shape without extra machinery (review of PR #607, MAJOR). Return condition: a Ship PR that changed data access or server behaviour in a `.tsx` is found in review or a retro; at that point a patch-content check (`'use server'`, `server-only`, an async component) is added to `tools/lint/lib/change-tier.mjs` with a RED test per signal.
+
+<!-- debt-entry-end: 2026-11-25-606-ship-path-only-tsx -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43
