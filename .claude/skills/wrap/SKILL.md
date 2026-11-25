@@ -1,6 +1,6 @@
 ---
 name: wrap
-description: Use when ending a working session in this repo — "wrap up", "finish the session", before a handoff, or for the end-of-session retro that captures methodology lessons before context is lost. Project-local; this repo only.
+description: Use for the end-of-session retro — "wrap up", "/wrap" — that captures methodology lessons before context is lost, run when the owner asks for it. A plain handoff to the next session needs no retro — that is `handoff-prompt`. Project-local; this repo only.
 ---
 
 # wrap — session-end retro + methodology improvement
@@ -183,33 +183,13 @@ name what each batch actually is (planned slices of an approved spec / old
 list of newly filed numbers reads as newly discovered problems, and that reading
 is the one the owner acts on.
 
-## Phase 5 — durable report and handoff
+## Phase 5 — handoff
 
-Write the handoff from the fixed evidence packet. If the harness provides a
-handoff skill, it may draft the text, but this procedure remains authoritative.
-Note `instructions updated this session: <one-line summary>` when applicable.
-Before emitting, gate the handoff text:
-
-- **Unvalidated assumptions → explicit list.** Anything the handoff asserts that
-  the owner did not confirm in-session (domains, scope decisions, "already
-  agreed" claims) goes into a `Confirm before acting:` list at the top, not into
-  the narrative as fact. _(symptom: handoff carried «портал живёт на
-  cms.bbm.academy» из Caddyfile — «откуда вообще такой контекст? Я не помню
-  согласования».)_
-- **Build+merge scope → owner checkpoint first.** If the handoff authorizes
-  implementation through merge, prepend: «чекпойнт с владельцем до начала
-  имплементации — handoff ≠ согласие владельца на объём». _(symptom: следующая
-  сессия дошла до merge по ошибочному handoff без единого чекпойнта.)_
-
-**Then give the session's durable English record a URL.** Write the primary
-issue comment in the fixed shape owned by
-`.claude/skills/write-iteration-summary/SKILL.md`, then cite that comment URL in
-the handoff. The Russian owner-facing stage-6 report remains governed by
-`report-task-outcome`; do not paste it verbatim into the English tracker record.
-The issue/PR record is the canonical cross-agent continuation point. A report
-that exists only in a conversation or transcript is not a handoff;
-`pnpm session:last-report` is retained only to recover legacy Claude reports
-that missed this rule.
+End the wrap with [`handoff-prompt`](../handoff-prompt/SKILL.md) — the same
+standalone step any session runs without a retro, so its procedure (durable
+issue record, gates, the verified block) lives there only. The wrap adds two
+inputs: the phase-1 handoff seed, and `instructions updated this session:
+<one-line summary>` under its progress when phase 3 landed edits.
 
 ## Project gotchas
 

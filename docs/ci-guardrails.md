@@ -664,7 +664,8 @@ grows — a spent hatch would have to be re-armed before every single dispatch f
 the session, which converts a gate into noise and teaches the lead to re-arm reflexively. The
 bound that replaces one-shot consumption is loudness: while the marker is active every
 dispatch carries an `additionalContext` line naming the override and its reason, and the
-marker is removed by `/wrap`. Owner-only by convention, gitignored by construction.
+marker is removed at session end by the handoff
+(`.claude/skills/handoff-prompt/SKILL.md` step 1). Owner-only by convention, gitignored by construction.
 
 Demotion to WARN per §4 on one confirmed false block that the marker did not adequately
 answer — §3's class-3 paragraph names the same condition. The thresholds are the substantive

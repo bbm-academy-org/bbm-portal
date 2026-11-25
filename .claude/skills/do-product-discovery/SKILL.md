@@ -105,7 +105,7 @@ Both halves of the step-6 handoff gate: the owner's recorded design pick (or the
   acceptance criteria, or the reverse.
 - **Re-implementing the lifecycle** — issue filing, branches, review and merge
   belong to `task-cycle` and `task-canon`, not here.
-- **Proposing `/wrap` before the decisions are written down** — an approved
+- **Ending the session (a handoff or `/wrap`) before the decisions are written down** — an approved
   decomposition that lives only in the session dies with it.
 
 ## Related

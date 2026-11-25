@@ -301,13 +301,14 @@ describe('lead-context-budget messages', () => {
     expect(msg).toContain('handoff-prompt')
   })
 
-  it('the override message announces the override, quotes the reason, and names /wrap', () => {
+  it('the override message announces the override, quotes the reason, and names the handoff that removes the marker', () => {
     const msg = overrideMessage(650_000, 'владелец: доводим релиз')
     expect(msg).toContain('650K')
     expect(msg).toContain('OVERRIDE')
     expect(msg).toContain(OVERRIDE_REL)
     expect(msg).toContain('владелец: доводим релиз')
-    expect(msg).toContain('/wrap')
+    expect(msg).toContain('handoff-prompt')
+    expect(msg).not.toContain('/wrap')
   })
 })
 
