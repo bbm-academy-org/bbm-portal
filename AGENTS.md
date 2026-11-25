@@ -11,6 +11,7 @@ The shared constitution for every agent harness in this repo. Claude Code loads 
 These rule files are `paths:`-scoped: Claude Code loads them only when a session touches a matching file, and Codex does not load them at all. Read the file in full before its action, once per session and again after compaction.
 
 - `.claude/rules/design-process.md` — before any UI work (`*.tsx` view layer, `*.css`, `design-source/`), and before opening ANY PR: §2 owns the `Stage-B:` line every PR carries, plus `UX-sanity:` / `UX-record:`.
+- `.claude/rules/change-tiers.md` — before opening ANY PR: it sets the `Change-tier: Ship|Show|Ask` line every PR carries.
 - `.claude/rules/dev-env.md` — before starting a dev stand, touching the dev IdP, `infra/`, a remote box, or the dev-stand credentials. Its two every-session facts — Node 22 and `git -C` — are owned by §4 here.
 - `.claude/rules/cms-content-contract.md` — before touching a Payload collection, global, field, endpoint, hook or migration.
 - `.claude/rules/okr-module.md` — before touching the OKR module.
