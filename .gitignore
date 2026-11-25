@@ -17,7 +17,7 @@
 # Owner-only escape hatch for the lead context budget (#457): a marker whose
 # FIRST LINE is the owner's reason lifts the dispatch tiers for the CURRENT
 # session (an empty marker is not an override). A live marker, never a committed
-# setting — created on an explicit owner instruction, removed by /wrap.
+# setting — created and removed by the owner only; a handoff reports it.
 # Severity and the class-3 reading of the hatch: docs/ci-guardrails.md §6
 /.claude/lead-budget-override
 
