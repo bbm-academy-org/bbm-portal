@@ -1472,6 +1472,27 @@ describe('gateConditions — routed by change tier', () => {
     expect(res.warn.join('\n')).toMatch(/ship verified/i)
   })
 
+  it('a verified Ship PR stays RED over an outstanding reviewer REQUEST_CHANGES and names it', () => {
+    const res = gateConditions({
+      ...withTier('Change-tier: Ship — a typo in the runbook', [doc]),
+      commits: [{ oid: 'a1', committedDate: '2026-11-25T10:00:00Z' }],
+      comments: [{ body: 'VERDICT: REQUEST_CHANGES', createdAt: '2026-11-25T11:00:00Z' }],
+    })
+    expect(res.tier.effective).toBe('ship')
+    expect(res.red.join('\n')).toMatch(/REQUEST_CHANGES/)
+    expect(res.warn.join('\n')).not.toMatch(/review not required/)
+  })
+
+  it('a Ship PR whose rejection predates the last diff-changing commit is review-free again', () => {
+    const res = gateConditions({
+      ...withTier('Change-tier: Ship — a typo in the runbook', [doc]),
+      commits: [{ oid: 'a1', committedDate: '2026-11-25T12:00:00Z' }],
+      comments: [{ body: 'VERDICT: REQUEST_CHANGES', createdAt: '2026-11-25T11:00:00Z' }],
+    })
+    expect(res.red).toEqual([])
+    expect(res.warn.join('\n')).toMatch(/ship verified/i)
+  })
+
   it('a Ship declaration on a view-layer diff is refused — declared below the minimum', () => {
     const res = gateConditions(withTier('Change-tier: Ship — tiny tweak', [view]))
     expect(res.red.join('\n')).toMatch(/below the minimum show/)
