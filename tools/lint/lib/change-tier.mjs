@@ -80,6 +80,10 @@ const AREA_ASK_RES = [
   /(?:^|\/)(?:[^/]*[._-])?actions?[._-][^/]*$/i,
   // the Payload content contract
   /^src\/(?:collections|globals|fields|hooks)\//,
+  // member PII (152-FZ), the outbound GitHub App integration, the dev-DB seed
+  /^src\/lib\/member\//,
+  /^src\/lib\/site(?:Dispatch|Sync)\./,
+  /^src\/seed\//,
   // security
   /^src\/lib\/platform\/hostAllowlist\./,
   /^SECURITY\.md$/,
@@ -87,17 +91,20 @@ const AREA_ASK_RES = [
   /^docs\/(?:adr|specs)\//,
 ]
 
-/** Ship is an ALLOWLIST: prose, the debt ledger, copy modules. */
-const SHIP_RES = [
-  /^docs\/.+\.mdx?$/,
-  /^DEBT\.md$/,
-  /(?:^|\/)README\.md$/,
-  /^src\/(?:.*\/)?(?:copy\.ts|[^/]+-copy\.ts|copy\/[^/]+\.ts)$/,
-]
+/** Plain prose: Ship at any size and when new (canon docs are Ask paths). */
+const PROSE_RES = [/^docs\/.+\.mdx?$/, /^DEBT\.md$/, /(?:^|\/)README\.md$/]
 
-/** Tests never raise the tier (outside the structural Ask paths). */
+/** Ship is an ALLOWLIST: prose, plus copy modules (line-capped, never new). */
+const SHIP_RES = [...PROSE_RES, /^src\/(?:.*\/)?(?:copy\.ts|[^/]+-copy\.ts|copy\/[^/]+\.ts)$/]
+
+/**
+ * Tests never raise the tier (outside the structural Ask paths).
+ * `tests/helpers/` is NOT a test path: it seeds and deletes users in the shared
+ * dev DB and picks the stand the suite attaches to.
+ */
 export function isTestPath(path) {
   const p = toPosix(path)
+  if (/^tests\/helpers\//.test(p)) return false
   return /\.(?:test|spec|e2e-spec)\.[cm]?[jt]sx?$|(?:^|\/)__tests__\/|^tests\//.test(p)
 }
 
@@ -110,6 +117,12 @@ export function isStructuralAskPath(path) {
 export function isAskPath(path) {
   const p = toPosix(path)
   return isStructuralAskPath(p) || AREA_ASK_RES.some((re) => re.test(p))
+}
+
+/** A plain-prose doc: Ship whatever its size, added or modified. */
+export function isProseDoc(path) {
+  const p = toPosix(path)
+  return !isAskPath(p) && PROSE_RES.some((re) => re.test(p))
 }
 
 /** A non-test path that may change under Ship. */
@@ -152,23 +165,30 @@ export function classifyChangeTier(files, expectedCount) {
     }
     code += 1
     for (const p of paths) if (!structural.includes(p) && isAskPath(p)) ask.push(`ask path: ${p}`)
+    if (paths.every(isProseDoc)) {
+      if (status === 'removed') show.push(`removed file: ${file.path}`)
+      continue
+    }
     if (status !== 'modified') show.push(`${status || 'unknown-status'} file: ${file.path}`)
     if (!isShipPath(file.path)) show.push(`not a ship path (prose / copy): ${file.path}`)
     lines += (Number(file.additions) || 0) + (Number(file.deletions) || 0)
   }
   if (lines > SHIP_LINE_CAP) {
-    show.push(`${lines} changed lines in non-test files (ship cap ${SHIP_LINE_CAP})`)
+    show.push(`${lines} changed lines in non-test, non-prose files (ship cap ${SHIP_LINE_CAP})`)
   }
   if (ask.length) return { minimum: 'ask', reasons: ask }
   if (show.length) return { minimum: 'show', reasons: show }
   if (!code) {
     return { minimum: 'ship', testOnly: true, reasons: [`test-only: ${list.length} test file(s)`] }
   }
-  return { minimum: 'ship', reasons: [`${list.length} prose file(s), ${lines} line(s)`] }
+  return {
+    minimum: 'ship',
+    reasons: [`${list.length} prose / copy file(s), ${lines} capped line(s)`],
+  }
 }
 
 const LINE_RE = /^[ \t>*_-]*change-tier[ \t]*:[ \t]*(.*?)[ \t]*$/gim
-const VALUE_RE = /^\**(ship|show|ask)\**(?:[ \t]*[-–—:][ \t]*(.*))?$/i
+const VALUE_RE = /^[*_ \t]*(ship|show|ask)\**(?:[ \t]*[-–—:][ \t]*(.*))?$/i
 const EMPTY_REASON_RE = /^(?:n\/?a|none|tbd|todo|xxx|\.\.\.|<.*>|_+|-+)?$/i
 
 /**
