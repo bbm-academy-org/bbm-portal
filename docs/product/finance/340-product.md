@@ -46,20 +46,19 @@ what every later reading uses, so any total is reproducible from the postings
 behind it. This settles the rate-policy fork this PRD previously carried as its
 first open question.
 
-_Note, 2026-11-24 (spec 584, pending the owner's go on its open question 1):
-the budget dashboard's ₽/$/€ switch converts only the flow figures — the
-monthly burn, the waterline, the breakdown and its drill-down; the budget
-block (limit, spent, remaining, runway, contributed, income, owed, cash at cost and
-the reconciliation) always stays in the budget's own currency. Under answer
-A, spec 584 EARS-728, the switch keeps this ruling: each operation is
-converted at a rate frozen at its own date, never a period-end rate and never
-one fetched at read time, so past figures do not move with the market
-(US-18). An item in the budget currency records no rate into $ or € of its
-own, so the frozen rate of its date is the Bank of Russia rate; where BBM
-itself paid in a foreign currency, the drill-down row also shows the amount it
-recorded in that currency. The conversion is display only. Answer B,
-EARS-729, would convert by the current recorded-conversion graph instead and
-says that it does not apply this ruling._
+_Note (spec 584; the rate rule is the owner's answer of 2026-11-25): the
+budget dashboard's ₽/$/€ switch converts only the flow figures — the monthly
+burn, the waterline, the breakdown and its drill-down; the budget block
+(limit, spent, remaining, runway, contributed, income, owed, cash at cost and
+the reconciliation) always stays in the budget's own currency. The switch
+applies this ruling: each operation is shown at what it actually recorded —
+what was really paid, fees included, the «Факт» of decision 41 — so a dollar
+invoice paid in baht shows its dollars and the baht the account lost (spec
+584 EARS-728), and past figures do not move with the market (US-18). Only
+where an operation recorded nothing in the chosen currency (a rouble-only
+payment shown in euros) is its budget-currency amount converted at the Bank
+of Russia rate of its own date, frozen, and every figure that includes such
+an amount says so (EARS-729). The conversion is display only._
 
 **Current money is already F1b, not a sixth F3 report.** The accepted
 `Overview.dc.html` card that lists current non-system money-account balances and
@@ -152,8 +151,9 @@ expense category and by counterparty, each adding up to the total with the
 exchange result as its own line, and every line opening the operations behind
 it. A period choice narrows the dynamic and the breakdown; the glass and the
 cash always read from the budget's start. The dynamic and the breakdown can be
-shown in roubles, dollars or euros, converted for display only (which rate
-converts is spec 584's open question); the glass, the runway and the cash stay
+shown in roubles, dollars or euros, converted for display only at each
+operation's actual rate, the Bank of Russia rate only where an operation
+recorded nothing in that currency, and marked; the glass, the runway and the cash stay
 in the budget's own currency, with a line saying so, so they never disagree
 with each other whatever the switch shows. The person holding the
 approve role sets, changes or closes the limit on this same page; nobody
@@ -263,9 +263,10 @@ the two that decide the rest.
   operations behind it. _(owner, 2026-11-24, #584)_
 - **US-28** — As a member, I read the dashboard's dynamic and breakdown in
   roubles, dollars or euros, and the glass, the runway and the cash stay in
-  the budget's own currency when I switch. _(owner, 2026-11-24, #584; which
-  rate converts — spec 584 open question 1; the budget block staying in its
-  own currency is the lead's decision recorded in spec 584 EARS-722)_
+  the budget's own currency when I switch. _(owner, 2026-11-24, #584; the
+  actual rate of each operation converts — owner, 2026-11-25, spec 584
+  EARS-728/729; the budget block staying in its own currency is the lead's
+  decision recorded in spec 584 EARS-722, spec 584 open question 2)_
 - **US-29** — As the holder of the approve role, I set, change or close BBM's
   budget limit on the page that shows it, and no one else can.
   _(owner, 2026-11-24, #581 question 5 / spec 338 EARS-339)_
@@ -350,14 +351,16 @@ screen that could equally mean "not loaded". _(`agent-proposed — UNCONFIRMED`)
 - The budget's cash at cost and exchange result are labelled so that they are
   not mistaken for the `/p/finance` cash total or the ledger's own exchange
   entries, which differ whenever foreign money is held.
-- The per-project spend plus the exchange-result line adds up to the total
-  spend.
+- In the budget's own currency the per-project spend plus the
+  exchange-result line adds up to the total spend; in another currency, to
+  the breakdown's own total.
 - In the budget's own currency the months of the spending chart add up to
   the total spend, and the runway
   can be checked by hand from the remaining limit and the average shown beside
   it.
-- The spend by category and by counterparty each add up to the total spend
-  with the exchange-result line, and every line opens to operations that add
+- The spend by category and by counterparty each add up, with the
+  exchange-result line, to the total spend in the budget's own currency and
+  to the breakdown's own total in another, and every line opens to operations that add
   up to it.
 - Only the approve role can set, change or close the limit; every member can
   read it.

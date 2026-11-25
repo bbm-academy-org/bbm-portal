@@ -847,19 +847,19 @@ research answers.
   them are read in `B`: none follows the reporting-currency switch of decision
   13, because the limit is denominated in `B` and the cost basis is built in it.
   _(Amendment proposed 2026-11-24 by spec 584 EARS-722
-  (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec,
-  and applying under either answer of its open question 1: the figures are
+  (`docs/specs/584-budget-dashboard.md`), pending the owner's go on that spec:
+  the figures are
   still computed only in `B`, and every figure of EARS-338…344 — the limit,
   spent, remaining, contributed, income, owed to members, cash at cost and
   this relation — is always shown in `B`, so this relation is read and shown
   in `B` alone. The dashboard's switch converts only the flow figures built
   from these items — the monthly series, the cumulative series and the
-  EARS-345 breakdown with its drill-down — at read time, never stored: under
-  answer A (EARS-728) each item at the Bank of Russia rate of its own
-  operation's date, under answer B (EARS-729) by one graph factor for the
-  reading, rounded once per shown figure. Only answer A also
-  narrows spec 339 EARS-553, by the pending note written there; answer B
-  needs nothing more. The dashboard lives at
+  EARS-345 breakdown with its drill-down — at read time, never stored: each
+  item at the actual rate of its own operation, that is, by the amounts and
+  conversion steps that operation recorded (EARS-728), and only an item whose
+  operation recorded nothing in the chosen currency at the Bank of Russia
+  rate of its date, labelled as such (EARS-729). That fallback narrows spec
+  339 EARS-553, by the pending note written there. The dashboard lives at
   `/p/finance/reports/budget`, inside the `/p/finance` subtree, and its limit
   form is the one EARS-339 places «on `/p/finance`».)_
 - **EARS-345.** The breakdown of «spent» shall be one line per project — each

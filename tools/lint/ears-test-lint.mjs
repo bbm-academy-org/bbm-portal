@@ -206,7 +206,7 @@ const DEFERRALS_BY_ISSUE = {
   586: {
     ids: Array.from({ length: 29 }, (_, i) => `EARS-${701 + i}`),
     reason:
-      'spec 584 (the BBM budget dashboard on /p/finance/reports/budget: the widget-to-§D-figure mapping, monthly burn, trailing average, runway, waterline, the three breakdowns with drill-down, provisional/withheld states, the reporting-currency switch and the budget-limit form) — EARS-701…729 (one of EARS-728/729 is retired at the owner’s go on open question 1, and its id leaves this list then), written before any code, like spec 338 §D. #586 builds the screen on the #593 read model and the #585 chart element, with tests named after these ids, and drops them from this list.',
+      'spec 584 (the BBM budget dashboard on /p/finance/reports/budget: the widget-to-§D-figure mapping, monthly burn, trailing average, runway, waterline, the three breakdowns with drill-down, provisional/withheld states, the reporting-currency switch and the budget-limit form) — EARS-701…729 (EARS-728 the actual-rate conversion, EARS-729 its labelled Bank of Russia fallback), written before any code, like spec 338 §D. #586 builds the screen on the #593 read model and the #585 chart element, with tests named after these ids, and drops them from this list.',
   },
   559: {
     ids: [],

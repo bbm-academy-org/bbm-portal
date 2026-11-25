@@ -1189,17 +1189,19 @@ the corpus's «потерялась в канале» case).
   route; #593 adds it to the isolation test and keeps the other lines as
   they are._
 
-  _Pending narrowing, proposed 2026-11-24 by spec 584 EARS-728
-  (`docs/specs/584-budget-dashboard.md`) — in force only if the owner picks
-  answer A of that spec's open question 1, and retired with EARS-728
-  otherwise. The budget dashboard (`/p/finance/reports/budget`) may show its
+  _Pending narrowing, proposed by spec 584 EARS-729
+  (`docs/specs/584-budget-dashboard.md`), in force with the owner's go on
+  that spec. The budget dashboard (`/p/finance/reports/budget`) shows its
   flow figures — the monthly burn, the waterline, the breakdown and its
-  drill-down — in $ or € converted from the budget currency item by item,
-  each item at the Bank of Russia rate of its own operation's date, frozen
-  with that date, through the EARS-552 lookup and through RUB as in
-  EARS-550; the budget block (the limit and every spec 338 EARS-340…344
-  total) is never converted. No figure is converted at
-  a rate fetched for the day of reading. The conversion is display only: the
+  drill-down — in the chosen currency item by item, each item at the actual
+  rate of its own operation: the amounts and conversion steps that operation
+  recorded (spec 584 EARS-728), which read no rate. Only an item whose own
+  operation recorded nothing in the chosen currency is converted from the
+  budget currency at the Bank of Russia rate of its operation's date, under
+  EARS-558's rate rule, frozen with that date and labelled «по курсу ЦБ»;
+  the budget block (the limit and every spec 338 EARS-340…344 total) is
+  never converted. No figure is converted at a rate fetched for the day of
+  reading. The conversion is display only: the
   figures are computed in the budget currency by spec 338 §D, every converted
   value is computed at read time, shown and never stored, and no figure of
   spec 338 EARS-340…345, no posting, conversion step, balance or stored
