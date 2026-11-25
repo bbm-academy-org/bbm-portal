@@ -61,8 +61,8 @@ for **changed rules**, not for prose upkeep.
 
 5. **PR** with `Closes #N`, the repo PR template, and a body line naming the
    mode and why (`inline: the decision is not deployed — no live surface`).
-6. **Review** per task-cycle stage 4 (a docs-only ADR PR may merge on green CI,
-   but an ADR that changes a _rule_ is not "docs-only" — dispatch the review).
+6. **Review** per task-cycle stage 4: `docs/adr/` floors at Ask
+   (`.claude/rules/change-tiers.md`), so every ADR PR gets the independent review.
 7. **Merge** per stage 6 and close per stage 7.
 
 ## Procedure — amendment block

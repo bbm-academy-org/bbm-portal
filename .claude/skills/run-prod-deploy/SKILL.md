@@ -36,7 +36,8 @@ range being shipped, not just the last PR:
    `curl -s https://cms.bbm.academy/api/health | jq -r .sha`. Then
    `git log --oneline <deployedSha>..origin/main`.
 2. **Owner acceptance.** Every owner-visible change in the range has passed
-   task-cycle stage 5 (live-stand acceptance) — a merged PR is not an accepted
+   task-cycle stage 5 (acceptance where its change tier puts it,
+   `.claude/rules/change-tiers.md`) — a merged PR is not an accepted
    one. `.claude/skills/task-cycle/SKILL.md`.
 3. **CI is green at `origin/main`.** The pipeline re-asserts this and refuses
    otherwise; check it first so you find out before ten minutes of build.

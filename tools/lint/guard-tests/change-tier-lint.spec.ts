@@ -7,6 +7,7 @@ import {
   isShipPath,
   isTestPath,
   parseDeclaration,
+  resolveTier,
   SHIP_LINE_CAP,
 } from '../lib/change-tier.mjs'
 import { normalizeFilesPage } from '../lib/gh.mjs'
@@ -295,5 +296,54 @@ describe('change-tier-lint.mjs (spawned)', () => {
     })
     expect(res.code).toBe(1)
     expect(res.stderr).toContain('could not fetch')
+  })
+})
+
+/**
+ * Slice B of #597: the one tier resolution every consumer routes by — the
+ * merge gate (`pr:land`) and `stage-b` read the EFFECTIVE tier, never the body
+ * line alone.
+ */
+describe('resolveTier — the effective tier the gates route by', () => {
+  const ui = [mod('src/app/(platform)/p/okr/OkrBoard.tsx')]
+
+  it('the effective tier is max(declared, minimum)', () => {
+    const t = resolveTier('Change-tier: Ask', ui, 1)
+    expect(t).toMatchObject({ declared: 'ask', minimum: 'show', effective: 'ask', below: false })
+  })
+
+  it('a declaration below the minimum is flagged and the minimum wins', () => {
+    const t = resolveTier('Change-tier: Ship — a typo', ui, 1)
+    expect(t).toMatchObject({ declared: 'ship', minimum: 'show', effective: 'show', below: true })
+  })
+
+  it('a missing or malformed declaration is Ask — undeclared never buys a lighter procedure', () => {
+    expect(resolveTier('no line here', [mod('docs/x.md')], 1)).toMatchObject({
+      declared: null,
+      problem: 'missing',
+      minimum: 'ship',
+      effective: 'ask',
+      below: false,
+    })
+    expect(resolveTier('Change-tier: fast', [mod('docs/x.md')], 1).effective).toBe('ask')
+  })
+
+  it('a Ship line without a reason does not buy Ship', () => {
+    expect(resolveTier('Change-tier: Ship', [mod('docs/x.md')], 1).effective).toBe('ask')
+  })
+
+  it('an unreadable or truncated listing floors at Ask', () => {
+    expect(resolveTier('Change-tier: Show — badge', [], 0).minimum).toBe('ask')
+    expect(resolveTier('Change-tier: Show — badge', ui, 3)).toMatchObject({
+      minimum: 'ask',
+      below: true,
+    })
+  })
+
+  it('a verified Ship and a verified Show resolve to themselves', () => {
+    expect(
+      resolveTier('Change-tier: Ship — typo in the runbook', [mod('docs/x.md')], 1).effective,
+    ).toBe('ship')
+    expect(resolveTier('Change-tier: Show — a new empty state', ui, 1).effective).toBe('show')
   })
 })

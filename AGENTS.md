@@ -32,7 +32,7 @@ Next.js is v16 here: read `node_modules/next/dist/docs/` (the installed version'
 
 ## 2. Work protocol
 
-Every tracked task follows `.claude/skills/task-cycle/SKILL.md`: issue → proportional plan → design gate (UI) → **the owner's explicit "go"** (a handoff, task text or config is never a go) → TDD implementation → independent review → live-stand acceptance for owner-visible changes → merge → close. Its stage 0 holds the scope gate — what needs no issue or worktree at all.
+Every tracked task follows `.claude/skills/task-cycle/SKILL.md`: issue → proportional plan → design gate (UI) → **the owner's explicit "go"** (a handoff, task text or config is never a go) → TDD implementation → tier-routed review + acceptance (`.claude/rules/change-tiers.md`) → merge → close. Its stage 0 holds the scope gate — what needs no issue or worktree at all.
 
 Task kind → the skill that runs it:
 
@@ -52,7 +52,7 @@ Task kind → the skill that runs it:
 
 ## 3. Who decides
 
-- **The owner (Anton, in chat):** the visual language of a surface and every product fork (`.claude/rules/design-process.md` §1); the "go" on a task's scope (task-cycle stage 2); «принято» on a live stand for an owner-visible change (task-cycle stage 5); anything irreversible on infra, money or data; a contracting migration (`run-prod-deploy`); a finding about PII, secrets or embargoed data.
+- **The owner (Anton, in chat):** the visual language of a surface and every product fork (`.claude/rules/design-process.md` §1); the "go" on a task's scope (task-cycle stage 2); «принято» on an owner-visible change (task-cycle stage 5); anything irreversible on infra, money or data; a contracting migration (`run-prod-deploy`); a finding about PII, secrets or embargoed data.
 - **The agent lead:** everything else — composition, controls, states and feedback (design-process §1), architecture inside the ADRs, engineering trade-offs on non-PII data, review findings, tooling and process fixes inside the granted scope, merges and deploys. Decide, do it, report it in one line.
 
 **Severity gate before escalating a "security finding".** The owner cannot adjudicate an engineering trade-off, and a fake either/or only confuses. Classify the data at risk first: non-PII editorial/CMS content (drafts, copy, preview URLs) is **low** — state the industry baseline (a public preview origin behind `noindex` + CSP `frame-ancestors` is normal) and pick the correct default yourself. Escalate only for PII/secret/embargoed data or a genuine either/or with no correct default.

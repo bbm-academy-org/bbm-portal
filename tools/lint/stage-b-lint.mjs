@@ -18,6 +18,20 @@
 // A missing marker, or a placeholder value (`TBD`, the unfilled PR-template
 // angle-bracket line), is a violation. A PR with no UI diff is skipped.
 //
+// ROUTED BY CHANGE TIER (#597, `.claude/rules/change-tiers.md`). Where the GO was
+// given depends on the PR's EFFECTIVE tier — re-proven from the changed-file set
+// by the shared classifier (`resolveTier` in `lib/change-tier.mjs`), never read
+// off the body line alone; an undeclared PR routes as Ask:
+//   Show — the owner's GO on the agent-captured PR screenshots is evidence:
+//          Stage-B: GO (screenshots) — <owner, date>
+//          (a live-stand GO is accepted too: it is the stronger record);
+//   Ask  — the GO must come from a live stand; a `GO (screenshots)` is the Show
+//          record and is NOT evidence here;
+//   Ship — the owner's decision in chat, in any sanctioned shape. A Ship PR
+//          cannot carry a UI diff in this repo (a view file floors at Show), so
+//          the branch exists for completeness, not for traffic.
+// A plain `GO — <owner, date>` is the live-stand GO, as it always was.
+//
 // THE GO CARRIES A SIBLING RECORD (#485). A `GO` — and only a `GO` — also
 // requires the LEAD's own UX-sanity pass to exist as an artifact: a
 // `UX-sanity:` block in the PR body, in one of the PR's own comments, or in a
@@ -78,6 +92,7 @@
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { resolveTier } from './lib/change-tier.mjs'
 import { pagePrFiles, prFilesArgs, prFilesPageSize } from './lib/gh.mjs'
 import {
   extractMarkerBlocks,
@@ -128,6 +143,26 @@ const MARKER_RE = /^[ \t>*_-]*stage-?b\s*:\s*(.+?)\s*$/gim
  * minor 4). Any separator the shapes use is accepted — `—`, `-`, `:`, `,`, `(`.
  */
 const GO_RE = /^\**go\b\**\s*[-–—:,(]\s*\S/i
+/**
+ * `GO (screenshots) — Антон, 2026-11-25` — the Show-tier GO, given on the
+ * agent-captured Playwright screenshots in the PR (#597). The qualifier is
+ * matched on its own so a qualifier with no attribution after it is recognised
+ * as a screenshot GO that records nothing, not mistaken for a live one.
+ */
+const SCREENSHOT_QUALIFIER_RE = /^\**go\b\**\s*\(\s*[^)]*\bscreenshots?\b[^)]*\)/i
+const SCREENSHOT_GO_RE = /^\**go\b\**\s*\(\s*[^)]*\bscreenshots?\b[^)]*\)\s*[-–—:,]\s*\S/i
+
+/** The owner's GO from a live stand — every GO that is not the screenshot shape. */
+export function isLiveGo(value) {
+  return GO_RE.test(value) && !SCREENSHOT_QUALIFIER_RE.test(value)
+}
+/** The owner's GO on the PR screenshots (the Show-tier record). */
+export function isScreenshotGo(value) {
+  return SCREENSHOT_GO_RE.test(value)
+}
+function isGo(value) {
+  return isLiveGo(value) || isScreenshotGo(value)
+}
 /** `batched at #117` — the batched acceptance gate carve-out. */
 const BATCHED_RE = /^\**batched\s+at\s+#\d+/i
 /**
@@ -263,9 +298,18 @@ export function extractMarkerValues(text) {
   return [...semantic.matchAll(MARKER_RE)].map((m) => (m[1] ?? '').replace(/^[\s*_]+/, '').trim())
 }
 
-/** Is this marker value one of the three sanctioned records? */
+/** Is this marker value one of the sanctioned records, in any tier? */
 export function isEvidence(value) {
-  return GO_RE.test(value) || BATCHED_RE.test(value) || LEAD_CERTIFIED_RE.test(value)
+  return isGo(value) || BATCHED_RE.test(value) || LEAD_CERTIFIED_RE.test(value)
+}
+
+/**
+ * Is this marker value evidence for a PR routed at `tier`? Only Ask narrows the
+ * set: its GO must come from a live stand (#597).
+ */
+export function isEvidenceFor(value, tier) {
+  if (tier === 'ask' && isScreenshotGo(value)) return false
+  return isEvidence(value)
 }
 
 /** Issue numbers a PR body auto-closes, deduped in first-seen order. */
@@ -288,7 +332,8 @@ export function extractLinkedIssues(body) {
 }
 
 const SHAPES = [
-  '    Stage-B: GO — <owner, date>',
+  '    Stage-B: GO — <owner, date>                (from a live stand — any tier)',
+  '    Stage-B: GO (screenshots) — <owner, date>  (on the PR screenshots — Show only)',
   '    Stage-B: batched at #<gate issue>',
   '    Stage-B: N/A (no visual surface) — lead-certified',
 ]
@@ -297,20 +342,27 @@ const SHAPES = [
  * The pure seam: given a `gh pr view --json number,body,files` payload and the
  * comment bodies of its linked issues, decide the verdict. No IO.
  *
- * @param {{number?: number, body?: string, files?: {path: string}[]}} pr
+ * @param {{number?: number, body?: string, changedFiles?: number, comments?: (string|{body?: string})[],
+ *          files?: (string|import('./lib/change-tier.mjs').ChangeTierFile)[]}} pr
  * @param {string[]} [issueComments]
- * @returns {{userFacing: boolean, verdict: 'skip'|'pass'|'violation',
+ * @returns {{userFacing: boolean, tier: import('./lib/change-tier.mjs').ChangeTier,
+ *            verdict: 'skip'|'pass'|'violation',
  *            renderFiles: string[], markerValues: string[], evidence: string|null,
  *            message: string}}
  */
 export function checkStageB(pr, issueComments = []) {
-  const files = (pr?.files ?? []).map((f) => (typeof f === 'string' ? f : f?.path)).filter(Boolean)
+  const entries = (pr?.files ?? [])
+    .map((f) => (typeof f === 'string' ? { path: f } : f))
+    .filter((f) => f?.path)
+  const files = entries.map((f) => f.path)
   const rendered = renderFiles(files)
   const number = pr?.number ?? '?'
+  const tier = resolveTier(pr?.body ?? '', entries, pr?.changedFiles).effective
 
   if (rendered.length === 0) {
     return {
       userFacing: false,
+      tier,
       verdict: 'skip',
       renderFiles: [],
       markerValues: [],
@@ -323,7 +375,7 @@ export function checkStageB(pr, issueComments = []) {
     ...extractMarkerValues(pr?.body ?? ''),
     ...issueComments.flatMap((c) => extractMarkerValues(c)),
   ]
-  const evidence = markerValues.find(isEvidence) ?? null
+  const evidence = markerValues.find((v) => isEvidenceFor(v, tier)) ?? null
 
   if (evidence) {
     // Only a GO carries the sibling record: it is the one shape with an
@@ -332,7 +384,7 @@ export function checkStageB(pr, issueComments = []) {
     // `batched at #N` line happened to come before its real GO used to clear the
     // GO's own requirement, and a bypass path in a BLOCK guard is the defect
     // class this sub-check exists to remove (review of PR #493, MAJOR 1).
-    if (markerValues.some((v) => GO_RE.test(v))) {
+    if (markerValues.some(isGo)) {
       const sanityTexts = [
         pr?.body ?? '',
         ...(pr?.comments ?? []).map((c) => (typeof c === 'string' ? c : (c?.body ?? ''))),
@@ -348,6 +400,7 @@ export function checkStageB(pr, issueComments = []) {
               : `PR #${number}'s UX-sanity record leaves ${sanity.missing.length} of ${SANITY_FACETS.length} item(s) unrecorded: ${sanity.missing.join(', ')}.`
         return {
           userFacing: true,
+          tier,
           verdict: 'violation',
           renderFiles: rendered,
           markerValues,
@@ -364,6 +417,7 @@ export function checkStageB(pr, issueComments = []) {
     }
     return {
       userFacing: true,
+      tier,
       verdict: 'pass',
       renderFiles: rendered,
       markerValues,
@@ -373,8 +427,12 @@ export function checkStageB(pr, issueComments = []) {
   }
 
   const placeholder = markerValues.find((v) => isPlaceholderValue(v))
-  const head =
-    markerValues.length === 0
+  const screenshotOnAsk = tier === 'ask' && markerValues.some(isScreenshotGo)
+  const head = screenshotOnAsk
+    ? `PR #${number} is a UI diff routed as Change-tier ask, and its Stage-B GO was given on ` +
+      'screenshots — Ask still requires the owner’s «принято» on a live stand ' +
+      '(the screenshot GO is the Show-tier record, .claude/rules/change-tiers.md).'
+    : markerValues.length === 0
       ? `PR #${number} is a UI diff (${rendered.length} view file(s), e.g. ${rendered.slice(0, 3).join(', ')}) but records NO Stage-B verdict.`
       : placeholder !== undefined
         ? `PR #${number} is a UI diff and its Stage-B marker is still the unfilled placeholder "${placeholder.slice(0, 60)}".`
@@ -382,13 +440,16 @@ export function checkStageB(pr, issueComments = []) {
 
   return {
     userFacing: true,
+    tier,
     verdict: 'violation',
     renderFiles: rendered,
     markerValues,
     evidence: null,
     message: [
       head,
-      'task-cycle stage 5: an owner-visible change does not merge without «принято» on a LIVE stand.',
+      `task-cycle stage 5: an owner-visible change does not merge without the owner's «принято» — ` +
+        `routed as Change-tier ${tier}: ` +
+        (tier === 'show' ? 'on the PR screenshots or a live stand.' : 'on a LIVE stand.'),
       'Record it in the PR body (or a comment on the linked issue), in one of:',
       ...SHAPES,
     ].join('\n'),
@@ -403,7 +464,15 @@ export function checkStageB(pr, issueComments = []) {
  * stand, so the PR body is not the only surface that can carry it.
  */
 export function ghPrArgs(prNumber) {
-  return ['pr', 'view', String(prNumber), '--repo', REPO, '--json', 'number,body,comments']
+  return [
+    'pr',
+    'view',
+    String(prNumber),
+    '--repo',
+    REPO,
+    '--json',
+    'number,body,comments,changedFiles',
+  ]
 }
 /**
  * ONE page of the PR's changed files. The `files` field of `gh pr view` stops at

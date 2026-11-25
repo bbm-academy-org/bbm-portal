@@ -48,8 +48,9 @@ that. Tracker artifacts (issues, PRs, comments) keep their numbers.
    «Owner-report form» section below.
 2. **«Проверить глазами: \<URL\>»** — a real URL the owner opens themselves,
    with the access line (login + where the password comes from) when the surface
-   is behind auth. A screenshot is the agent's working evidence, never the
-   showing (stage 5). If the change has no visual surface, the honest form is
+   is behind auth, on every change tier: this report follows the deploy, so a
+   Show change is live too. Show's PR screenshots were the pre-merge acceptance
+   (stage 5), never this line. If the change has no visual surface, the honest form is
    the literal alternative: **«визуально ничего не меняется; проверяется так:
    \<тест / поведение / команда\>»** — do NOT fill the point with PR/repo links
    to make it look satisfied.

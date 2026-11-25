@@ -1,6 +1,6 @@
 ---
 name: task-cycle
-description: Mandatory lifecycle for every tracked task in this repo — issue → proportional plan → design gate (UI) → owner "go" → implementation (TDD) → review → live-stand acceptance → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
+description: Mandatory lifecycle for every tracked task in this repo — issue → proportional plan → design gate (UI) → owner "go" → implementation (TDD) → review → acceptance routed by change tier → merge → close. Use when picking up, planning, implementing, reviewing, or closing any task. Project-local; this repo only.
 ---
 
 # task-cycle — the task lifecycle regulation
@@ -165,33 +165,50 @@ code has no failing artifact to prove it addressed the finding, and round 2 then
 spends itself on a defect round 1's fix introduced (PR #282 took three rounds
 exactly that way, PR #294 two; every extra round lengthens the session and breeds
 incidental findings). The fix-agent's brief carries this line. **The review-free class is
-narrow (owner, 2026-08-05): a docs-only PR that touches NO process-canon file**
-— canon is `.claude/skills/task-cycle/**`, `.claude/rules/**`, root `CLAUDE.md`,
-root `AGENTS.md`. Such a PR merges on green CI without the review subagent and
-without the iteration-end gate. **Everything else runs both** — any code,
-tooling or migration change, and ANY edit to a canon file, prose or not: the
-independent review above, plus the iteration-end gate before the review is
-requested (dispatched, never self-checked; what its verdict permits — including
-its one BLOCKED-but-proceed escape — is owned by
+the Ship change tier** (`.claude/rules/change-tiers.md` owns the tiers and the
+classifier that floors them): a verified Ship PR — plain prose, a capped copy edit,
+or test-only — merges on green CI without the review subagent and without the
+iteration-end gate. **Show and Ask run both** — any code, tooling or migration
+change, and ANY edit to a canon file (`.claude/**`, root `CLAUDE.md` /
+`AGENTS.md`), prose or not, since those paths floor at Ask: the independent
+review above, plus the iteration-end gate before the review is requested
+(dispatched, never self-checked; what its verdict permits — including its one
+BLOCKED-but-proceed escape — is owned by
 `.claude/skills/run-iteration-end-checklist/SKILL.md`). A canon edit changes how
 every future session behaves; that is exactly why it does not count as docs.
-This boundary is defined here and nowhere else — other files point at it.
+`pnpm pr:land` re-proves the tier from the changed-file set and refuses a
+declaration below the minimum, so the class cannot be claimed by the body line
+alone. This boundary is defined here and nowhere else — other files point at it.
 Decision context goes onto the PR as comments, proactively (memory:
 `always-document-on-prs`).
 
 ## Stage 5 — acceptance of visible changes (blocks merge)
 
-An owner-visible change does NOT merge without the owner's "принято" on a LIVE
-stand. The showing is always a real URL the owner opens themselves: normally the
-preview stand; until it exists — the dev stand or a tunnel. A screenshot or a
-localhost render is the agent's working evidence, never the showing. **This
-section is the single home of the acceptance protocol** — the UI skill
+An owner-visible change does NOT merge without the owner's "принято". **Where it
+is given follows the PR's effective change tier** (`.claude/rules/change-tiers.md`):
+
+- **Ask** — on a LIVE stand. The showing is a real URL the owner opens
+  themselves: normally the preview stand; until it exists — the dev stand or a
+  tunnel. A screenshot or a localhost render is the agent's working evidence,
+  never the showing. Recorded as `Stage-B: GO — <owner, date>`.
+- **Show** — on the agent-captured Playwright screenshots posted in the PR, with
+  no stand visit. Items 2–5 below still run in full — the journey, the eyes-on
+  matrix, the UX-sanity pass and its `UX-record` / `UX-sanity:` records are
+  mandatory on Show — and item 6's invitation is the PR comment carrying the
+  frames instead of a URL. Recorded as `Stage-B: GO (screenshots) — <owner, date>`.
+- **Ship** — no stand and no screenshot ceremony: Stage-B is the owner's decision
+  in chat, recorded as today.
+
+`pnpm lint:stage-b <PR>` routes the record by the same effective tier: a
+screenshot GO on an Ask PR is not evidence. **This section is the single home of
+the acceptance protocol** — the UI skill
 (`.claude/skills/build-ui-from-design-system/SKILL.md` step 6) points here and
 does not restate it.
 
-**1. The stand — seeded, and booted by the LEAD's own session.** Never by a
-subagent: a subagent's listeners are reaped when it returns, and the owner then
-opens a dead URL. Take the port with `pnpm dev:ports`, start it as
+**1. The stand — seeded, and booted by the LEAD's own session** whenever the owner
+opens it (Ask). Never by a subagent: a subagent's listeners are reaped when it
+returns, and the owner then opens a dead URL. On Show the stand only feeds the
+capture, so the capturing agent may boot its own. Take the port with `pnpm dev:ports`, start it as
 `PORT=<n> pnpm dev` (range 3000–3009; never kill a listener you did not start —
 `.claude/rules/parallel-sessions.md`). The data comes from the worktree's own
 branch DB: `pnpm dev:db:branch` migrates AND seeds it, `pnpm dev:seed` refreshes
@@ -250,18 +267,20 @@ owner; that is a stop state, not an acceptance.** The agent LOOKED at the frames
 it captured. Anything odd in them is re-observed live before the invitation — an
 inference («скорее всего, момент загрузки») is not an observation.
 
-**6. The invitation.** Its FIRST line is the live URL (memory
+**6. The invitation.** On Ask its FIRST line is the live URL (memory
 `proverit-glazami-is-live-ui-only`); login and where to get the password follow
 on the next line; the screenshots are attached as eyes-on evidence and never
-lead or substitute. The owner is never handed a test script («scenario 1: add a
+lead or substitute. On Show its first line is the PR comment that carries the
+frames, and those frames ARE the showing. The owner is never handed a test script («scenario 1: add a
 member…»): the invitation carries the agent's own per-scenario evidence
 (scenario → driven → result → capture) and asks only «принято?». An unanswered
 design/visual question = merge stays blocked.
 
 Invisible changes (internals, refactoring, docs, backend without UI) skip this
 stage — no screenshot ceremony on backend work — but the PR still records
-**which** case it is: every PR carries a `Stage-B:` line (`GO` / `batched at #N`
-/ `N/A — lead-certified`), checked by `pnpm lint:stage-b <PR>`, and a UI diff
+**which** case it is: every PR carries a `Stage-B:` line (`GO` / `GO (screenshots)`
+on Show / `batched at #N` / `N/A — lead-certified`), checked by
+`pnpm lint:stage-b <PR>`, and a UI diff
 also carries the agent's `UX-record:` block, checked by
 `pnpm lint:ux-record <PR>` (both: `.claude/rules/design-process.md`).
 

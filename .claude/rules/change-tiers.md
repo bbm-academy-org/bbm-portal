@@ -5,6 +5,7 @@ paths:
   - 'tools/lint/change-tier-lint.mjs'
   - 'tools/lint/lib/change-tier.mjs'
   - 'tools/gh/**'
+  - 'tools/lint/stage-b-lint.mjs'
 ---
 
 <!-- READ-ON-DEMAND (`paths:` frontmatter, so not always-on). The frontmatter must stay the first bytes of the file. Indexed in AGENTS.md §0: read it before opening any PR, to set the `Change-tier:` line. -->
@@ -27,4 +28,9 @@ Owner decision: 2026-11-24, recorded in the body of #597 (option "a", the ds-pla
 
 **Ship paths** (an allowlist; tests are exempt): plain prose — `docs/**/*.md` outside `docs/{adr,specs}/`, `DEBT.md`, a `README.md` — at any size and when new; a copy module (`copy.ts`, `*-copy.ts`, `copy/*.ts` under `src/`), capped and never new. Canon docs (`docs/specs/`, `docs/adr/`, the rule and skill files under `.claude/`) are prose too but keep their Ask floor on purpose: they are decisions and procedure, not copy. Unlike ds-platform, a view-layer `*.tsx` / `*.css` is never a ship path here: bbm's Ship is prose only.
 
-**Enforcement.** The `change-tier` guard (`pnpm lint:change-tier <PR>`, job in `pr-body-guards.yml`, row in `docs/ci-guardrails.md` §5) reports a missing/duplicate/malformed line and a declaration below the minimum. It is WARN today; the merge gate (`pnpm pr:land`) and `stage-b` do not yet route by tier, so until that second slice of #597 lands every PR still runs the procedure the task-cycle and `design-process.md` prescribe — the declaration is recorded, not yet acted on.
+**Routing.** Every gate routes by the **effective** tier — `resolveTier` in the classifier: max(declared, minimum), and Ask when the line is missing or invalid, so an undeclared PR never buys a lighter procedure. Each gate re-proves the minimum from the PR's changed-file set itself; the body line alone is never trusted.
+
+- `pnpm pr:land` refuses a declaration below the minimum, lifts the review requirement only for a verified Ship (the review-free class, `.claude/skills/task-cycle/SKILL.md` stage 4), and names the acceptance the tier owes.
+- `pnpm lint:stage-b` routes the Stage-B record: Show accepts the owner's `Stage-B: GO (screenshots) — <owner, date>`, Ask only the live-stand `GO — <owner, date>` (`.claude/rules/design-process.md` §2; the acceptance protocol is task-cycle stage 5).
+
+**Enforcement.** The `change-tier` guard (`pnpm lint:change-tier <PR>`, job in `pr-body-guards.yml`, row in `docs/ci-guardrails.md` §5) reports a missing/duplicate/malformed line and a declaration below the minimum. Its CI job is WARN until the §4 promotion clock allows BLOCK (the §5 row holds the date); the merge gate already refuses a declaration below the minimum.

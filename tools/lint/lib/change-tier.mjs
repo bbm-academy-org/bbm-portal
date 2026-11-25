@@ -221,3 +221,43 @@ export function parseDeclaration(body) {
 export function meetsMinimum(declared, minimum) {
   return ORDER[declared] >= ORDER[minimum]
 }
+
+/** The higher of two tiers. */
+export function maxTier(a, b) {
+  return ORDER[a] >= ORDER[b] ? a : b
+}
+
+/**
+ * The tier a PR is ROUTED by — the one resolution the merge gate (`pr:land`)
+ * and `stage-b` read, so the two can never disagree about which procedure a PR
+ * owes. The body line is a claim; the changed-file set re-proves it:
+ *
+ * - `effective` = max(declared, minimum);
+ * - no valid declaration (missing, duplicated, malformed, a Ship/Show line
+ *   with no reason) routes as Ask — an undeclared PR never buys a lighter
+ *   procedure;
+ * - `below` is a declaration under the minimum — the finding a gate refuses.
+ *
+ * @param {string} body
+ * @param {ChangeTierFile[] | null | undefined} files
+ * @param {number} [changedFiles] the PR's own count — a mismatch floors at Ask
+ * @returns {{ declared: ChangeTier | null, problem: string | null, minimum: ChangeTier,
+ *             effective: ChangeTier, below: boolean, reasons: string[], testOnly: boolean }}
+ */
+export function resolveTier(body, files, changedFiles) {
+  const declaration = parseDeclaration(body)
+  const { minimum, reasons, testOnly } = classifyChangeTier(
+    Array.isArray(files) ? files : [],
+    changedFiles,
+  )
+  const declared = declaration.problem ? null : declaration.tier
+  return {
+    declared,
+    problem: declaration.problem,
+    minimum,
+    effective: declared ? maxTier(declared, minimum) : 'ask',
+    below: Boolean(declared) && !meetsMinimum(declared, minimum),
+    reasons,
+    testOnly: Boolean(testOnly),
+  }
+}
