@@ -384,7 +384,10 @@ export function checkStageB(pr, issueComments = []) {
     // `batched at #N` line happened to come before its real GO used to clear the
     // GO's own requirement, and a bypass path in a BLOCK guard is the defect
     // class this sub-check exists to remove (review of PR #493, MAJOR 1).
-    if (markerValues.some(isGo)) {
+    // A verified Ship owes no screenshot ceremony (`.claude/rules/change-tiers.md`):
+    // `tier` is 'ship' only when the declaration AND the re-proven minimum agree,
+    // so any other route keeps the UX-sanity requirement.
+    if (markerValues.some(isGo) && tier !== 'ship') {
       const sanityTexts = [
         pr?.body ?? '',
         ...(pr?.comments ?? []).map((c) => (typeof c === 'string' ? c : (c?.body ?? ''))),

@@ -143,7 +143,8 @@ cannot be read at all) is not a violation and always exits non-zero: a check tha
 must not look clean.
 
 **A `GO` also carries the lead's own pass — `UX-sanity:`** — either GO, so the pass
-stays mandatory on Show. Before the owner is invited to a stand or to the PR
+stays mandatory on Show and Ask; a verified Ship owes none, its GO being the
+owner's chat decision ([`change-tiers.md`](./change-tiers.md)). Before the owner is invited to a stand or to the PR
 screenshots, the lead runs the elementary UX-sanity pass over the CAPTURED
 SCREENSHOTS (owner rule, Антон, 2026-08-31: green acceptance scenarios are not
 readiness to show). Since #485 that pass is an ARTIFACT: a `UX-sanity:` block —
