@@ -790,9 +790,14 @@ a declared clause.
   existing counterparty or create one inline (any submitter may — it is a
   name, not money data; names are case-insensitively unique, creation is
   audited per spec 201); renaming is reference administration
-  (`platform-admin` or `finance-entry`, EARS-529); a posting carries the FK, so «what did we
+  (`platform-admin` or `finance-entry`, EARS-529); the intake item carries the FK (`finance_intake_item.counterparty_id`; an operation has at most one item), so «what did we
   pay X» is a query. Merging duplicates is out of scope for v1 — admin
   rename covers it.
+
+  _Revised 2026-11-24 (spec 584 review, #584): the previous text said «a posting
+  carries the FK»; the shipped schema has always stored it on the intake item,
+  and the wording now says so. No posting column is implied._
+
 - **EARS-526.** WHERE no purpose in the reference fits, the form shall let
   the member file a free-text **purpose proposal** alongside a draft request;
   the proposal is not a purpose, appears in the reference cabinet,
@@ -1184,6 +1189,31 @@ the corpus's «потерялась в канале» case).
   route; #593 adds it to the isolation test and keeps the other lines as
   they are._
 
+  _Pending narrowing, proposed by spec 584 EARS-722 and EARS-729
+  (`docs/specs/584-budget-dashboard.md`), in force with the owner's go on
+  that spec. The budget dashboard (`/p/finance/reports/budget`) shows every
+  figure in the chosen currency (owner, 2026-11-25). A flow figure is
+  converted item by item, each item at the actual rate of its own operation:
+  the amounts and conversion steps that operation recorded (spec 584
+  EARS-728), which read no rate. Only an item whose own operation recorded
+  nothing in the chosen currency is converted from the budget currency at
+  the Bank of Russia rate of its operation's date, under EARS-558's rate
+  rule, frozen with that date and labelled as spec 584 EARS-729 items 1–2
+  prescribe; no flow figure is converted at a rate fetched for the day of
+  reading. A stock figure — a balance as of today, not a sum of dated
+  operations (the limit, remaining, owed to members, cash at cost) — is
+  converted from the budget
+  currency at the latest stored rate under EARS-558's rule, as EARS-550
+  converts an unpaid request at today's rate, and is labelled with that
+  rate's date (spec 584 EARS-722 item 2). The conversion is display only: the
+  figures are computed in the budget currency by spec 338 §D, every converted
+  value is computed at read time, shown and never stored, and no figure of
+  spec 338 EARS-340…345, no posting, conversion step, balance or stored
+  amount is computed from it.
+  The dashboard route is then one more allowlisted reader beside the barrel,
+  the sync CLI, the queue, the §J route and the §D budget read model; #586
+  adds it to the isolation test and keeps the other lines as they are._
+
   _Revised 2026-11-18 (owner decision 41, §J). The previous version read:
   «The CBR rates shall be a presentation source only: no posting, conversion
   step, balance, F1b card value or F3 report shall read them, and no amount
@@ -1458,7 +1488,7 @@ register, that dependency is named in the step:
    requests in every stage: the page opens on «В работе» with «Ждёт
    решения», «К оплате», «Вернуть сотруднику» and a collapsed «Черновики»;
    the three sums on top match the group totals; clicking «К оплате» leaves
-   only that group. Search «#<id>» finds the one request; the period filter
+   only that group. Search «#\<id\>» finds the one request; the period filter
    narrows the rows but not the sums. As a member without `finance-approve`
    the same groups show with no buttons (EARS-535…541).
 9. **One currency.** Switch ₽ → $: every amount and sum changes; a USD request
