@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Вариант B + Treemap</title>
+<style>
+/* ---- inlined verbatim: base.css ---- */
+/* Kit tokens: src/ui/theme.css (shadcn neutral, radix-nova), transcribed. */
+:root {
+  color-scheme: light;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --border: oklch(0.922 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --radius: 0.625rem;
+  --mark-prov-bg: var(--mark-provisional);
+  --mark-prov-fg: var(--mark-provisional-foreground);
+  --mark-cbr-bg: oklch(0.97 0 0);
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --destructive: oklch(0.704 0.191 22.216);
+  --mark-prov-bg: var(--mark-provisional);
+  --mark-prov-fg: var(--mark-provisional-foreground);
+  --mark-cbr-bg: oklch(0.269 0 0);
+}
+/* PROPOSED theme tokens (#585 pick: B + treemap) — what #586 adds to src/ui/theme.css, replacing the stock grey --chart-1..5.
+   shadcn naming and format (oklch, :root + .dark). Values validated: tools in BudgetDashboard.research.md. */
+:root {
+  --chart-1: oklch(0.55 0.162 255.8);   /* spent / gross burn (B accent) */
+  --chart-2: oklch(0.771 0.101 251.4);  /* net burn (after income) */
+  --chart-3: oklch(0.698 0.177 44.3);   /* contributions (identity colour) */
+  --chart-4: oklch(0.42 0.138 257.4);   /* average level, gross */
+  --chart-5: oklch(0.511 0.158 256.4);  /* average level, net */
+  --chart-6: oklch(0.955 0.018 253.3);  /* blue wash: partial month, waterline area */
+  --chart-7: oklch(0.55 0.162 255.8);   /* breakdown slot 1 */
+  --chart-8: oklch(0.534 0.105 170.5);  /* breakdown slot 2 */
+  --chart-9: oklch(0.779 0.164 75.9);   /* breakdown slot 3 */
+  --chart-10: oklch(0.87 0 0);          /* breakdown: every other item */
+  --chart-11: oklch(0.708 0 0);         /* breakdown: FX result (hatch stroke) */
+  --chart-ink-light: oklch(0.985 0 0);  /* label ink on dark fills */
+  --chart-ink-dark: oklch(0.145 0 0);   /* label ink on light fills */
+  --mark-provisional: oklch(0.968 0.041 90.2);
+  --mark-provisional-foreground: oklch(0.456 0.099 69.1);
+}
+:root[data-theme='dark'], .dark {
+  --chart-1: oklch(0.636 0.168 253.6);
+  --chart-2: oklch(0.468 0.15 257.5);
+  --chart-3: oklch(0.661 0.177 43.7);
+  --chart-4: oklch(0.819 0.081 251.1);
+  --chart-5: oklch(0.727 0.122 251.5);
+  --chart-6: oklch(0.255 0.055 256.7);
+  --chart-7: oklch(0.511 0.158 256.4);
+  --chart-8: oklch(0.534 0.105 170.5);
+  --chart-9: oklch(0.698 0.146 74.8);
+  --chart-10: oklch(0.371 0 0);
+  --chart-11: oklch(0.556 0 0);
+  --chart-ink-light: oklch(0.985 0 0);
+  --chart-ink-dark: oklch(0.145 0 0);
+  --mark-provisional: oklch(0.296 0.056 83.9);
+  --mark-provisional-foreground: oklch(0.852 0.125 83.2);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  font-size: 14px;
+  line-height: 1.45;
+}
+.page { max-width: 1160px; margin: 0 auto; padding: 40px 24px; }
+a { color: inherit; }
+.hdr { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+.crumb { font-size: 12px; color: var(--muted-foreground); }
+h1 { font-size: 24px; font-weight: 600; margin: 2px 0 4px; letter-spacing: -0.01em; }
+.meta { font-size: 13px; color: var(--muted-foreground); }
+.hdr-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.hdr-actions { display: flex; gap: 8px; }
+.btn { font: inherit; font-size: 13px; font-weight: 500; height: 32px; padding: 0 12px; border-radius: calc(var(--radius) * 0.8); border: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+.btn.ghost { border-color: transparent; color: var(--muted-foreground); }
+.seg { display: inline-flex; padding: 3px; background: var(--muted); border-radius: calc(var(--radius) * 0.8); }
+.seg button { font: inherit; font-size: 13px; border: 0; background: transparent; padding: 4px 12px; border-radius: calc(var(--radius) * 0.6); color: var(--muted-foreground); }
+.seg button.on { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); font-weight: 500; }
+.rateline { margin-top: 10px; font-size: 12px; color: var(--muted-foreground); max-width: 900px; }
+.rateline a { text-decoration: underline; text-underline-offset: 2px; }
+.mark { display: inline-block; font-size: 11px; font-weight: 500; line-height: 16px; padding: 0 6px; border-radius: 999px; margin-left: 6px; vertical-align: 1px; background: var(--muted); color: var(--muted-foreground); white-space: nowrap; }
+.mark.prov { background: var(--mark-prov-bg); color: var(--mark-prov-fg); }
+.mark.cbr { background: var(--mark-cbr-bg); color: var(--muted-foreground); border: 1px solid var(--border); }
+.diffline { font-size: 12px; color: var(--muted-foreground); margin-top: 8px; padding-left: 10px; border-left: 2px solid var(--border); }
+.periods { display: inline-flex; gap: 2px; padding: 3px; background: var(--muted); border-radius: calc(var(--radius) * 0.8); }
+.periods button { font: inherit; font-size: 12px; border: 0; background: transparent; padding: 4px 10px; border-radius: calc(var(--radius) * 0.6); color: var(--muted-foreground); }
+.periods button.on { background: var(--background); color: var(--foreground); font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.tabs { display: inline-flex; padding: 3px; background: var(--muted); border-radius: calc(var(--radius) * 0.8); margin-bottom: 12px; }
+.tabs button { font: inherit; font-size: 13px; border: 0; background: transparent; padding: 4px 12px; border-radius: calc(var(--radius) * 0.6); color: var(--muted-foreground); }
+.tabs button.on { background: var(--background); color: var(--foreground); font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--muted-foreground); margin: 4px 0 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sw.hatch { background: repeating-linear-gradient(45deg, var(--c) 0 2px, transparent 2px 5px); outline: 1px solid var(--c); outline-offset: -1px; }
+.ln { width: 16px; border-top: 2px solid; display: inline-block; }
+.ln.dash { border-top-style: dashed; }
+svg text { font-family: inherit; }
+svg .tick { font-size: 11px; fill: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+svg .tick.sm, svg .lbl.sm { font-size: 10px; }
+svg .lbl { font-size: 11px; fill: var(--muted-foreground); }
+svg .lbl.strong { fill: var(--foreground); font-weight: 600; font-size: 12px; }
+.note { font-size: 12px; color: var(--muted-foreground); margin: 8px 0 0; }
+.blist { display: flex; flex-direction: column; }
+.brow { display: grid; grid-template-columns: 260px 1fr 130px 60px 16px; align-items: center; gap: 14px; padding: 8px 6px; border-radius: 6px; text-decoration: none; font-variant-numeric: tabular-nums; }
+.brow:hover { background: var(--muted); }
+.brow.fx { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 12px; color: var(--muted-foreground); }
+.bname { font-size: 13px; }
+.btrack { height: 8px; }
+.bbar { display: block; height: 8px; border-radius: 0 4px 4px 0; }
+.bval { text-align: right; font-size: 13px; font-weight: 500; }
+.bshare { text-align: right; font-size: 12px; color: var(--muted-foreground); }
+.chev { color: var(--muted-foreground); }
+.bfoot { font-size: 12px; color: var(--muted-foreground); margin-top: 10px; }
+.eq { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; font-size: 13px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.eq b { color: var(--foreground); font-weight: 600; }
+.neq { font-weight: 700; color: var(--foreground); }
+.since { font-size: 12px; color: var(--muted-foreground); font-weight: 400; }
+.runway .k { font-size: 13px; color: var(--muted-foreground); }
+.runway .v { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; margin: 2px 0 4px; }
+.runway .s { font-size: 12px; color: var(--foreground); margin-top: 2px; }
+.runway .s.muted { color: var(--muted-foreground); }
+@media (max-width: 760px) {
+  .page { padding: 24px 16px; }
+  .hdr { flex-direction: column; }
+  .hdr-side { align-items: flex-start; }
+  .periods { flex-wrap: wrap; }
+  .brow { grid-template-columns: 1fr auto 48px 12px !important; gap: 8px; }
+  .brow .btrack { grid-column: 1 / -1; order: 5; }
+}
+</style>
+<style>
+  /* Option B: one blue accent (sequential steps) + orange for contributions; a literal vertical glass; KPI tile grid; charts side by side */
+  /* Every colour is a proposed theme token from base.css (--chart-*), never a literal. */
+  :root { --b-strong: var(--chart-1); --b-light: var(--chart-2); --b-deep: var(--chart-4); --b-mid: var(--chart-5); --b-wash: var(--chart-6); --contrib: var(--chart-3); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.4); box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); padding: 20px 22px; }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .card .sub { font-size: 12px; color: var(--muted-foreground); margin: 0 0 10px; }
+  .top { display: grid; grid-template-columns: 330px 1fr; gap: 16px; margin-top: 24px; }
+  .right { display: flex; flex-direction: column; gap: 16px; }
+  .glasswrap { display: grid; grid-template-columns: 120px 1fr; gap: 18px; align-items: stretch; margin-top: 6px; }
+  .glass { position: relative; height: 300px; border: 2px solid var(--b-strong); border-top: 0; border-radius: 0 0 18px 18px; background: var(--muted); overflow: hidden; }
+  .glass .water { position: absolute; left: 0; right: 0; bottom: 0; background: var(--b-strong); }
+  .glass .water::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--b-deep); opacity: .5; }
+  .glass .rim { position: absolute; left: -2px; right: -2px; top: 0; border-top: 2px dashed var(--b-strong); }
+  .gl { display: flex; flex-direction: column; justify-content: space-between; height: 300px; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .gl b { display: block; color: var(--foreground); font-size: 14px; font-weight: 600; }
+  .hero-v { font-size: 40px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.05; margin-top: 2px; }
+  .k { font-size: 13px; color: var(--muted-foreground); }
+  .rw { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  .rw .runway .v { font-size: 40px; }
+  .burnmini { font-size: 12px; color: var(--muted-foreground); }
+  .burnmini .bar { height: 8px; border-radius: 0 4px 4px 0; margin: 4px 0 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .tile { padding: 12px 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .tile:nth-child(3n) { border-right: 0; }
+  .tile:nth-child(n+4) { border-bottom: 0; }
+  .tile .v { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .tile .m .mark { margin: 4px 4px 0 0; }
+  .tile.eqtile { display: flex; align-items: center; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .full { margin-top: 16px; }
+  .row-h { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 24px 0 0; }
+  .row-h h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .bbar { border-radius: 0 4px 4px 0; }
+  /* Treemap breakdown: three hue slots (blue / teal / amber, from option C's palette, re-stepped for AA white labels;
+     orange skipped — in B it means «взносы»); every other item a neutral step; FX result hatched. */
+  :root { --tm1: var(--chart-7); --tm2: var(--chart-8); --tm3: var(--chart-9); --tm-rest: var(--chart-10); --tm-fx: var(--chart-11); --tm-gap: var(--card); }
+  .tm { position: relative; margin-top: 4px; }
+  .tm svg { display: block; width: 100%; }
+  .tm .tile-g { cursor: pointer; }
+  .tm .tile-g rect.f { stroke: var(--tm-gap); stroke-width: 2; }
+  .tm .tile-g:hover rect.ring, .tm .tile-g.hl rect.ring { stroke: var(--foreground); stroke-width: 2; }
+  .tm text { font-variant-numeric: tabular-nums; pointer-events: none; }
+  .tm .t-name { font-size: 13px; font-weight: 600; }
+  .tm .t-val { font-size: 13px; font-weight: 500; }
+  .tm .t-share { font-size: 12px; }
+  .tm .t-mark { font-size: 10.5px; font-weight: 600; }
+  .brow.hl, .brow:focus-visible { background: var(--muted); outline: none; }
+  .brow:focus-visible { box-shadow: 0 0 0 2px var(--foreground) inset; }
+  .tm-tip { position: absolute; pointer-events: none; background: var(--card); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); padding: 8px 10px; font-size: 12px; min-width: 180px; display: none; z-index: 5; font-variant-numeric: tabular-nums; }
+  .tm-tip b { font-size: 13px; }
+  .tm-tip .r { display: flex; justify-content: space-between; gap: 16px; margin-top: 2px; }
+  .tm-tip .r span:first-child { color: var(--muted-foreground); }
+  .tm-tip .mark { margin: 4px 4px 0 0; }
+  .tm-neg { font-size: 12px; color: var(--muted-foreground); margin: 6px 0 0; }
+  .bbar.fxh, .sw.fxh { background: repeating-linear-gradient(45deg, var(--tm-fx) 0 2px, transparent 2px 5px); outline: 1px solid var(--tm-fx); outline-offset: -1px; }
+  .sheet-bg { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); display: none; z-index: 20; }
+  .sheet { position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100vw); background: var(--card); border-left: 1px solid var(--border); padding: 22px; z-index: 21; display: none; overflow: auto; }
+  .sheet.open, .sheet-bg.open { display: block; }
+  .sheet h3 { margin: 0 0 2px; font-size: 17px; }
+  .sheet .x { position: absolute; top: 14px; right: 14px; }
+  .sheet .ph { margin-top: 16px; border: 1px dashed var(--border); border-radius: 8px; padding: 14px; font-size: 12px; color: var(--muted-foreground); }
+  @media (max-width: 760px) {
+    .top, .two, .rw { grid-template-columns: 1fr; }
+    .tiles { grid-template-columns: 1fr 1fr; }
+    .tile:nth-child(n) { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .row-h { flex-direction: column; align-items: flex-start; }
+    .top > *, .two > *, .right > * { min-width: 0; }
+    .glasswrap { grid-template-columns: 90px minmax(0,1fr); }
+    .mark { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<div class="page" id="root"></div>
+<script>
+/* ---- inlined verbatim: shared.js ---- */
+// Synthetic data + chart builders shared by the three #585 option previews.
+// No real amounts: every figure here is invented and internally consistent
+// with spec 584 (spent = Σ months = Σ breakdown; reconciliation holds in B).
+(function () {
+  const q = new URLSearchParams(location.search);
+  const CUR = q.get('cur') === 'usd' ? 'usd' : 'rub';
+  if (q.get('theme') === 'dark') document.documentElement.dataset.theme = 'dark';
+
+  const LIMIT = 4000000;
+  const CBR_LATEST = 80; // ₽ per $ on 24 нояб. 2026, synthetic
+  const months = [
+    { k: 'мар', full: 'март', gross: 210000, income: 0, contrib: 500000, rate: 90 },
+    { k: 'апр', full: 'апрель', gross: 340000, income: 0, contrib: 0, rate: 88 },
+    { k: 'май', full: 'май', gross: 295000, income: 0, contrib: 800000, rate: 84, cbr: true },
+    { k: 'июн', full: 'июнь', gross: 410000, income: 0, contrib: 0, rate: 82 },
+    { k: 'июл', full: 'июль', gross: 380000, income: 40000, contrib: 900000, rate: 80.5, cbr: true },
+    { k: 'авг', full: 'август', gross: 455000, income: 60000, contrib: 0, rate: 80 },
+    { k: 'сен', full: 'сентябрь', gross: 520000, income: 85000, contrib: 700000, rate: 81, cbr: true },
+    { k: 'окт', full: 'октябрь', gross: 470000, income: 95000, contrib: 0, rate: 80.5 },
+    { k: 'ноя', full: 'ноябрь', gross: 260000, income: 50000, contrib: 600000, rate: 80, partial: true },
+  ];
+  const cats = [
+    ['Команда', 1480000],
+    ['Подрядчики', 720000],
+    ['Сервисы и софт', 410000],
+    ['Реклама', 365000],
+    ['Офис и связь', 190000],
+    ['без категории', 95000],
+  ];
+  const FX = ['курсовой результат', 80000];
+  const OWED = 145000;
+  const PROV = 38400; // provisional part, 2 open debts
+
+  const toD = (rub, rate) => (CUR === 'usd' ? Math.round(rub / rate) : rub);
+  const stockD = (rub) => (CUR === 'usd' ? Math.round((rub / CBR_LATEST) * 100) / 100 : rub);
+
+  const m = months.map((x) => {
+    const gross = toD(x.gross, x.rate);
+    const income = toD(x.income, x.rate);
+    return { ...x, gross, income, net: gross - income, contrib: toD(x.contrib, x.rate) };
+  });
+  const spent = m.reduce((s, x) => s + x.gross, 0);
+  const income = m.reduce((s, x) => s + x.income, 0);
+  const contributed = m.reduce((s, x) => s + x.contrib, 0);
+  // breakdown in D: scale category values to sum exactly to spent
+  const rubSpent = months.reduce((s, x) => s + x.gross, 0);
+  const allLines = [...cats, FX];
+  let acc = 0;
+  const lines = allLines.map(([n, v], i) => {
+    const d = i === allLines.length - 1 ? spent - acc : Math.round((v / rubSpent) * spent);
+    acc += d;
+    return { name: n, value: d, fx: i === allLines.length - 1 };
+  });
+  const limit = stockD(LIMIT);
+  const remainingB = LIMIT - rubSpent;
+  const remaining = stockD(remainingB);
+  const owed = stockD(OWED);
+  const cashB = 3500000 + 330000 - rubSpent + OWED; // EARS-344 in B
+  const cash = stockD(cashB);
+  const shareUsed = (rubSpent / LIMIT) * 100;
+  const complete = m.filter((x) => !x.partial).slice(-3);
+  const avgGross = Math.round(complete.reduce((s, x) => s + x.gross, 0) / 3);
+  const avgNet = Math.round(complete.reduce((s, x) => s + x.net, 0) / 3);
+  const bComplete = months.filter((x) => !x.partial).slice(-3);
+  const runway = Math.floor(((remainingB * 3) / bComplete.reduce((s, x) => s + x.gross, 0)) * 10) / 10;
+  let cn = 0,
+    cc = 0;
+  const water = m.map((x) => {
+    cn += x.income - x.gross;
+    cc += x.contrib;
+    return { k: x.k, net: cn, contrib: cc, partial: x.partial };
+  });
+  const cbrPart = CUR === 'usd' ? m.filter((x) => x.cbr).reduce((s, x) => s + Math.round(x.gross * 0.35), 0) : 0;
+  const diffGlass = CUR === 'usd' ? Math.round((limit - (spent + remaining)) * 100) / 100 : 0;
+  const diffEq =
+    CUR === 'usd' ? Math.round((contributed + income - (spent + cash - owed)) * 100) / 100 : 0;
+
+  const NB = ' ';
+  const grp = (n, frac) =>
+    new Intl.NumberFormat('ru-RU', { minimumFractionDigits: frac, maximumFractionDigits: frac })
+      .format(n)
+      .replace(/ /g, NB);
+  const sym = CUR === 'usd' ? '$' : '₽';
+  const money = (n, opts = {}) => {
+    const frac = CUR === 'usd' && opts.cents && Math.round(n) !== n ? 2 : 0;
+    const s = grp(Math.abs(n), frac);
+    return (n < 0 ? '−' : opts.sign && n > 0 ? '+' : '') + s + NB + sym;
+  };
+  const compact = (n) => {
+    const a = Math.abs(n);
+    const sign = n < 0 ? '−' : '';
+    if (a >= 1e6) return sign + grp(a / 1e6, a % 1e6 ? 1 : 0) + NB + 'млн';
+    if (a >= 1e3) return sign + grp(a / 1e3, 0) + NB + 'тыс.';
+    return sign + grp(a, 0);
+  };
+  const pct = (n) => grp(n, 1) + NB + '%';
+
+  const F = {
+    CUR,
+    sym,
+    curName: CUR === 'usd' ? 'USD' : 'RUB',
+    months: m,
+    water,
+    lines,
+    limit,
+    spent,
+    remaining,
+    shareUsed,
+    runway,
+    avgGross,
+    avgNet,
+    contributed,
+    income,
+    owed,
+    cash,
+    prov: CUR === 'usd' ? Math.round(PROV / 81) : PROV,
+    provDebts: 2,
+    cbrPart,
+    diffGlass,
+    diffEq,
+    cbrDate: '24 нояб. 2026',
+    money,
+    compact,
+    pct,
+    grp,
+    rateLine:
+      CUR === 'usd'
+        ? 'операции, выплаты и предварительная часть — по фактическому курсу каждой операции; лимит, остаток, долги участникам и деньги на счетах — по курсу ЦБ на 24 нояб. 2026; графики совпадают по форме с видом в RUB с точностью до разницы курсов операций · по курсу ЦБ: 23 из 186 операций периода'
+        : 'все суммы в RUB, точно, без пересчёта',
+    glassNote: () =>
+      `в $ лимит ≠ потрачено + остаток на ${money(diffGlass, { sign: true, cents: true })}: лимит и остаток — по курсу ЦБ на 24 нояб. 2026, расходы — по курсу операций; точно — в RUB`,
+    eqNote: () =>
+      `в $ равенство расходится на ${money(diffEq, { sign: true, cents: true })}: деньги на счетах и долги участникам — по курсу ЦБ на 24 нояб. 2026, взносы, доход и расходы — по курсу операций; точно — в RUB`,
+    waterNote:
+      CUR === 'usd'
+        ? 'Уровень −лимит — по курсу ЦБ на 24 нояб. 2026, линия — по курсам операций, поэтому пересечение не обязано совпасть с «лимит исчерпан», который считается в RUB.'
+        : 'Доход не возвращает лимит: пересечение уровня −лимит совпадёт с опустевшим стаканом только при нулевом доходе.',
+  };
+
+  // ---------- SVG builders ----------
+  function niceTicks(min, max, count) {
+    const span = max - min;
+    const raw = span / count;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((s) => s * mag).find((s) => span / s <= count) || 10 * mag;
+    const lo = Math.floor(min / step) * step;
+    const hi = Math.ceil(max / step) * step;
+    const t = [];
+    for (let v = lo; v <= hi + step / 2; v += step) t.push(Math.round(v));
+    return t;
+  }
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+  // monthly gross + net columns with trailing-average levels
+  F.monthlySVG = function (T, W, H) {
+    const padL = 64,
+      padR = T.padR ?? 150,
+      padT = 14,
+      padB = 34;
+    const iw = W - padL - padR,
+      ih = H - padT - padB;
+    const maxV = Math.max(...m.map((x) => x.gross));
+    const minV = Math.min(0, ...m.map((x) => x.net));
+    const ticks = niceTicks(minV, maxV * 1.05, 4);
+    const y0 = ticks[0],
+      y1 = ticks[ticks.length - 1];
+    const y = (v) => padT + ih - ((v - y0) / (y1 - y0)) * ih;
+    const band = iw / m.length;
+    const bw = Math.min(T.barW || 18, band / 3);
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Расход по месяцам: валовый и чистый, со средним за 3 полных месяца">`;
+    s += `<defs><pattern id="hatch${T.id}" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="${T.grossPartialBg}"/><line x1="0" y1="0" x2="0" y2="6" stroke="${T.gross}" stroke-width="2.5"/></pattern></defs>`;
+    ticks.forEach((t) => {
+      s += `<line x1="${padL}" x2="${padL + iw}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? T.axis : T.grid}" stroke-width="1"/>`;
+      s += `<text x="${padL - 8}" y="${y(t) + 4}" text-anchor="end" class="tick">${compact(t)}</text>`;
+    });
+    const r = T.radius ?? 4;
+    const col = (x, v, fill, extra = '') => {
+      const top = y(Math.max(v, 0)),
+        bot = y(Math.min(v, 0));
+      const h = Math.max(bot - top, 1);
+      if (v >= 0)
+        return `<path d="M${x},${bot} V${top + r} q0,-${r} ${r},-${r} h${bw - 2 * r} q${r},0 ${r},${r} V${bot} Z" fill="${fill}" ${extra}/>`;
+      return `<path d="M${x},${top} V${bot - r} q0,${r} ${r},${r} h${bw - 2 * r} q${r},0 ${r},-${r} V${top} Z" fill="${fill}" ${extra}/>`;
+    };
+    m.forEach((x, i) => {
+      const cx = padL + band * i + band / 2;
+      const gx = cx - bw - 1,
+        nx = cx + 1;
+      s += col(gx, x.gross, x.partial ? `url(#hatch${T.id})` : T.gross);
+      s += col(nx, x.net, x.partial ? T.netPartial : T.net);
+      s += `<text x="${cx}" y="${padT + ih + 16}" text-anchor="middle" class="tick">${x.k}</text>`;
+      if (x.partial) s += `<text x="${cx}" y="${padT + ih + 29}" text-anchor="middle" class="tick sm">неполный</text>`;
+      if (CUR === 'usd' && x.cbr)
+        s += `<circle cx="${cx}" cy="${y(x.gross) - 9}" r="3.5" fill="none" stroke="${T.text2}" stroke-width="1.5"><title>частично по курсу ЦБ</title></circle>`;
+    });
+    // trailing-average levels over the last 3 complete months
+    const idx = m.findIndex((x) => x === complete[0]);
+    const xa = padL + band * idx + 4,
+      xb = padL + band * (idx + 3) - 4;
+    s += `<line x1="${xa}" x2="${xb}" y1="${y(avgGross)}" y2="${y(avgGross)}" stroke="${T.avg}" stroke-width="2" stroke-linecap="round"/>`;
+    s += `<line x1="${xa}" x2="${xb}" y1="${y(avgNet)}" y2="${y(avgNet)}" stroke="${T.avgNet}" stroke-width="2" stroke-dasharray="${T.avgNetDash || '5 4'}" stroke-linecap="round"/>`;
+    const lx = padL + iw + 12;
+    s += `<text x="${lx}" y="${y(avgGross) - 2}" class="lbl">ср. валовый</text><text x="${lx}" y="${y(avgGross) + 12}" class="lbl strong">${money(avgGross)}</text>`;
+    s += `<text x="${lx}" y="${y(avgNet) + 14}" class="lbl">ср. чистый</text><text x="${lx}" y="${y(avgNet) + 28}" class="lbl strong">${money(avgNet)}</text>`;
+    s += `<text x="${lx}" y="${y(avgNet) + 44}" class="lbl sm">за 3 мес.: авг–окт</text>`;
+    s += `</svg>`;
+    return s;
+  };
+
+  // waterline: cumulative net result vs cumulative contributed vs −limit
+  F.waterSVG = function (T, W, H) {
+    const padL = 64,
+      padR = T.padR ?? 150,
+      padT = 16,
+      padB = 26;
+    const iw = W - padL - padR,
+      ih = H - padT - padB;
+    const lo = -limit * 1.08,
+      hi = Math.max(...water.map((p) => p.contrib)) * 1.1;
+    const ticks = niceTicks(lo, hi, 6);
+    const y0 = ticks[0],
+      y1 = ticks[ticks.length - 1];
+    const y = (v) => padT + ih - ((v - y0) / (y1 - y0)) * ih;
+    const n = water.length;
+    const x = (i) => padL + (iw * (i + 0.5)) / n;
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Ватерлиния: накопленный чистый результат, накопленные взносы и уровень минус лимит">`;
+    ticks.forEach((t) => {
+      s += `<line x1="${padL}" x2="${padL + iw}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? T.axis : T.grid}" stroke-width="${t === 0 ? 1.5 : 1}"/>`;
+      s += `<text x="${padL - 8}" y="${y(t) + 4}" text-anchor="end" class="tick">${compact(t)}</text>`;
+    });
+    water.forEach((p, i) => {
+      s += `<text x="${x(i)}" y="${padT + ih + 18}" text-anchor="middle" class="tick">${p.k}${p.partial ? '*' : ''}</text>`;
+    });
+    // −limit reference
+    s += `<line x1="${padL}" x2="${padL + iw}" y1="${y(-limit)}" y2="${y(-limit)}" stroke="${T.ref}" stroke-width="1.5" stroke-dasharray="${T.refDash || '6 4'}"/>`;
+    // net area + line
+    const pts = water.map((p, i) => [x(i), y(p.net)]);
+    const area = `M${x(0)},${y(0)} ` + pts.map((p) => `L${p[0]},${p[1]}`).join(' ') + ` L${x(n - 1)},${y(0)} Z`;
+    s += `<path d="${area}" fill="${T.net}" opacity="${T.areaOpacity ?? 0.1}"/>`;
+    s += `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0] + ',' + p[1]).join(' ')}" fill="none" stroke="${T.net}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    // contributed step line
+    let st;
+    st = 'M' + x(0) + ',' + y(water[0].contrib);
+    for (let i = 1; i < n; i++) st += ` H${x(i)} V${y(water[i].contrib)}`;
+    s += `<path d="${st}" fill="none" stroke="${T.contrib}" stroke-width="2" stroke-linejoin="round"/>`;
+    const last = water[n - 1];
+    [
+      [last.net, T.net],
+      [last.contrib, T.contrib],
+    ].forEach(([v, c]) => {
+      s += `<circle cx="${x(n - 1)}" cy="${y(v)}" r="4.5" fill="${c}" stroke="${T.surface}" stroke-width="2"/>`;
+    });
+    if (CUR === 'usd')
+      water.forEach((p, i) => {
+        if (i >= 2) s += `<circle cx="${x(i)}" cy="${y(p.net)}" r="2" fill="${T.text2}"/>`;
+      });
+    const labs = [
+      { y: y(last.contrib), k: "взносы", v: money(last.contrib) },
+      { y: y(last.net), k: "доход − расход", v: money(last.net) },
+      { y: y(-limit), k: "−лимит" + (CUR === "usd" ? " (ЦБ)" : ""), v: money(-limit) },
+    ].sort((p, q) => p.y - q.y);
+    for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 32) labs[i].y = labs[i - 1].y + 32;
+    labs.forEach((l) => {
+      s += `<text x="${padL + iw + 12}" y="${l.y - 2}" class="lbl">${l.k}</text><text x="${padL + iw + 12}" y="${l.y + 12}" class="lbl strong">${l.v}</text>`;
+    });
+    s += `</svg>`;
+    return s;
+  };
+
+  F.esc = esc;
+  window.F = F;
+})();
+</script>
+<script>
+/* ---- inlined verbatim: parts.js ---- */
+// Shared semantic pieces; each option styles and composes them differently.
+(function () {
+  const F = window.F;
+  const usd = F.CUR === 'usd';
+  const cbr = `<span class="mark cbr">по курсу ЦБ на ${F.cbrDate}</span>`;
+  const prov = `<span class="mark prov">предварительно</span>`;
+  const P = {};
+
+  P.header = () => `
+  <header class="hdr">
+    <div class="hdr-main">
+      <div class="crumb">Финансы / Отчёты</div>
+      <h1>Бюджет BBM</h1>
+      <div class="meta">Операционный бюджет 2026 · валюта бюджета RUB · с 1 марта 2026 · рассчитано 25 нояб. 2026, 14:20</div>
+    </div>
+    <div class="hdr-side">
+      <div class="hdr-actions">
+        <button class="btn outline">Изменить лимит</button>
+        <button class="btn ghost">Закрыть бюджет</button>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Валюта отчёта">
+        <button role="radio" aria-checked="${!usd}" class="${usd ? '' : 'on'}">₽ RUB</button>
+        <button role="radio" aria-checked="${usd}" class="${usd ? 'on' : ''}">$ USD</button>
+        <button role="radio" aria-checked="false">€ EUR</button>
+      </div>
+    </div>
+  </header>
+  <div class="rateline">${F.rateLine}${usd ? ' · <a href="#">Курс против рынка →</a>' : ''}</div>`;
+
+  P.glassFigures = () => ({
+    remaining: F.money(F.remaining, { cents: true }),
+    spent: F.money(F.spent),
+    limit: F.money(F.limit, { cents: true }),
+    share: F.pct(F.shareUsed),
+    cbr: usd ? cbr : '',
+    prov,
+    provLine: `из них предварительно ${F.money(F.prov)} · ${F.provDebts} открытых долга в валюте`,
+    cbrPart: usd ? `<span class="mark cbr">частично по курсу ЦБ · ${F.money(F.cbrPart)}</span>` : '',
+    note: usd && F.diffGlass ? `<div class="diffline">${F.glassNote()}</div>` : '',
+    provNote: usd
+      ? `<div class="diffline">в $ предварительная часть ≠ её доле в долгах участникам на +4${' '}$: долги участникам — по курсу ЦБ на ${F.cbrDate}, предварительная часть — по курсу операций; точно — в RUB</div>`
+      : '',
+  });
+
+  P.runway = () => `
+    <div class="runway">
+      <div class="k">Запас хода ${prov}</div>
+      <div class="v"><span class="num">${F.grp(F.runway, 1)}</span> мес.</div>
+      <div class="s">остаток ÷ средний валовый расход ${F.money(F.avgGross)} за 3 мес. (авг–окт)</div>
+      <div class="s muted">чистый расход после дохода — ${F.money(F.avgNet)} в мес.; в запас хода не входит: доход не пополняет лимит</div>
+    </div>`;
+
+  P.moneyTiles = () => [
+    { k: 'Взносы', v: F.money(F.contributed), m: usd ? `<span class="mark cbr">частично по курсу ЦБ</span>` : '' },
+    { k: 'Доход', v: F.money(F.income), m: '' },
+    { k: 'Потрачено', v: F.money(F.spent), m: prov },
+    { k: 'Долги участникам', v: F.money(F.owed, { cents: true }), m: prov + (usd ? cbr : '') },
+    { k: 'Деньги на счетах', v: F.money(F.cash, { cents: true }), m: `<span class="mark">по себестоимости</span>` + (usd ? cbr : '') },
+  ];
+
+  P.equation = () =>
+    usd
+      ? `<div class="eq"><span>Взносы + доход = <b>${F.money(F.contributed + F.income)}</b></span><span class="neq">≠</span><span>потрачено + на счетах − долги = <b>${F.money(F.spent + F.cash - F.owed, { cents: true })}</b></span></div><div class="diffline">${F.eqNote()}</div>`
+      : `<div class="eq"><span>Взносы + доход = <b>${F.money(F.contributed + F.income)}</b></span><span class="neq">=</span><span>потрачено + на счетах − долги = <b>${F.money(F.spent + F.cash - F.owed)}</b></span></div>`;
+
+  P.period = () => `
+    <div class="periods" role="tablist" aria-label="Период">
+      <button>Этот месяц</button><button>Этот квартал</button><button>Этот год</button><button>Последние 12 месяцев</button><button class="on" aria-selected="true">С начала бюджета</button>
+    </div>`;
+
+  P.dynNote = () =>
+    `<p class="note">Сторно убирает операцию из её собственного месяца: возврат от поставщика уменьшает месяц расхода, а не месяц возврата, поэтому прошлый месяц может измениться.${usd ? ' ◦ — месяц частично по курсу ЦБ.' : ''}</p>`;
+
+  P.legendMonthly = (T) => `
+    <div class="legend">
+      <span><i class="sw" style="background:${T.gross}"></i>Валовый расход</span>
+      <span><i class="sw" style="background:${T.net}"></i>Чистый расход (после дохода)</span>
+      <span><i class="ln" style="border-color:${T.avg}"></i>Среднее валового за 3 мес.</span>
+      <span><i class="ln dash" style="border-color:${T.avgNet}"></i>Среднее чистого</span>
+      <span><i class="sw hatch" style="--c:${T.gross}"></i>неполный месяц, по 25 нояб.</span>
+    </div>`;
+  P.legendWater = (T) => `
+    <div class="legend">
+      <span><i class="ln" style="border-color:${T.net}"></i>Накопленный результат (доход − расход)</span>
+      <span><i class="ln" style="border-color:${T.contrib}"></i>Накопленные взносы</span>
+      <span><i class="ln dash" style="border-color:${T.ref}"></i>−лимит, справочный уровень</span>
+    </div>`;
+
+  P.breakdown = (T, opts = {}) => {
+    const total = F.lines.reduce((s, l) => s + l.value, 0);
+    const max = Math.max(...F.lines.map((l) => l.value));
+    const rows = F.lines
+      .map((l) => {
+        const share = (l.value / total) * 100;
+        const marks = [];
+        if (l.name === 'Подрядчики') marks.push(`<span class="mark prov">предварительно</span>`);
+        if (usd && (l.name === 'Команда' || l.name === 'Реклама')) marks.push(`<span class="mark cbr">частично по курсу ЦБ</span>`);
+        if (usd && l.name === 'Офис и связь') marks.push(`<span class="mark cbr">по курсу ЦБ</span>`);
+        return `<a class="brow${l.fx ? ' fx' : ''}" href="#">
+          <span class="bname">${l.name}${marks.join('')}</span>
+          <span class="btrack"><span class="bbar" style="width:${(l.value / max) * 100}%;background:${l.fx ? T.fxBar : T.bar}"></span></span>
+          <span class="bval">${F.money(l.value)}</span><span class="bshare">${F.pct(share)}</span><span class="chev">›</span></a>`;
+      })
+      .join('');
+    return `
+      <div class="tabs" role="tablist"><button>По проектам</button><button class="on" aria-selected="true">По категориям</button><button>По контрагентам</button></div>
+      <div class="blist">${rows}</div>
+      <div class="bfoot">Строки, включая курсовой результат, складываются в потрачено за период: <b>${F.money(total)}</b>. Строка открывает её операции.</div>`;
+  };
+
+  window.P = P;
+})();
+</script>
+<script>
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const T = { id: 'b', gross: css('--b-strong'), grossPartialBg: 'transparent', net: css('--b-light'), netPartial: css('--b-wash'), avg: css('--b-deep'), avgNet: css('--b-mid'),
+    grid: css('--border'), axis: css('--muted-foreground'), text2: css('--muted-foreground'), surface: css('--card'), contrib: css('--contrib'), ref: css('--destructive'),
+    bar: css('--b-strong'), fxBar: css('--b-light'), barW: 12, padR: 96, radius: 3 };
+  const W = { ...T, id: 'b2', net: css('--b-strong') };
+  const g = P.glassFigures();
+  const usd = F.CUR === 'usd';
+  const tiles = P.moneyTiles().map((t) => `<div class="tile"><div class="k">${t.k}</div><div class="v">${t.v}</div><div class="m">${t.m}</div></div>`).join('');
+  const remainPct = 100 - F.shareUsed;
+  document.getElementById('root').innerHTML = `
+  ${P.header()}
+  <div class="top">
+    <section class="card" aria-label="Стакан бюджета">
+      <div class="k">Остаток лимита ${g.prov}${usd ? '<br>' + g.cbr : ''}</div>
+      <div class="hero-v">${g.remaining}</div>
+      <div class="k" style="margin-top:2px">в стакане ${F.pct(remainPct)} · <span class="since">с 1 марта 2026</span></div>
+      <div class="glasswrap">
+        <div class="glass" role="meter" aria-label="Остаток лимита" aria-valuenow="${remainPct.toFixed(1)}" aria-valuemin="0" aria-valuemax="100"><div class="rim"></div><div class="water" style="height:${remainPct}%"></div></div>
+        <div class="gl">
+          <div>План · лимит<b>${g.limit}</b>${usd ? '<span class="mark cbr" style="margin:2px 0 0">ЦБ</span>' : ''}</div>
+          <div>Факт · потрачено<b>${g.spent}</b>использовано ${g.share}${usd ? '<br><span class="mark cbr" style="margin:2px 0 0">частично ЦБ · ' + F.money(F.cbrPart) + '</span>' : ''}</div>
+          <div>Осталось<b>${g.remaining}</b></div>
+        </div>
+      </div>
+      <div class="k" style="margin-top:10px;font-size:12px">${g.provLine}</div>
+      ${g.note}${g.provNote}
+    </section>
+    <div class="right">
+      <section class="card rw">
+        ${P.runway()}
+        <div class="burnmini">
+          <div class="k" style="margin-bottom:6px">Расход в месяц, среднее за авг–окт</div>
+          валовый · ${F.money(F.avgGross)}<div class="bar" style="width:100%;background:${T.gross}"></div>
+          чистый (после дохода) · ${F.money(F.avgNet)}<div class="bar" style="width:${(F.avgNet / F.avgGross) * 100}%;background:${T.net}"></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Взносы и расходы <span class="since">с 1 марта 2026</span></h2>
+        <p class="sub">Что внесено, что потрачено и где деньги сейчас</p>
+        <div class="tiles">${tiles}<div class="tile eqtile"><div style="font-size:12px;color:var(--muted-foreground)">Сверка ниже: взносы и доход против расходов и остатков на счетах</div></div></div>
+        <div style="margin-top:12px">${P.equation()}</div>
+      </section>
+    </div>
+  </div>
+  <div class="row-h"><h3>Динамика</h3>${P.period()}</div>
+  <div class="two">
+    <section class="card">
+      <h2>Расход по месяцам</h2><p class="sub">Валовый и чистый; линии — среднее за 3 полных месяца</p>
+      ${P.legendMonthly(T)}
+      ${F.monthlySVG(T, 510, 270)}
+    </section>
+    <section class="card">
+      <h2>Ватерлиния</h2><p class="sub">Накопленный результат против взносов и уровня −лимит</p>
+      ${P.legendWater(W)}
+      ${F.waterSVG(W, 510, 270)}
+    </section>
+  </div>
+  ${P.dynNote()}<p class="note">${F.waterNote}</p>
+  <section class="card full">
+    <h2>Куда ушли деньги</h2><p class="sub">С начала бюджета · площадь — доля потраченного · плитка или строка открывает операции</p>
+    ${P.breakdown(T)
+      .replace('<div class="blist">', '<div class="tm" id="tm"></div><div id="tmneg"></div><div class="blist" style="margin-top:14px">')
+      .replace('Строка открывает её операции.', 'Плитка или строка открывает её операции.<span id="starnote"></span>')}
+  </section>
+  <div class="sheet-bg" id="sheetbg"></div>
+  <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h"></aside>`;
+
+  // ---- Treemap breakdown (preview stand-in for Recharts <Treemap content={...}> inside ChartContainer) ----
+  (function () {
+    const HUES = ['--tm1', '--tm2', '--tm3'];
+    const total = F.lines.reduce((s, l) => s + l.value, 0); // = spent; FX line included
+    // Colour follows the entity: hue slots belong to the three largest items over the budget's lifetime
+    // (stable per dimension), not to the current rank in a filtered view. Everything else: one neutral step.
+    const items = F.lines.map((l, i) => {
+      const marks = [];
+      if (l.name === 'Подрядчики') marks.push({ c: 'prov', t: 'предварительно' });
+      if (usd && (l.name === 'Команда' || l.name === 'Реклама')) marks.push({ c: 'cbr', t: 'частично по курсу ЦБ' });
+      if (usd && l.name === 'Офис и связь') marks.push({ c: 'cbr', t: 'по курсу ЦБ' });
+      const slot = l.fx ? null : i < HUES.length ? HUES[i] : '--tm-rest';
+      return { ...l, id: 'i' + i, share: (l.value / total) * 100, marks, slot };
+    });
+    const tileable = items.filter((d) => d.value > 0); // area cannot be negative: a negative FX result stays in the list only
+    const negative = items.filter((d) => d.value < 0);
+
+    // squarified layout (Bruls et al.) — Recharts' Treemap uses the same algorithm
+    function squarify(data, x, y, w, h) {
+      const out = [];
+      const sum = data.reduce((s, d) => s + d.value, 0);
+      const scale = (w * h) / sum;
+      const nodes = data.map((d) => ({ d, a: d.value * scale }));
+      let row = [], rect = { x, y, w, h };
+      const worst = (r, side) => { const s = r.reduce((a, n) => a + n.a, 0); const mx = Math.max(...r.map((n) => n.a)), mn = Math.min(...r.map((n) => n.a)); return Math.max((side * side * mx) / (s * s), (s * s) / (side * side * mn)); };
+      const lay = (r) => {
+        const s = r.reduce((a, n) => a + n.a, 0);
+        if (rect.w >= rect.h) { const cw = s / rect.h; let cy = rect.y; r.forEach((n) => { const ch = n.a / cw; out.push({ ...n.d, x: rect.x, y: cy, w: cw, h: ch }); cy += ch; }); rect = { x: rect.x + cw, y: rect.y, w: rect.w - cw, h: rect.h }; }
+        else { const ch = s / rect.w; let cx = rect.x; r.forEach((n) => { const cw = n.a / ch; out.push({ ...n.d, x: cx, y: rect.y, w: cw, h: ch }); cx += cw; }); rect = { x: rect.x, y: rect.y + ch, w: rect.w, h: rect.h - ch }; }
+      };
+      nodes.forEach((n) => { const side = Math.min(rect.w, rect.h); if (!row.length || worst([...row, n], side) <= worst(row, side)) row.push(n); else { lay(row); row = [n]; } });
+      if (row.length) lay(row);
+      return out;
+    }
+    // label ink: whichever of the two text inks has the higher contrast on the tile fill
+    const cvs = document.createElement('canvas').getContext('2d');
+    const rgbOf = (c) => { cvs.fillStyle = '#000'; cvs.fillStyle = c; cvs.fillRect(0, 0, 1, 1); const [r, g, b] = cvs.getImageData(0, 0, 1, 1).data; return [r, g, b]; };
+    const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const cr = (a, b) => { const [h, l] = [Math.max(a, b), Math.min(a, b)]; return (h + 0.05) / (l + 0.05); };
+    // label ink from the two ink tokens by measured WCAG contrast: the light ink whenever it reaches AA 4.5:1, else the higher of the two
+    const inkFor = (fill) => { const L = lum(rgbOf(fill)), li = css('--chart-ink-light'), di = css('--chart-ink-dark'); const cl = cr(L, lum(rgbOf(li))), cd = cr(L, lum(rgbOf(di))); return cl >= 4.5 || cl >= cd ? li : di; };
+    const meas = document.createElement('canvas').getContext('2d');
+    const tw = (t, px, wt) => { meas.font = `${wt} ${px}px ui-sans-serif, system-ui, sans-serif`; return meas.measureText(t).width; };
+    const fit = (t, px, wt, max) => { if (tw(t, px, wt) <= max) return t; let s = t; while (s.length > 1 && tw(s + '…', px, wt) > max) s = s.slice(0, -1); return s.length > 2 ? s + '…' : null; };
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const fillOf = (d) => css(d.slot || '--tm-fx');
+
+    const host = document.getElementById('tm');
+    const tip = document.createElement('div'); tip.className = 'tm-tip'; tip.setAttribute('aria-hidden', 'true');
+    function render() {
+      const W = host.clientWidth, H = W < 560 ? 300 : 240; let starred = false;
+      const tiles = squarify(tileable, 0, 0, W, H);
+      let s = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Карта долей: ${esc(items.filter((d) => d.value > 0).map((d) => d.name + ' ' + F.pct(d.share)).join(', '))}. Точные суммы — в строках под картой." focusable="false">
+        <defs><pattern id="tmhatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${css('--muted')}"/><rect width="1.6" height="6" fill="${css('--tm-fx')}" fill-opacity=".55"/></pattern></defs>`;
+      tiles.forEach((t) => {
+        const fill = fillOf(t), ink = t.fx ? css('--foreground') : inkFor(fill), pad = 10, iw = t.w - pad * 2;
+        let lab = '';
+        // tier 1: name · amount · share (+ mark chip); tier 2: name · share; tier 3: nothing (tooltip + list carry it)
+        const full = t.w >= 104 && t.h >= 62, mid = t.w >= 58 && t.h >= 34;
+        const nm = mid ? fit(t.name, 13, 600, iw) : null;
+        if (nm && full) {
+          lab += `<text x="${t.x + pad}" y="${t.y + 20}" class="t-name" fill="${ink}">${esc(nm)}</text>`;
+          lab += `<text x="${t.x + pad}" y="${t.y + 38}" class="t-val" fill="${ink}">${esc(fit(F.money(t.value), 13, 500, iw) || '')}</text>`;
+          lab += `<text x="${t.x + pad}" y="${t.y + 55}" class="t-share" fill="${ink}">${F.pct(t.share)}</text>`;
+          // mark chips in the same tokens as the page's marks (provisional: amber chip; CBR: card chip with foreground ink)
+          let cx = t.x + pad, placed = 0;
+          if (t.h >= 84) t.marks.forEach((m) => {
+            const mw = tw(m.t, 10.5, 600) + 12;
+            if (placed < t.marks.length && cx + mw <= t.x + t.w - pad && placed === t.marks.indexOf(m)) {
+              const bgc = m.c === 'prov' ? css('--mark-prov-bg') : css('--card'), fgc = m.c === 'prov' ? css('--mark-prov-fg') : css('--foreground');
+              lab += `<rect class="chip" x="${cx}" y="${t.y + 63}" width="${mw}" height="16" rx="8" fill="${bgc}"/><text x="${cx + 6}" y="${t.y + 75}" class="t-mark" fill="${fgc}">${esc(m.t)}</text>`;
+              cx += mw + 4; placed++;
+            }
+          });
+          if (t.marks.length && placed < t.marks.length) {
+            starred = true; lab += `<text x="${t.x + t.w - pad}" y="${t.y + 20}" text-anchor="end" class="t-name" fill="${ink}">*</text>`;
+          }
+        } else if (nm) {
+          lab += `<text x="${t.x + pad}" y="${t.y + 20}" class="t-name" fill="${ink}">${esc(nm)}</text>`;
+          if (t.h >= 50) lab += `<text x="${t.x + pad}" y="${t.y + 37}" class="t-share" fill="${ink}">${F.pct(t.share)}</text>`;
+        }
+        s += `<g class="tile-g" data-id="${t.id}"><rect class="f" x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="4" fill="${t.fx ? 'url(#tmhatch)' : fill}"/><rect class="ring" x="${t.x + 2}" y="${t.y + 2}" width="${Math.max(0, t.w - 4)}" height="${Math.max(0, t.h - 4)}" rx="3" fill="none"/>${lab}</g>`;
+      });
+      host.innerHTML = s + '</svg>';
+      host.appendChild(tip);
+      const sn = document.getElementById('starnote'); if (sn) sn.textContent = starred ? ' Звёздочка на плитке — у строки есть отметка, она в подсказке и в строке ниже.' : '';
+      host.querySelectorAll('.tile-g').forEach((g) => {
+        const d = items.find((x) => x.id === g.dataset.id);
+        g.addEventListener('mousemove', (e) => {
+          const r = host.getBoundingClientRect();
+          tip.innerHTML = `<b>${esc(d.name)}</b><div class="r"><span>потрачено</span><span>${F.money(d.value)}</span></div><div class="r"><span>доля</span><span>${F.pct(d.share)}</span></div>${d.marks.map((m) => `<span class="mark ${m.c}">${m.t}</span>`).join('')}`;
+          tip.style.display = 'block';
+          const x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
+          tip.style.left = Math.min(x, r.width - tip.offsetWidth - 4) + 'px'; tip.style.top = Math.min(y, r.height - tip.offsetHeight + 40) + 'px';
+          hl(d.id, true);
+        });
+        g.addEventListener('mouseleave', () => { tip.style.display = 'none'; hl(d.id, false); });
+        g.addEventListener('click', () => openSheet(d));
+      });
+    }
+    function hl(id, on) {
+      document.querySelectorAll(`[data-id="${id}"]`).forEach((n) => n.classList.toggle('hl', on));
+    }
+    // accessible companion: B's ranked bar rows (links — the keyboard and screen-reader path, exact comparison), bars in their tile's colour
+    document.querySelectorAll('.brow').forEach((a, i) => {
+      const d = items[i];
+      a.dataset.id = d.id;
+      const bar = a.querySelector('.bbar');
+      if (d.fx) { bar.style.background = ''; bar.classList.add('fxh'); } else bar.style.background = `var(${d.slot})`;
+      a.addEventListener('click', (e) => { e.preventDefault(); openSheet(d); });
+      a.addEventListener('mouseenter', () => hl(d.id, true)); a.addEventListener('mouseleave', () => hl(d.id, false));
+      a.addEventListener('focus', () => hl(d.id, true)); a.addEventListener('blur', () => hl(d.id, false));
+    });
+    document.getElementById('tmneg').innerHTML = negative.length ? `<p class="tm-neg">${negative.map((d) => `${esc(d.name)} ${F.money(d.value)}`).join(', ')} — отрицательная сумма, в карте не показана (площадь не бывает отрицательной); учтена в строках и в итоге.</p>` : '';
+
+    // drill-down: the settled data-table block in a Sheet (stand-in)
+    const sheet = document.getElementById('sheet'), bg = document.getElementById('sheetbg');
+    let back = null;
+    function openSheet(d) {
+      back = document.activeElement;
+      sheet.innerHTML = `<button class="btn ghost x" id="sheet-x" aria-label="Закрыть">✕</button><div class="k">Операции · по категориям · с 1 марта 2026</div><h3 id="sheet-h">${esc(d.name)}</h3>
+        <div class="k">${F.money(d.value)} · ${F.pct(d.share)} потраченного${d.marks.map((m) => `<span class="mark ${m.c}">${m.t}</span>`).join('')}</div>
+        <div class="ph">Здесь — таблица операций строки (принятый блок data-table из реестра, в Sheet), как у строки в варианте B.</div>`;
+      sheet.classList.add('open'); bg.classList.add('open');
+      document.getElementById('sheet-x').focus();
+      document.getElementById('sheet-x').addEventListener('click', closeSheet);
+    }
+    function closeSheet() { sheet.classList.remove('open'); bg.classList.remove('open'); if (back) back.focus(); }
+    bg.addEventListener('click', closeSheet);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet(); });
+
+    render();
+    let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(render, 80); });
+  })();
+</script>
+</body>
+</html>
