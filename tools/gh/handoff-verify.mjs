@@ -2,7 +2,7 @@
 // bbm-portal — `pnpm handoff:verify`: deterministic handoff-premise gate (#134).
 //
 // Why: a handoff is a HYPOTHESIS, not a fact — `.claude/skills/task-cycle/SKILL.md`
-// stage 1 says so in prose, and `.claude/skills/wrap/SKILL.md` Phase 5 asks the
+// stage 1 says so in prose, and `.claude/skills/handoff-prompt/SKILL.md` asks the
 // emitting session to gate its own handoff text. Prose does not hold: the next
 // session inherits «PR merged, issue closed» and builds on top of a premise
 // that stopped being true hours earlier. This script makes the check
