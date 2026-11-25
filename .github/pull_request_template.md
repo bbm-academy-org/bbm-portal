@@ -35,7 +35,7 @@ none
 
 <!-- Replace the line below with exactly ONE line, at or above the minimum the
      changed files require (raise it freely, never lower it):
-       Change-tier: Ship — <reason>   (prose / typos / behaviour-free, or test-only)
+       Change-tier: Ship — <reason>   (prose / copy / a small presentational tweak, or test-only)
        Change-tier: Show — <reason>   (ordinary UI or logic, no Ask path)
        Change-tier: Ask               (auth, money, migrations, infra, .claude/, tools/, deps, API)
      Rule: .claude/rules/change-tiers.md · check: `pnpm lint:change-tier <PR>` -->

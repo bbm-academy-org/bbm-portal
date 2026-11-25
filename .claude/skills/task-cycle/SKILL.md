@@ -166,8 +166,8 @@ spends itself on a defect round 1's fix introduced (PR #282 took three rounds
 exactly that way, PR #294 two; every extra round lengthens the session and breeds
 incidental findings). The fix-agent's brief carries this line. **The review-free class is
 the Ship change tier** (`.claude/rules/change-tiers.md` owns the tiers and the
-classifier that floors them): a verified Ship PR — plain prose, a capped copy edit,
-or test-only — merges on green CI without the review subagent and without the
+classifier that floors them): a verified Ship PR — plain prose, a capped copy or
+presentational tweak, or test-only — merges on green CI without the review subagent and without the
 iteration-end gate. **Show and Ask run both** — any code, tooling or migration
 change, and ANY edit to a canon file (`.claude/**`, root `CLAUDE.md` /
 `AGENTS.md`), prose or not, since those paths floor at Ask: the independent

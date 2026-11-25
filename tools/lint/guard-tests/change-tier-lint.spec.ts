@@ -33,10 +33,82 @@ describe('classifyChangeTier — the mechanical minimum', () => {
     expect(c.minimum).toBe('ship')
   })
 
-  it('a src/app UI change is Show', () => {
-    expect(classifyChangeTier([mod('src/app/(platform)/p/hours/page.tsx')]).minimum).toBe('show')
-    expect(classifyChangeTier([mod('src/app/(platform)/p/okr/OkrBoard.tsx')]).minimum).toBe('show')
-    expect(classifyChangeTier([mod('src/components/ui/card.css')]).minimum).toBe('show')
+  it('a small presentational tweak is Ship — a modified view-layer *.tsx / *.css outside Ask paths', () => {
+    const c = classifyChangeTier([
+      mod('src/app/(platform)/p/okr/OkrBoard.tsx', 6),
+      mod('src/app/(platform)/p/hours/hours.css', 4),
+      mod('src/modules/vote/view/PollCard.tsx', 3),
+      mod('src/ui/theme.css', 2),
+    ])
+    expect(c.minimum).toBe('ship')
+    expect(c.testOnly).toBeUndefined()
+  })
+
+  it(`a presentational change over ${SHIP_LINE_CAP} lines, or a new view file, floors at Show`, () => {
+    expect(
+      classifyChangeTier([mod('src/app/(platform)/p/okr/OkrBoard.tsx', SHIP_LINE_CAP + 1)]).minimum,
+    ).toBe('show')
+    expect(
+      classifyChangeTier([
+        mod('src/app/(platform)/p/okr/OkrBoard.tsx', 50),
+        mod('src/app/(platform)/p/okr/okr.css', 31),
+      ]).minimum,
+    ).toBe('show')
+    expect(classifyChangeTier([added('src/app/(platform)/p/okr/OkrBadge.tsx')]).minimum).toBe(
+      'show',
+    )
+    expect(
+      classifyChangeTier([
+        {
+          ...mod('src/app/(platform)/p/okr/Board.tsx'),
+          status: 'renamed',
+          previousPath: 'src/app/(platform)/p/okr/OkrBoard.tsx',
+        },
+      ]).minimum,
+    ).toBe('show')
+  })
+
+  it('a view tweak that also adds logic floors at Show', () => {
+    expect(
+      classifyChangeTier([
+        mod('src/app/(platform)/p/okr/OkrBoard.tsx'),
+        mod('src/lib/okr/progress.ts'),
+      ]).minimum,
+    ).toBe('show')
+  })
+
+  it.each([
+    'src/app/(platform)/p/hours/page.tsx',
+    'src/app/(platform)/p/layout.tsx',
+    'src/app/(platform)/p/okr/loading.tsx',
+    'src/app/(platform)/p/okr/error.tsx',
+    'src/app/(frontend)/not-found.tsx',
+    'src/app/(platform)/p/forbidden.tsx',
+    'src/app/(platform)/p/unauthorized.tsx',
+    'src/app/global-not-found.tsx',
+    'src/app/(frontend)/opengraph-image.tsx',
+    'src/app/(frontend)/twitter-image.tsx',
+    'src/app/icon.tsx',
+    'src/app/apple-icon.tsx',
+    'src/app/(platform)/p/okr/server/OkrData.tsx',
+    'src/modules/vote/view/PollActionButton.tsx',
+    'src/modules/hours/actionState.tsx',
+  ])('%s carries routing or server behaviour: never a ship path (Show)', (path) => {
+    expect(isShipPath(path)).toBe(false)
+    expect(classifyChangeTier([mod(path)]).minimum).toBe('show')
+  })
+
+  it.each([
+    'src/app/(platform)/p/finance/RequestList.tsx',
+    'src/app/(platform)/p/finance/finance.css',
+    'src/app/(platform)/p/auth/SignInNotice.tsx',
+    'src/lib/member/MemberBadge.tsx',
+    'src/app/(platform)/api/p/okr/Badge.tsx',
+    'src/collections/Posts/RowLabel.tsx',
+    'design-source/okr/board.css',
+  ])('the same presentational tweak on an Ask path stays Ask: %s', (path) => {
+    expect(isShipPath(path)).toBe(false)
+    expect(classifyChangeTier([mod(path, 2)]).minimum).toBe('ask')
   })
 
   it('ordinary logic is Show', () => {
@@ -172,7 +244,10 @@ describe('classifyChangeTier — the mechanical minimum', () => {
   it('ship paths and test paths are what the rule file says', () => {
     expect(isShipPath('docs/runbooks/deploy.md')).toBe(true)
     expect(isShipPath('src/lib/okr/copy.ts')).toBe(true)
-    expect(isShipPath('src/app/(platform)/p/okr/OkrBoard.tsx')).toBe(false)
+    expect(isShipPath('src/app/(platform)/p/okr/OkrBoard.tsx')).toBe(true)
+    expect(isShipPath('src/ui/button.tsx')).toBe(true)
+    expect(isShipPath('src/lib/okr/progress.ts')).toBe(false)
+    expect(isShipPath('src/modules/okr/view.d.ts')).toBe(false)
     expect(isTestPath('tests/unit/x.spec.ts')).toBe(true)
     expect(isTestPath('src/lib/okr/__tests__/x.ts')).toBe(true)
     expect(isTestPath('src/lib/okr/x.ts')).toBe(false)
@@ -305,7 +380,7 @@ describe('change-tier-lint.mjs (spawned)', () => {
  * line alone.
  */
 describe('resolveTier — the effective tier the gates route by', () => {
-  const ui = [mod('src/app/(platform)/p/okr/OkrBoard.tsx')]
+  const ui = [mod('src/app/(platform)/p/okr/page.tsx')]
 
   it('the effective tier is max(declared, minimum)', () => {
     const t = resolveTier('Change-tier: Ask', ui, 1)

@@ -766,6 +766,34 @@ describe('stage-b-lint: the Stage-B record is routed by change tier (#597)', () 
     expect(checkStageB(noSanity).message).toMatch(/UX-sanity/)
   })
 
+  it('a Ship UI tweak with no record is told the owner decides in chat, not on a stand', () => {
+    const res = checkStageB(tiered('Change-tier: Ship — tighter card spacing', ''))
+    expect(res.tier).toBe('ship')
+    expect(res.verdict).toBe('violation')
+    expect(res.message).toMatch(/owner.s decision in chat/)
+    expect(res.message).not.toMatch(/LIVE stand/)
+  })
+
+  it('a verified Ship UI tweak passes on the owner’s chat GO with no UX-sanity record', () => {
+    const res = checkStageB({
+      ...tiered('Change-tier: Ship — tighter card spacing', LIVE_GO),
+      comments: [],
+    })
+    expect(res.tier).toBe('ship')
+    expect(res.verdict).toBe('pass')
+  })
+
+  it('a Ship line that does not verify (a route file) still needs the UX-sanity record', () => {
+    const page = { ...view, path: 'src/app/(platform)/p/okr/page.tsx' }
+    const res = checkStageB({
+      ...tiered('Change-tier: Ship — tighter card spacing', LIVE_GO, [page]),
+      comments: [],
+    })
+    expect(res.tier).toBe('show')
+    expect(res.verdict).toBe('violation')
+    expect(res.message).toMatch(/UX-sanity/)
+  })
+
   it('the screenshot shape is a sanctioned marker value', () => {
     expect(isEvidence('GO (screenshots) — Антон, 2026-11-25')).toBe(true)
     expect(isEvidence('GO (screenshots)')).toBe(false)
