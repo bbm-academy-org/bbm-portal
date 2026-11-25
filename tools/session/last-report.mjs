@@ -5,8 +5,8 @@
 // Why it exists: three consecutive sessions each burnt ~12 lead tool calls
 // reconstructing «отчёт последней сессии» from `~/.claude/projects/**/*.jsonl`
 // — globbing slugs, filtering agent logs, hand-decoding UTF-8. The dig is
-// mechanical, so it is a script. (The *cure* is the wrap pasting the report as
-// an issue comment so it has a URL — `.claude/skills/wrap/SKILL.md` phase 5;
+// mechanical, so it is a script. (The *cure* is the handoff posting the record as
+// an issue comment so it has a URL — `.claude/skills/handoff-prompt/SKILL.md` step 1;
 // this tool is the fallback for every session that predates that habit.)
 //
 // What it does:
