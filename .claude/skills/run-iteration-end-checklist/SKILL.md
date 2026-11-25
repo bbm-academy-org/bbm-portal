@@ -104,9 +104,11 @@ For each: **PASS** / **FAIL** (one-line reason) / **N/A** (one-line reason).
     after `pnpm pr:land`, so at gate time it is normally still open.
 12. **Owner-visible change → acceptance recorded** —
     `.claude/skills/task-cycle/SKILL.md` stage 5. Trigger: the change alters
-    something the owner can see. Look for the recorded «принято» and the live URL
-    on the issue, plus the representative-data precondition stage 5 defines. Read
-    the stage before ruling — it says what counts as each. N/A for invisible
+    something the owner can see. Look for the recorded «принято» where the PR's
+    change tier puts it — the live URL on an Ask PR, the PR screenshots on a Show
+    PR (`.claude/rules/change-tiers.md`) — plus the representative-data
+    precondition stage 5 defines. Read the stage before ruling — it says what
+    counts as each. N/A for invisible
     changes (internals, tooling, docs, backend with no UI). The UX sanity pass that
     runs BEFORE the owner is invited (dominance / tiers / not equal boxes /
     legible states) lives in that same stage 5 — read it there; this checklist

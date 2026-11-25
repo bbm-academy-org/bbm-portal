@@ -103,6 +103,11 @@ is a finding — fix it; never rerun until green.
   server-side, and it only re-bases the branch, so it does not send you back for
   a re-review (#222). `--require-review` narrows this to a human APPROVE;
   `--no-review-gate "<reason>"` lifts it and prints the reason as the record.
+  A verified Ship PR owes no verdict — the review-free class of
+  `.claude/skills/task-cycle/SKILL.md` stage 4.
+- **The change tier**, re-proven: the gate classifies the changed-file set
+  itself (`.claude/rules/change-tiers.md`) and is RED when the `Change-tier:`
+  line sits below that minimum — raise the line, never the reverse.
 
 ## The branch is BEHIND — and the update conflicts
 
