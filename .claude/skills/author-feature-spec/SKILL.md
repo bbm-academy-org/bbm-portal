@@ -102,7 +102,8 @@ output.
    - `## Acceptance scenarios` — the owner's own verification walkthrough, each
      naming the `EARS-N` clauses it exercises. These become the TDD tests at
      stage 3 (named `it('EARS-N: …')`, so requirement ↔ test is a grep) and the
-     live-stand script at stage 5.
+     acceptance script at stage 5 (live stand or PR screenshots, by change
+     tier — `.claude/rules/change-tiers.md`).
 6. **New or reshaped UI → the stage-1b design gate.** 2–3 options of any
    fidelity to the owner before any markup; his pick is recorded in the issue and
    referenced from the spec. No pick, no markup.

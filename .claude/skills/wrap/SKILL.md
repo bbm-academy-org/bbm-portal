@@ -6,9 +6,8 @@ description: Use when ending a working session in this repo — "wrap up", "fini
 # wrap — session-end retro + methodology improvement
 
 Trackers: **GitHub Issues** (code/dev work for this repo) **+ Plane**
-(organizational / strategic `BBMP-*`). Instruction files: **CLAUDE.md**
-(authoritative on tracker choice) + **AGENTS.md** (entrypoint and fuller
-context). The evidence and method below work in both Claude Code and Codex.
+(organizational / strategic `BBMP-*`); tracker choice is owned by `AGENTS.md`
+§6. The evidence and method below work in both Claude Code and Codex.
 
 ## Hard rules (read before running)
 
@@ -139,7 +138,7 @@ authorize the wrap to edit it.
   the wrap done, `git status` carries no uncommitted instruction files.
 - **Tracker follow-ups:** load `task-canon`, then file discovered work in the
   tracker it assigns: code/dev work → GitHub; organizational / strategic
-  `BBMP-*` → Plane (`--workspace bbm`). When unsure, CLAUDE.md is authoritative.
+  `BBMP-*` → Plane (`--workspace bbm`). When unsure, `AGENTS.md` §6 is authoritative.
 - Commit the methodology changes on the current branch; stage only the files this
   retro touched.
 
@@ -150,7 +149,7 @@ owns the whole tail: gate → squash-merge → board `Done` → teardown → re-
 whether a PR merging in this wrap needs the
 independent review and the iteration-end gate is decided by the one boundary in
 `.claude/skills/task-cycle/SKILL.md` stage 4 — never re-decided here. In
-practice a wrap's own edits land on canon files (`CLAUDE.md`, `.claude/rules/**`,
+practice a wrap's own edits land on canon files (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/**`,
 `.claude/skills/task-cycle/**`), which puts them in the gated class: a wrap is
 not a bypass of its own regulation. Each task closed here gets its closing comment in
 the fixed shape (`.claude/skills/write-iteration-summary/SKILL.md`); each task
@@ -222,8 +221,8 @@ that missed this rule.
 - **Two trackers, by domain — do not default to one.** **Code/dev** work for this
   repo lives in **GitHub Issues** (`gh issue list/view`, `bbm-academy-org/bbm-portal`).
   **Organizational / strategic / cross-project** work lives in **Plane**
-  (`pp-plane`, `--workspace bbm`, prefixes `BBMP-*`). CLAUDE.md is authoritative;
-  if AGENTS.md and CLAUDE.md disagree, CLAUDE.md wins. _(symptoms: «СТоп, мы разве
+  (`pp-plane`, `--workspace bbm`, prefixes `BBMP-*`). Owner: `AGENTS.md` §6.
+  _(symptoms: «СТоп, мы разве
   в этом проекте в Plane работем, а не в GitHub?»; «При чём тут Plane… я по инерции
   пошёл в Plane из-за инструкций».)_
 - **Plane CLI 403 / empty result → do NOT improvise raw REST.** Load the `pp-plane`
@@ -240,10 +239,10 @@ that missed this rule.
 - **"Done" = verified on the surface the owner sees (prod), not just the dev DB.**
   For seeds/deploys, hit the prod URL (e.g. `cms.bbm.academy`) before reporting
   done — «мы же не локально работем». _(symptom: «А где? я всё ещё вижу пустой
-  Payload CMS» — dev DB seeded, prod empty.)_ **And a screenshot is never the
-  acceptance**: a screenshot/localhost render is evidence for the agent, not the
-  hand-off proof — a product artifact is delivered only when the owner can reach
-  it on a real stand. _(symptom: «А мне не нужен скриншот — дай мне реальный
+  Payload CMS» — dev DB seeded, prod empty.)_ **And the acceptance is the one the
+  change tier names** (task-cycle stage 5): on an Ask PR a screenshot/localhost
+  render is evidence for the agent, not the hand-off proof — that artifact is
+  delivered only when the owner can reach it on a real stand. _(symptom: «А мне не нужен скриншот — дай мне реальный
   стенд, где посмотреть. Что за странный метод сдачи-приёмки?».)_
 - **A deploy config / task text is NOT an owner decision.** Never assert a
   domain, scope, or "already agreed" claim by extrapolating from a Caddyfile,

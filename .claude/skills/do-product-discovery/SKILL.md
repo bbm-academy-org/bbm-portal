@@ -66,8 +66,9 @@ Both halves of the step-6 handoff gate: the owner's recorded design pick (or the
 4. **Dispatch [`author-product-spec`](../author-product-spec/SKILL.md)** —
    `general-purpose`, explicit `model: opus`, return contract ≤30 lines. It
    writes `docs/product/<epic>/brief.md` and one `<NNN>-product.md` per feature.
-   The product-layer PR is a spec artifact: it takes a real review, not the
-   docs-only fast path.
+   The product-layer PR is a spec artifact: it takes a real review — declare it
+   at least `Change-tier: Show`, never the review-free Ship tier
+   (`.claude/rules/change-tiers.md`).
 5. **Design gate (task-cycle stage 1b)** for every `user-facing` feature: 2–3
    options of any fidelity — described layout, wireframe, rendered page — to the
    owner **before** any markup. Record his pick in the issue and reference it

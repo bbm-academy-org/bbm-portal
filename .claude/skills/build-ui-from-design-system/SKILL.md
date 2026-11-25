@@ -168,18 +168,19 @@ The `frontend-design` skill is still loaded before markup, per task-cycle stage 
 copy and routing live in the route/module; the component is the presentation
 scaffold. Module boundaries are machine-checked (`pnpm boundaries`, ADR-002).
 
-**6. Live-verify yourself, then hand the owner a URL.** The acceptance protocol
-— a seeded stand booted by the LEAD's session on a `pnpm dev:ports` port, every
-state driven through Playwright, the full-page 2 breakpoints × 2 themes ×
-forced `:hover` / `:focus-visible` / `:active` matrix, the UX sanity pass, the
-artifacts under `docs/evidence/<issue>/`, and the live URL as the invitation's
-first line — lives in ONE place and is not restated here:
-[`task-cycle`](../task-cycle/SKILL.md) stage 5. Run it as written; a red,
-error-stuck or skeleton-stuck screen is a stop state, not something to hand over.
+**6. Verify it yourself, then show it the way the change tier says.** The
+acceptance protocol — every state driven through Playwright, the full-page
+2 breakpoints × 2 themes × forced `:hover` / `:focus-visible` / `:active`
+matrix, the UX sanity pass, the artifacts under `docs/evidence/<issue>/`, and
+the showing the PR's change tier puts in front of the owner (`Change-tier:`,
+[`.claude/rules/change-tiers.md`](../../rules/change-tiers.md)) — lives in ONE
+place and is not restated here: [`task-cycle`](../task-cycle/SKILL.md) stage 5.
+Run it as written; a red, error-stuck or skeleton-stuck screen is a stop state,
+not something to hand over.
 
 **7. Record Stage-B in the PR.** The PR body's `Stage-B:` line gets the real
-value — `GO — <owner, date>`, `batched at #<gate>`, or
-`N/A (no visual surface) — lead-certified`. Check it with
+value for its tier, in one of the shapes the table in
+[`design-process.md`](../../rules/design-process.md) §2 owns. Check it with
 `pnpm lint:stage-b <PR>` before merging.
 
 ## Output
@@ -198,8 +199,8 @@ value — `GO — <owner, date>`, `batched at #<gate>`, or
 - **Taking a build or an export for the original** (2026-07-27).
 - **Skipping Stage A** — markup before the owner picked a direction; the price
   was the #76 and #84 rework cycles.
-- **A screenshot instead of a live URL** at Stage B, or tearing the stand down
-  before the verdict.
+- **On an Ask PR, a screenshot instead of a live URL** at Stage B, or tearing
+  the stand down before the verdict.
 - **"Nothing above bespoke covers this, so the procedure does not apply."** The
   ladder is designed to run even when no rung above bespoke answers; skipping it
   is how bespoke becomes invisible.

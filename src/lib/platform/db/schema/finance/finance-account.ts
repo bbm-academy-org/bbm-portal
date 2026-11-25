@@ -5,9 +5,11 @@
  *
  *  - the FOUR money kinds (`bank`, `card`, `crypto`, `cash`) are the owner's own
  *    accounts, created and named in the cabinet;
- *  - the FIVE system kinds (`income`, `expense`, `conversion`, `fx_result`,
- *    `liability`) are module-managed: created on first need, one per (kind,
- *    currency), never offered for creation, edit or retirement (EARS-305).
+ *  - the SIX system kinds (`income`, `expense`, `conversion`, `fx_result`,
+ *    `liability`, `equity`) are module-managed: created on first need, one per
+ *    (kind, currency), never offered for creation, edit or retirement
+ *    (EARS-305). `equity` — the funds contributed to BBM — is spec 338 §D
+ *    EARS-335: never a money account and neither income nor expense.
  *
  * They share a table because double entry does not distinguish them — a posting
  * names an account, and the balance of any account is the sum of its postings
@@ -35,6 +37,7 @@ export const FINANCE_SYSTEM_ACCOUNT_KINDS = [
   'conversion',
   'fx_result',
   'liability',
+  'equity',
 ] as const
 
 export const FINANCE_ACCOUNT_KINDS = [
@@ -63,14 +66,14 @@ export const financeAccount = core.table(
   (table) => [
     check(
       'finance_account_kind_allowed',
-      sql`${table.kind} in ('bank', 'card', 'crypto', 'cash', 'income', 'expense', 'conversion', 'fx_result', 'liability')`,
+      sql`${table.kind} in ('bank', 'card', 'crypto', 'cash', 'income', 'expense', 'conversion', 'fx_result', 'liability', 'equity')`,
     ),
     // A system kind is ONLY ever a system account, and a money kind never is —
     // otherwise "create the expense account on demand" could pick up a
     // hand-made row and the one-per-(kind, currency) rule below would be a lie.
     check(
       'finance_account_system_kind_agreement',
-      sql`${table.isSystem} = (${table.kind} in ('income', 'expense', 'conversion', 'fx_result', 'liability'))`,
+      sql`${table.isSystem} = (${table.kind} in ('income', 'expense', 'conversion', 'fx_result', 'liability', 'equity'))`,
     ),
     // EARS-305's "one per kind and currency", enforced by the database rather
     // than by the get-or-create being careful: two concurrent first-needs would

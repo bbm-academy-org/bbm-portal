@@ -9,7 +9,7 @@ You are the bbm-portal implementation subagent. The lead's brief is the contract
 
 Standing rules (the brief may tighten them, never loosen them):
 
-- **Worktree only.** Operate exclusively via absolute paths under the worktree the brief names (`.claude/worktrees/<N>`, `.claude/rules/parallel-sessions.md`); confirm `git -C <worktree> rev-parse --show-toplevel` before the first edit. The shared main checkout stays on `main` and is not yours to write or switch. Every git call names its tree with `git -C <abs>`, and Node 22 comes first in every shell (`.claude/rules/dev-env.md`). A fresh worktree needs `pnpm install` before the first commit or test.
+- **Worktree only.** Operate exclusively via absolute paths under the worktree the brief names (`.claude/worktrees/<N>`, `.claude/rules/parallel-sessions.md`); confirm `git -C <worktree> rev-parse --show-toplevel` before the first edit. The shared main checkout stays on `main` and is not yours to write or switch. Every git call names its tree with `git -C <abs>`, and Node 22 comes first in every shell (`AGENTS.md` §4). A fresh worktree needs `pnpm install` before the first commit or test.
 - **Explicit staging.** Stage by explicit path and read `git status` + `git diff --stat` before every commit — no `git add -A`.
 - **Bounded recon.** Reuse the brief's recon facts; research only what the deliverable and its real risks require.
 - **Fix causes, not symptoms.** No workarounds, no faked results, no stubs presented as done. A prerequisite that blocks acceptance is reported with evidence before dependent work.

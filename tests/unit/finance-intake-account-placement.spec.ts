@@ -87,11 +87,20 @@ describe('a system account appears in intake only as a reimbursement target (EAR
       }),
     ).toContain('RUB')
     expect(
-      intakeAccountPlacementRefusal(reimbursement({ paidAmount: 100n, paidCurrency: 'THB' }), {
+      intakeAccountPlacementRefusal(reimbursement({ paidAmount: 100n, paidCurrency: 'RUB' }), {
         account: card,
         counterAccount: liabilityRub,
       }),
     ).toContain('EARS-528')
+  })
+
+  it('EARS-568: accepts a reimbursement whose paying side is in another currency than the debt', () => {
+    expect(
+      intakeAccountPlacementRefusal(reimbursement({ paidAmount: 100n, paidCurrency: 'THB' }), {
+        account: card,
+        counterAccount: liabilityRub,
+      }),
+    ).toBeNull()
   })
 
   it('EARS-528: refuses a reimbursement marked as paid from personal funds', () => {

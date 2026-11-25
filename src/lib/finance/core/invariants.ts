@@ -172,3 +172,72 @@ export function resolvePostingCategory(
   }
   return purposeCategoryId
 }
+
+/** The four kinds whose accounts hold company money (EARS-301, EARS-325). */
+const MONEY_ACCOUNT_KINDS: readonly FinanceAccountKind[] = ['bank', 'card', 'crypto', 'cash']
+
+/**
+ * EARS-336/337 (spec 338 §D) — an operation touching an `equity` account is a
+ * CONTRIBUTION, and only one shape is one: a single debit on a non-system money
+ * account and a single credit on the system `equity` account of the same
+ * currency, for the same amount; the equity posting on the fund project; no
+ * purpose, no product, no conversion step and no other posting.
+ *
+ * Anything else carrying an equity posting is refused — a reversal included,
+ * except the module's own `reverseOperation` mirror of a contribution, which
+ * never comes through here. That is what makes the equity balance exclusively
+ * the sum of dated contributions: no path exists to assert it (EARS-337, and
+ * why funding coexists with EARS-317's «every account starts at zero»).
+ */
+export function assertEquityContributionShape(
+  postings: readonly PostingDraft[],
+  accounts: ReadonlyMap<number, AccountFacts>,
+  context: { purposeId: number | null | undefined; fundProjectId: number },
+): void {
+  const equity = postings.filter((posting) => accounts.get(posting.accountId)?.kind === 'equity')
+  if (equity.length === 0) return
+  const refuse = (why: string): never => {
+    throw new FinanceRefusal(
+      `Проводка на системный счёт «equity» допустима только во взносе (EARS-336/337): ${why} ` +
+        'Взнос — это ровно одна проводка в дебет денежного счёта и одна в кредит equity той же ' +
+        'валюты и на ту же сумму, на фонде «Фонд BBM», без назначения, продукта и шага ' +
+        'конвертации. Ошибочный взнос исправляется сторно (EARS-314).',
+    )
+  }
+  if (context.purposeId !== null && context.purposeId !== undefined) {
+    refuse('у взноса нет назначения — это не расход.')
+  }
+  if (postings.length !== 2 || equity.length !== 1) {
+    refuse('в операции есть другие проводки, кроме денежной и equity.')
+  }
+  const [credit] = equity
+  const money = postings.find((posting) => posting !== credit) as PostingDraft
+  const moneyAccount = accounts.get(money.accountId)
+  if (
+    moneyAccount === undefined ||
+    moneyAccount.isSystem ||
+    !MONEY_ACCOUNT_KINDS.includes(moneyAccount.kind)
+  ) {
+    refuse('вторая проводка взноса — только на денежный счёт BBM (bank, card, crypto, cash).')
+  }
+  if (credit.amount >= 0n || money.amount <= 0n) {
+    refuse('взнос — это кредит equity и дебет денежного счёта; обратная запись не допускается.')
+  }
+  if (money.currency !== credit.currency || money.amount !== -credit.amount) {
+    refuse('сумма и валюта денежной проводки и проводки equity обязаны совпадать.')
+  }
+  if (credit.projectId !== context.fundProjectId) {
+    refuse('проводка equity называет фонд «Фонд BBM», а не проект.')
+  }
+  for (const posting of postings) {
+    if (posting.productId !== null && posting.productId !== undefined) {
+      refuse('у взноса нет продукта.')
+    }
+    if (
+      (posting.conversionStepNo !== null && posting.conversionStepNo !== undefined) ||
+      (posting.conversionStepId !== null && posting.conversionStepId !== undefined)
+    ) {
+      refuse('взнос не бывает шагом конвертации.')
+    }
+  }
+}

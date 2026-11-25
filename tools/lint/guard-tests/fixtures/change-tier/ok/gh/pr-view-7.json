@@ -1,0 +1,7 @@
+{
+  "number": 7,
+  "body": "## Why\n\nCloses #1\n\nChange-tier: Show — new empty state on the hours page\n",
+  "files": [
+    { "path": "src/app/(platform)/p/hours/page.tsx", "additions": 5, "deletions": 2, "status": "modified" }
+  ]
+}

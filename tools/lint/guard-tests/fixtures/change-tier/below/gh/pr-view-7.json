@@ -1,0 +1,7 @@
+{
+  "number": 7,
+  "body": "## Why\n\nCloses #1\n\nChange-tier: Ship — tiny tweak\n",
+  "files": [
+    { "path": "src/lib/platform/db/migrations/0001_init.sql", "additions": 3, "deletions": 0, "status": "added" }
+  ]
+}

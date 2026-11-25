@@ -27,6 +27,17 @@ owner-facing interim checkpoint too.
 text; every other artifact is English). The marker strings below are fixed
 tokens — they are never translated or paraphrased.
 
+**Plain text in chat.** A report, status, summary, retro or plan is chat text —
+never an HTML page or a published artifact built for it (owner, 2026-08-15: a
+styled page for a simple report added no fact, only layout time). A page is
+right only when the owner asks for one or the content is unreadable as text
+(an interactive diagram, a dashboard to click); unsure → ask in one line.
+
+**Product terms, numbers as references** — in reports and in live dialogue
+alike: a task is named by its product meaning («the audit ledger of edits»), its
+number follows in parentheses on first mention («(#201)») and is dropped after
+that. Tracker artifacts (issues, PRs, comments) keep their numbers.
+
 ## The fixed shape (task-cycle stage 6)
 
 1. **Что изменилось — продуктовым языком.** 1–3 sentences a person would
@@ -37,8 +48,9 @@ tokens — they are never translated or paraphrased.
    «Owner-report form» section below.
 2. **«Проверить глазами: \<URL\>»** — a real URL the owner opens themselves,
    with the access line (login + where the password comes from) when the surface
-   is behind auth. A screenshot is the agent's working evidence, never the
-   showing (stage 5). If the change has no visual surface, the honest form is
+   is behind auth, on every change tier: this report follows the deploy, so a
+   Show change is live too. Show's PR screenshots were the pre-merge acceptance
+   (stage 5), never this line. If the change has no visual surface, the honest form is
    the literal alternative: **«визуально ничего не меняется; проверяется так:
    \<тест / поведение / команда\>»** — do NOT fill the point with PR/repo links
    to make it look satisfied.
@@ -171,6 +183,13 @@ self-contained block of four beats: **что случилось / почему �
 without a gloss) and any «см. issue/отчёт» redirect that makes the owner go read
 something before they can parse the question. Self-check each question before
 sending: someone who read nothing else must be able to answer it.
+
+**One question at a time, in chat.** Questions go to the chat, ONE per message,
+each with its own context; the next is asked after the answer. A batch in one
+GitHub comment or a numbered list beside a report is not asking — the owner
+declined to answer exactly that (2026-08-26, 2026-08-31); a reminder list is not
+a question either. The GitHub comment stays the record of the decision, the
+dialogue runs in chat.
 
 **The four beats are a DECLARED form** (#374): a message carrying **two or more
 of the four beat labels, each on its own line**, is a question and not a

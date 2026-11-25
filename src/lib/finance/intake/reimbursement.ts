@@ -39,6 +39,13 @@ export type CreateReimbursementTransferInput = {
   projectId: number
   counterpartyId?: number | null
   note?: string | null
+  /**
+   * EARS-568 only — the cross-currency reimbursement's paying side: the whole
+   * sum that left `accountId`, in its currency, while `amount`/`currency` stay
+   * the liability side. Absent on a single-currency reimbursement.
+   */
+  paidAmount?: bigint | null
+  paidCurrency?: string | null
   feeAmount?: bigint | null
   feeCurrency?: string | null
   /** The posted `personal_funds` item this settles (EARS-528); refused when missing. */
@@ -62,6 +69,8 @@ export function reimbursementTransferValues(
     projectId: input.projectId,
     counterpartyId: input.counterpartyId ?? null,
     note: input.note ?? null,
+    paidAmount: input.paidAmount ?? null,
+    paidCurrency: input.paidCurrency ?? null,
     feeAmount: input.feeAmount ?? null,
     feeCurrency: input.feeCurrency ?? null,
     settlesItemId: input.settlesItemId ?? null,

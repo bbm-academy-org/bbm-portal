@@ -252,6 +252,33 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
 
+  # WARN — a PR body with no single `Change-tier: Ship|Show|Ask` line, or one
+  # declaring a tier below the minimum its changed files require (guard from
+  # #597; rule `.claude/rules/change-tiers.md`). The script exits 1 on a finding
+  # (canon §4 clause 1), `continue-on-error` keeps the CI plane WARN; promotion
+  # to BLOCK is the second slice of #597, with `pr:land` routing by tier.
+  change-tier:
+    if: github.event.action != 'edited' || github.event.changes.body != null
+    continue-on-error: true # WARN since 2026-11-25 — canon §5, promotion in #597 slice B
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:change-tier
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+
   # WARN — a UI diff whose PR body records no `UX-record:` block (guard from
   # #433). The wiring `stage-b` carried while it was WARN, for the same reason:
   # `--severity block` so the script gives a REAL signal (canon §4 clause 1 — a

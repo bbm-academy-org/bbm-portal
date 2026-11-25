@@ -2,7 +2,7 @@
 
 **Payload CMS** (v3, native inside Next.js) — the headless content backend for the BBM Academy public website (`bbm-public-website`), and the seed of the future BBM portal (auth / personal cabinet / blog grow here later).
 
-> **Agents:** read [`AGENTS.md`](./AGENTS.md) first — it holds the content contract, accepted setup decisions, architectural authority, and the per-task workflow. Strategic tracking lives in Plane (`bbm` workspace / BBM Platform / milestone BBMP-24).
+> **Agents:** read [`AGENTS.md`](./AGENTS.md) first — the shared agent constitution (architectural authority, per-task workflow, hard rules); the CMS content contract and setup decisions live in [`.claude/rules/cms-content-contract.md`](./.claude/rules/cms-content-contract.md). Strategic tracking lives in Plane (`bbm` workspace / BBM Platform / milestone BBMP-24).
 
 ## Stack
 

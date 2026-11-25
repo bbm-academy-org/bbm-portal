@@ -848,7 +848,7 @@ Entry format:
       `docs/ci-guardrails.md` §5 register row. The template and the constant are
       operational copies the mechanism needs (a form to fill, strings to match);
       the §5 prose enumeration is a second retelling of the canon in the sense
-      CLAUDE.md's «path is the contract» bans, kept because the register row is
+      `AGENTS.md`'s «Path is the contract» bans, kept because the register row is
       read standalone — return condition: the first change to the facet SET
       (adding, renaming or dropping a facet); that PR replaces the §5
       enumeration with a pointer at step 4 and updates the template and the
@@ -971,6 +971,10 @@ Entry format:
 - [ ] 2026-11-24 `worktree-path-guard` v2 (#594, PR #595) classifies an Edit/Write `file_path` after `absolutePath` + `canonicalPath`, and three path forms are not normalised to the registered roots: the extended-length prefix (`\\?\C:\…`), a local UNC admin share (`\\localhost\C$\…`), and the MSYS form (`/c/Users/…`, which resolves to `C:\c\Users\…`, outside the repo). A write spelled that way into the shared checkout or another worktree is classified `ok`. Recorded rather than fixed because no agent produces these forms by accident, ds-platform and v1 have the same holes, and the 8.3 short-name hole from the same review was closed (`realpathSync.native`) — return condition: a real cross-worktree write observed through one of these forms, or the next change to `worktree-path-guard`, whichever comes first; at that point `absolutePath` maps MSYS the way `commandReachPaths` does and strips the `\\?\` prefix / folds local UNC before classifying, with a RED test per form.
 
 <!-- debt-entry-end: 2026-11-24-594-worktree-guard-path-forms -->
+
+- [ ] 2026-11-25 Change tiers (#597): Ship is prose-only — a view-layer `*.tsx` / `*.css` floors at Show — which is stricter than ds-platform, where a small presentational tweak may Ship; and, in the other direction, a test-only PR (every file under `tests/`) is Ship as in ds-platform, which is wider than bbm's previous review-free class (non-canon docs only) — a PR that only weakens assertions merges with no review. Both applied without owner confirmation, asked together in session 2026-11-25 (review of PR #604). Return condition: the owner's answer — widen the Ship list (presentational tweaks) or narrow it (test-only) in `tools/lint/lib/change-tier.mjs` + `.claude/rules/change-tiers.md`, or delete this line as confirmed.
+
+<!-- debt-entry-end: 2026-11-25-597-ship-prose-only -->
 
 <!-- debt-append-marker -->
 

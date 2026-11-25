@@ -11,9 +11,14 @@
 // non-zero exit once a file is over. It measures, it never edits — what to
 // relocate is a judgement call the wrap makes with the owner.
 //
-// Scope note (the ambiguity #139 had to settle): the budget covers the four
-// ALWAYS-ON files — CLAUDE.md, AGENTS.md, every `.claude/rules/*.md`, and the
-// MEMORY.md index. Two neighbours are deliberately outside it: the lazy
+// Scope note (#139, re-scoped by #596): every file below is measured against the
+// per-file budget, but only what a Claude session really loads at start counts
+// toward the corpus total — CLAUDE.md, the AGENTS.md it imports (`@AGENTS.md`),
+// and the PATH-LESS `.claude/rules/*.md` files. A rule with `paths:` frontmatter
+// is lazy (loaded when the session touches a matching file) and the MEMORY.md
+// index is machine-local (absent in CI, so a total that counted it would differ
+// between the box and the gate); both stay per-file BLOCK, off the total. Two
+// neighbours are deliberately outside the guard altogether: the lazy
 // `memory/<topic>.md` files (loaded only when the index line sends a session
 // there — they obey the same prune-before-add discipline, but what is budgeted
 // is their one-line index entry), and the session transcript
@@ -23,10 +28,11 @@
 // What it measures (two budgets since #157):
 //   PER FILE  — 200 lines / 25 KB, the Anthropic CLAUDE.md target and the
 //               MEMORY.md auto-load cutoff.
-//   CORPUS    — the SUM over the always-on set, capped at four per-file budgets
-//               (800 lines / 100 KB). Without it the per-file rule is satisfiable
-//               by a corpus nobody can afford: six files at 199 lines each pass
-//               individually while the session pays for 1194 at every start.
+//   CORPUS    — the SUM over the always-on set, capped at AGGREGATE_BUDGET
+//               (#596: 400 lines / 32 KB, owner go, Anton, 2026-11-24). Without
+//               it the per-file rule is satisfiable by a corpus nobody can
+//               afford: six files at 199 lines each pass individually while the
+//               session pays for 1194 at every start.
 //
 // Severity — CLI guard, `docs/ci-guardrails.md` §2.3, where the exit code IS the
 // severity: 0 = clean or NEAR-only, 1 = a BLOCK-class finding (a file, or the
@@ -64,32 +70,94 @@ import { fileURLToPath } from 'node:url'
 export const BUDGET = { lines: 200, bytes: 25 * 1024 }
 
 /**
- * How many per-file budgets the whole corpus is entitled to (#157).
+ * The corpus-wide cap over what a Claude session loads at start (#157; lowered
+ * by #596 toward ds-platform's 30 KB — owner go, Anton, 2026-11-24).
  *
- * The always-on corpus is designed to have FOUR slots — `CLAUDE.md`,
- * `AGENTS.md`, the `MEMORY.md` index, and `.claude/rules/` **as a whole**. The
- * rules directory counts as ONE slot however many files it holds: counting it
- * per-file would mean adding a rule raises the ceiling that rule is supposed to
- * live under, which is precisely the loophole this cap closes.
+ * It is an explicit number, not a multiple of the per-file budget: the old
+ * four-slot derivation (800 lines / 100 KB) described a corpus that also counted
+ * the machine-local memory index and every rule file, lazy or not. Why a cap is
+ * needed at all: the per-file budget alone is satisfiable by a corpus nobody can
+ * afford — six files at 199 lines each pass individually while the session pays
+ * for 1194 lines at every start. Splitting a file in two does not move it, and a
+ * rule escapes it only by becoming genuinely lazy (`paths:` frontmatter).
  */
-export const AGGREGATE_SLOTS = 4
-
-/**
- * The corpus-wide cap, DERIVED from the per-file budget rather than invented:
- * 800 lines / 102400 bytes (4 × 200 lines / 4 × 25 KB).
- *
- * Why it is needed at all: the per-file budget alone is satisfiable by a corpus
- * nobody can afford. Six files at 199 lines each pass individually while the
- * session pays for 1194 lines at every start — the guard would report PASS on
- * exactly the growth it exists to stop.
- */
-export const AGGREGATE_BUDGET = {
-  lines: BUDGET.lines * AGGREGATE_SLOTS,
-  bytes: BUDGET.bytes * AGGREGATE_SLOTS,
-}
+export const AGGREGATE_BUDGET = { lines: 400, bytes: 32 * 1024 }
 
 /** Share of the budget above which a file (or the corpus) is NEAR — still passing. */
 export const NEAR_RATIO = 0.8
+
+/**
+ * Does this rules file carry REAL `paths:` frontmatter — i.e. is it lazy? Strict
+ * on purpose (ds-platform #1371): the block must open on the file's first line,
+ * be terminated by a second `---`, and declare `paths` as a top-level key at
+ * column 0. The word `paths:` in the body, an unterminated block, an indented or
+ * commented key — none of those makes Claude Code load the file lazily, so none
+ * of them takes the file off the total.
+ *
+ * The key must also SCOPE the file: at least one glob, and no match-all glob
+ * (`**`, `**\/*`). An empty list may load unconditionally and a match-all glob
+ * fires on every file a session touches — both are always-on in effect (#596).
+ *
+ * @param {string} content
+ * @returns {boolean}
+ */
+export function isPathScoped(content) {
+  const lines = String(content ?? '').split(/\r?\n/)
+  if (lines[0] !== '---') return false
+  const close = lines.indexOf('---', 1)
+  if (close === -1) return false
+  const block = lines.slice(1, close)
+  const at = block.findIndex((l) => /^paths\s*:/.test(l))
+  if (at === -1) return false
+  const globs = pathsGlobs(block, at)
+  return globs.length > 0 && !globs.some(isMatchAllGlob)
+}
+
+/** Globs that match every path in the repo, after a leading `./` or `/` is dropped. */
+const MATCH_ALL_GLOBS = new Set(['**', '**/*', '**/**'])
+
+/** @param {string} glob */
+function isMatchAllGlob(glob) {
+  return MATCH_ALL_GLOBS.has(glob.replace(/^\.?\//, ''))
+}
+
+/**
+ * Strip one YAML scalar of its quotes, or of a trailing ` # comment` when bare.
+ *
+ * @param {string} raw
+ */
+function yamlScalar(raw) {
+  const s = raw.trim()
+  const quoted = /^(['"])(.*)\1(?:\s+#.*)?$/.exec(s)
+  if (quoted) return quoted[2].trim()
+  return s.replace(/\s+#.*$/, '').trim()
+}
+
+/**
+ * The globs a `paths:` key declares — the inline scalar, the inline flow list
+ * (`[a, b]`) or the block list of `- item` lines under it. Empty items drop out.
+ *
+ * @param {string[]} block frontmatter lines between the two `---`
+ * @param {number} at index of the `paths:` line
+ * @returns {string[]}
+ */
+function pathsGlobs(block, at) {
+  const inline = block[at].replace(/^paths\s*:/, '').trim()
+  /** @type {string[]} */
+  let items
+  if (inline && !inline.startsWith('#')) {
+    const flow = /^\[(.*)\]\s*(?:#.*)?$/.exec(inline)
+    items = flow ? flow[1].split(',') : [inline]
+  } else {
+    items = []
+    for (const line of block.slice(at + 1)) {
+      if (/^\S/.test(line)) break
+      const item = /^\s+-(?:\s+(.*))?$/.exec(line)
+      if (item) items.push(item[1] ?? '')
+    }
+  }
+  return items.map(yamlScalar).filter((g) => g.length > 0)
+}
 
 /** The always-on repo files, in the order a session meets them. */
 export const CORE_FILES = ['CLAUDE.md', 'AGENTS.md']
@@ -206,10 +274,13 @@ export function collectTargets({
 export function formatReport(results, skipped = []) {
   const rows = Array.isArray(results) ? results : []
   const failed = rows.filter((r) => r.status === 'OVER')
-  const total = rows.reduce(
-    (acc, r) => ({ lines: acc.lines + r.lines, bytes: acc.bytes + r.bytes }),
-    { lines: 0, bytes: 0 },
-  )
+  const onTotal = (r) => r.scope === undefined || r.scope === 'always-on'
+  const total = rows
+    .filter(onTotal)
+    .reduce((acc, r) => ({ lines: acc.lines + r.lines, bytes: acc.bytes + r.bytes }), {
+      lines: 0,
+      bytes: 0,
+    })
   const corpusOver = []
   if (total.lines > AGGREGATE_BUDGET.lines) corpusOver.push('lines')
   if (total.bytes > AGGREGATE_BUDGET.bytes) corpusOver.push('bytes')
@@ -242,6 +313,7 @@ export function formatReport(results, skipped = []) {
     lines.push(
       `${r.status.padEnd(4)} ${String(Math.round(pct * 100)).padStart(3)}%  ` +
         `${String(r.lines).padStart(4)} lines ${String(r.bytes).padStart(6)} bytes  ${r.path}` +
+        (onTotal(r) ? '' : `  [${r.scope}, off the total]`) +
         (r.over.length > 0 ? `  (over: ${r.over.join(', ')})` : ''),
     )
   }
@@ -255,7 +327,7 @@ export function formatReport(results, skipped = []) {
       '',
       `TOTAL ${String(Math.round(pct * 100)).padStart(3)}%  ` +
         `${String(total.lines).padStart(4)} lines ${String(total.bytes).padStart(6)} bytes  ` +
-        `corpus (${rows.length} file(s), ${label})` +
+        `always-on corpus (${rows.filter(onTotal).length} of ${rows.length} file(s), ${label})` +
         (corpusOver.length > 0 ? `  (over: ${corpusOver.join(', ')})` : ''),
     )
   }
@@ -273,8 +345,8 @@ export function formatReport(results, skipped = []) {
       .join(' + ')
     lines.push(
       `VERDICT: FAIL — ${what}. Do not trim by eye: compact by ` +
-        'RELOCATING detail out of the always-on core (long detail → a `.claude/rules/*.md` ' +
-        'file or a skill; a settled fact → a `memory/<topic>.md` file + one index line), then ' +
+        'RELOCATING detail out of the always-on core (long detail → a `paths:`-scoped ' +
+        '`.claude/rules/*.md` file or a skill; a settled fact → its owning repo file), then ' +
         're-run. Appending without relocating is the banned outcome. Note the corpus cap does ' +
         'NOT move by splitting one file into two — relocation has to leave the always-on set.',
     )
@@ -321,9 +393,18 @@ export function runBudgetLint({
   const targets = collectTargets({ repoRoot, home, memoryRoot, exists, listRules })
   const results = []
   const skipped = []
+  const memoryIndex = path.normalize(memoryIndexPath(memoryRoot, home))
+  const rulesDir = path.normalize(path.join(repoRoot, '.claude', 'rules'))
   for (const target of targets) {
     try {
-      results.push(evaluateFile(target, readFile(target)))
+      const content = readFile(target)
+      const scope =
+        path.normalize(target) === memoryIndex
+          ? 'machine-local'
+          : path.dirname(path.normalize(target)) === rulesDir && isPathScoped(content)
+            ? 'lazy'
+            : 'always-on'
+      results.push({ ...evaluateFile(target, content), scope })
     } catch {
       skipped.push(target)
     }

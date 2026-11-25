@@ -96,7 +96,14 @@ export const FINANCE_INTAKE_SOURCES = ['request', 'manual', 'backfill', 'bank_im
 export type FinanceIntakeSource = (typeof FINANCE_INTAKE_SOURCES)[number]
 
 /** What the item asserts moved — everything the rebuild from zero needs (decision 17). */
-export const FINANCE_INTAKE_KINDS = ['expense', 'income', 'transfer', 'conversion'] as const
+/** `contribution` — the funding inflow of spec 338 EARS-336, added by spec 339 §K EARS-567. */
+export const FINANCE_INTAKE_KINDS = [
+  'expense',
+  'income',
+  'transfer',
+  'conversion',
+  'contribution',
+] as const
 export type FinanceIntakeKind = (typeof FINANCE_INTAKE_KINDS)[number]
 
 /** The states of the EARS-524 machine. The transitions live in `src/lib/finance/intake/status.ts`. */
@@ -226,7 +233,7 @@ export const financeIntakeItem = core.table(
     ),
     check(
       'finance_intake_item_kind_allowed',
-      sql`${table.kind} in ('expense', 'income', 'transfer', 'conversion')`,
+      sql`${table.kind} in ('expense', 'income', 'transfer', 'conversion', 'contribution')`,
     ),
     check(
       'finance_intake_item_status_allowed',

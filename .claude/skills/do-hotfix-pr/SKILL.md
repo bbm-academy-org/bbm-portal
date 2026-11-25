@@ -23,6 +23,14 @@ things that turn one incident into two.
 
 Anything else runs the normal `task-cycle`.
 
+**The polish lane — the smallest case.** A behaviour-preserving correction to a
+surface the owner has already accepted (a misaligned element, a wrong string,
+an off-by-one in an approved layout, found during or right after its
+acceptance) needs no new issue and no new plan: it rides the open task's issue,
+worktree and stand, and verification covers only the touched state, re-captured.
+It stops being polish the moment it changes behaviour, the look the owner
+approved, or another surface — then it is this lane or a task of its own.
+
 ## Procedure
 
 1. **State the observed facts, separately from the cause.** What request, what

@@ -185,23 +185,9 @@ const DEFERRALS_BY_ISSUE = {
       'spec 339 §I (#547): the details sheet with «как оплатить», the «без чека» marker in the sheet and the queue rows, the mark-paid / reimburse forms and the bulk dialog, and the §J «Курс против рынка» block (EARS-563). The list is EMPTY because #551 landed: EARS-542/546/563 are asserted in tests/unit/finance-request-sheet-model.spec.ts, finance-request-market-block.spec.ts and finance-requests-queue-ui.spec.ts.',
   },
   593: {
-    ids: [
-      'EARS-335',
-      'EARS-336',
-      'EARS-337',
-      'EARS-338',
-      'EARS-339',
-      'EARS-340',
-      'EARS-341',
-      'EARS-342',
-      'EARS-343',
-      'EARS-344',
-      'EARS-345',
-      'EARS-567',
-      'EARS-568',
-    ],
+    ids: [],
     reason:
-      'spec 338 §D (budget and funding: the equity kind, the contribution operation, the budget record and the budget cost-basis reading) and spec 339 §K (the contribution intake kind) plus spec 339 EARS-568 (the cross-currency reimbursement through a payment agent), added by the #581 amendment (PR #591) before any code exists — a spec that leads its implementation, like spec 311 did. #593 builds them, with tests named after these ids on the §D CI fixtures, and drops them from this list.',
+      'spec 338 §D (budget and funding: the equity kind, the contribution operation, the budget record and the budget cost-basis reading), spec 339 §K (the contribution intake kind) and spec 339 EARS-568 (the cross-currency reimbursement through a payment agent), added by the #581 amendment (PR #591). The list is EMPTY because #593 landed: EARS-335…345/567/568 are asserted in tests/unit/finance-budget-replay.spec.ts, finance-equity-contribution.spec.ts, finance-contribution-intake.spec.ts, finance-intake-account-placement.spec.ts and tests/int/platform/finance-budget.int.spec.ts, finance-budget-reading.int.spec.ts and finance-payment-queue.int.spec.ts.',
   },
   586: {
     ids: Array.from({ length: 29 }, (_, i) => `EARS-${701 + i}`),

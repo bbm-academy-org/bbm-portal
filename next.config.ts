@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
   // with content that can change on any upgrade without passing a review. The
   // block's own text argues that committing it "keeps the tree clean", which is
   // backwards here: canon lives in `.claude/`, and a tool-managed block inside
-  // it is the second source of truth CLAUDE.md bans. The one useful thing it
+  // it is the second source of truth `AGENTS.md` bans. The one useful thing it
   // said — read the version-matched docs bundled in the `next` package — is now
   // stated by us, in `AGENTS.md`, under our own review. (#229)
   agentRules: false,

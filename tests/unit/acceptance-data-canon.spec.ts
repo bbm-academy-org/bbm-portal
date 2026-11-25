@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * The canon lives in exactly one place — stage 5 of the task-cycle skill; the
- * iteration-end checklist only POINTS at it (CLAUDE.md, path-is-the-contract).
+ * iteration-end checklist only POINTS at it (AGENTS.md, path-is-the-contract).
  * These assertions are section-anchored on purpose: the same phrase surviving
  * somewhere else in the file after the stage-5 clause is deleted must not pass.
  */

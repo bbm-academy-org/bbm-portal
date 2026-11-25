@@ -67,6 +67,12 @@ check-run reading, the SHA pinning, the board update and the teardown. If you
 ever must run it (a bot branch with no CI), run it **on its own line**, never
 downstream of anything.
 
+**A CI rerun is not free.** Re-running a red job that then passes is a flake
+observation, not a green: the same PR records it as a `DEBT.md` line (job, test,
+the failing run's URL, return condition), and the second time the same test
+flakes it becomes its own issue (`surface-decision-debt`). A red that reproduces
+is a finding — fix it; never rerun until green.
+
 ## What the gate actually checks
 
 - **CI**, structurally: every check-run's `status`/`conclusion` fields, never a
@@ -97,6 +103,11 @@ downstream of anything.
   server-side, and it only re-bases the branch, so it does not send you back for
   a re-review (#222). `--require-review` narrows this to a human APPROVE;
   `--no-review-gate "<reason>"` lifts it and prints the reason as the record.
+  A verified Ship PR owes no verdict — the review-free class of
+  `.claude/skills/task-cycle/SKILL.md` stage 4.
+- **The change tier**, re-proven: the gate classifies the changed-file set
+  itself (`.claude/rules/change-tiers.md`) and is RED when the `Change-tier:`
+  line sits below that minimum — raise the line, never the reverse.
 
 ## The branch is BEHIND — and the update conflicts
 

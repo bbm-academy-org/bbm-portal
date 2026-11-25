@@ -1,3 +1,14 @@
+---
+paths:
+  - 'src/**/*.tsx'
+  - 'src/**/*.css'
+  - 'design-source/**'
+  - 'docs/design/**'
+  - '.github/pull_request_template.md'
+---
+
+<!-- READ-ON-DEMAND (`paths:` frontmatter, so not always-on). The frontmatter must stay the first bytes of the file. Indexed in AGENTS.md §0: read it before any UI work and before opening any PR (§2, the `Stage-B:` line). -->
+
 # Design process — build from `design-source/`, record Stage-B
 
 Two rules, both structural replacements for prose that failed in practice.
@@ -92,13 +103,16 @@ justification: #481/#482, the owner's rejection of PR #470's stand on
 ## 2. Every PR carries a `Stage-B:` line
 
 The PR body (or a comment on the linked issue) records the Stage-B outcome
-explicitly, in exactly one of three shapes:
+explicitly, in exactly one of these shapes. Which GO counts depends on the PR's
+effective change tier ([`change-tiers.md`](./change-tiers.md); where each tier's
+acceptance is given: [`task-cycle`](../skills/task-cycle/SKILL.md) stage 5):
 
-| Value                                               | Means                                                                        |
-| --------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `Stage-B: GO — <owner, date>`                       | the owner said «принято» on a LIVE stand (task-cycle stage 5)                |
-| `Stage-B: batched at #<gate>`                       | acceptance is deferred to a named batched gate issue the owner agreed to     |
-| `Stage-B: N/A (no visual surface) — lead-certified` | the diff changes no visual surface; the **lead** puts its name on that claim |
+| Value                                               | Means                                                                                          |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `Stage-B: GO — <owner, date>`                       | the owner said «принято» on a LIVE stand — evidence on every tier, the only GO an Ask PR takes |
+| `Stage-B: GO (screenshots) — <owner, date>`         | the owner said «принято» on the agent-captured PR screenshots — evidence on Show only          |
+| `Stage-B: batched at #<gate>`                       | acceptance is deferred to a named batched gate issue the owner agreed to                       |
+| `Stage-B: N/A (no visual surface) — lead-certified` | the diff changes no visual surface; the **lead** puts its name on that claim                   |
 
 **The tail is part of the record.** A bare `GO`, a bare `N/A`, a `TBD`, or the
 unfilled template placeholder is **not** a record: the GO stands in for a
@@ -114,7 +128,10 @@ happens to touch a `.tsx` file does not fake an acceptance it never needed.
 **The check:** `pnpm lint:stage-b <PR>` (`tools/lint/stage-b-lint.mjs`) classifies
 the PR by touched path — a non-test `*.tsx` / `*.css` under `src/` is a UI diff,
 the same definition task-cycle stage 3 uses — and reports whether a valid marker
-exists in the PR body or in a linked-issue comment.
+exists in the PR body or in a linked-issue comment. It routes by the effective
+tier, re-proven from the changed-file set by the shared classifier
+(`tools/lint/lib/change-tier.mjs`) rather than read off the `Change-tier:` line;
+an undeclared PR routes as Ask, so a screenshot GO there is not evidence.
 
 **Severity: BLOCK since 2026-09-02** (#438), recorded in the guard register
 ([`docs/ci-guardrails.md`](../../docs/ci-guardrails.md) §5) — the same plane §1's
@@ -125,8 +142,9 @@ check without a rebuild. Run LOCALLY the script still exits 0 on a violation unl
 cannot be read at all) is not a violation and always exits non-zero: a check that never ran
 must not look clean.
 
-**A `GO` also carries the lead's own pass — `UX-sanity:`.** Before the owner is
-invited to a stand, the lead runs the elementary UX-sanity pass over the CAPTURED
+**A `GO` also carries the lead's own pass — `UX-sanity:`** — either GO, so the pass
+stays mandatory on Show. Before the owner is invited to a stand or to the PR
+screenshots, the lead runs the elementary UX-sanity pass over the CAPTURED
 SCREENSHOTS (owner rule, Антон, 2026-08-31: green acceptance scenarios are not
 readiness to show). Since #485 that pass is an ARTIFACT: a `UX-sanity:` block —
 in the PR body, in one of the PR's own comments, or in a linked-issue comment —

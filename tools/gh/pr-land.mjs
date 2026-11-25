@@ -9,7 +9,9 @@
 //
 //   1. gate        — the PR is open and not a draft, no conflict, a linkage is
 //                    present (`Closes #N`, or `Part of #N` on a still-OPEN
-//                    parent for a partial PR — #299), review is confirmed, every
+//                    parent for a partial PR — #299), the change tier is not
+//                    declared below its minimum and review is confirmed unless
+//                    it is a verified Ship (#597), every
 //                    BLOCK-plane check-run on the CURRENT head SHA is green
 //                    (bounded polling; a failing WARN-plane job is printed as a
 //                    remark, #397), head has not moved;
@@ -49,6 +51,18 @@
 // Owner acceptance (stage 5) is a separate requirement, and the reminder about
 // it is printed always: the gate cannot check it.
 //
+// The gate is routed by the PR's change tier (#597, `.claude/rules/change-tiers.md`).
+// It re-proves the tier itself — the changed-file set through the shared
+// classifier `tools/lint/lib/change-tier.mjs` (`resolveTier`), never the body line
+// alone — and the EFFECTIVE tier is max(declared, minimum); an undeclared PR routes
+// as Ask. A declaration below the minimum is RED. A verified Ship needs no review
+// verdict (the review-free class); Show and Ask keep the review gate. The stage-5
+// reminder names the acceptance the tier owes: the owner's chat decision (Ship),
+// the owner's GO on PR screenshots (Show), a live stand (Ask) — the record itself
+// is the `stage-b` check's to verify. The listing is head-bound by construction:
+// a head that moves after it was read either fails the next probe ("head moved")
+// or makes `--match-head-commit` refuse the merge.
+//
 // Exit codes: 0 = the tail passed; 1 = a stage failed (RED); 2 = gate timeout;
 // 3 = usage/resolution error; 4 = launched from a worktree.
 
@@ -67,6 +81,8 @@ import {
   ghJson,
   pickProjectItem,
 } from './lib/gh.mjs'
+import { resolveTier } from '../lint/lib/change-tier.mjs'
+import { ghPrFiles } from '../lint/lib/gh.mjs'
 import { extractPartOfIssues } from '../lint/lib/guard.mjs'
 
 const TAG = '[pr:land]'
@@ -536,8 +552,50 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
       'it is about different code (a `gh pr update-branch` merge does not count, #222)',
     changes: "the reviewer's latest verdict is `REQUEST_CHANGES`",
   }
+  const tier = resolveTier(pr?.body ?? '', pr?.tierFiles, pr?.changedFiles)
+  const why = tier.reasons.slice(0, 3).join('; ')
+  if (tier.below) {
+    red.push(
+      `Change-tier ${tier.declared} is declared below the minimum ${tier.minimum} the changed-file ` +
+        `set requires (${why}). Raise the \`Change-tier:\` line in the PR body — ` +
+        `.claude/rules/change-tiers.md`,
+    )
+  } else if (tier.declared === null) {
+    warn.push(
+      `no valid \`Change-tier:\` line (${tier.problem}) — the PR runs the full Ask procedure; ` +
+        `declare one (.claude/rules/change-tiers.md)`,
+    )
+  }
+  if (pr?.tierFiles === null) {
+    warn.push(
+      `the changed-file listing was unreadable (${pr?.tierFilesError}) — the tier floors at Ask`,
+    )
+  }
+  const reviewFree = tier.effective === 'ship' && !tier.below
+
   if (requireReview) {
     if (!humanApproved) red.push('no human APPROVE review (--require-review)')
+  } else if (reviewFree) {
+    // Ship lifts the requirement to RUN a review, not an outstanding rejection:
+    // a REQUEST_CHANGES newer than the last diff-changing commit still holds.
+    const baseline = Date.parse(reviewBaselineDate(pr) ?? '')
+    const rejectedAt = Date.parse(agent.at ?? '')
+    const outstandingRejection =
+      !humanApproved &&
+      agent.reason === 'changes' &&
+      !(Number.isFinite(baseline) && Number.isFinite(rejectedAt) && rejectedAt < baseline)
+    if (outstandingRejection) {
+      red.push(
+        `review is not confirmed: ${AGENT_REASON.changes} (${agent.at}), newer than the last ` +
+          `commit that changed the diff. Change-tier ship lifts the need to run a review, not an ` +
+          `outstanding rejection — address it and push, or re-run the review`,
+      )
+    } else if (!humanApproved && !agent.ok) {
+      warn.push(
+        `review not required — Change-tier ship verified (${tier.testOnly ? 'test-only, ' : ''}` +
+          `${(pr?.tierFiles ?? []).length} file(s)): the review-free class, .claude/rules/change-tiers.md`,
+      )
+    }
   } else if (reviewGate) {
     if (!humanApproved && !agent.ok) {
       red.push(
@@ -553,11 +611,19 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
   }
 
   // Owner acceptance (stage 5) is a requirement separate from review, so the
-  // reminder is printed ALWAYS: on an APPROVE nothing else would recall it.
-  warn.push(
-    'task-cycle stage 5: for owner-visible changes the merge happens only after a recorded ' +
+  // reminder is printed ALWAYS: on an APPROVE nothing else would recall it. It
+  // names the acceptance the EFFECTIVE tier owes (#597).
+  const ACCEPTANCE = {
+    ship: 'Change-tier ship: Stage-B is the owner’s decision in chat — no separate review, no stand',
+    show:
+      'Change-tier show: for owner-visible changes the owner’s «принято» is given on the ' +
+      'agent-captured Playwright screenshots in the PR (`Stage-B: GO (screenshots) — <owner, date>`), ' +
+      'with no stand visit; the `stage-b` check verifies the record on a UI diff',
+    ask:
+      'Change-tier ask: for owner-visible changes the merge happens only after a recorded ' +
       'acceptance on a live stand — the gate does not check this',
-  )
+  }
+  warn.push(`task-cycle stage 5 — ${ACCEPTANCE[tier.effective]}`)
   // RED since #216, a remark before it. `main` now carries
   // `required_status_checks.strict: true` (docs/ci-guardrails.md §2.1), so BEHIND
   // is not a warning that the merge might refuse — the server WILL refuse it with
@@ -570,7 +636,7 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
         '(`gh pr update-branch <pr#>`) and let CI re-run on the new head',
     )
   }
-  return { red, warn, closes, partOf }
+  return { red, warn, closes, partOf, tier }
 }
 
 /**
@@ -619,8 +685,9 @@ export const USAGE = `Usage: pnpm pr:land <pr#> [flags]
   the server), the PR carries a linkage — \`Closes #N\`, or \`Part of #N\` naming a
   still-OPEN parent when this PR is one slice of it (#299; a slice does NOT get a
   synthetic sub-issue filed just to have something to close) —
-  review is confirmed, every BLOCK-plane check on the CURRENT head SHA is green.
-  That same SHA goes into \`gh pr merge --match-head-commit\`, so a commit that
+  the \`Change-tier:\` line is not below the minimum the changed-file set requires
+  (re-proven here, #597), review is confirmed unless the tier is a verified Ship,
+  every BLOCK-plane check on the CURRENT head SHA is green. That same SHA goes into \`gh pr merge --match-head-commit\`, so a commit that
   lands while we wait makes the merge refuse rather than ride in unchecked.
 
   The WARN plane (#397): a job carrying \`continue-on-error: true\` greens the
@@ -703,7 +770,7 @@ export function parseFlags(argv) {
 
 const PR_FIELDS =
   'state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,body,' +
-  'headRefName,headRefOid,baseRefName,statusCheckRollup,comments,commits'
+  'headRefName,headRefOid,baseRefName,statusCheckRollup,comments,commits,changedFiles'
 
 /** Where the workflow definitions live — the only place check-run jobs come from. */
 const WORKFLOWS_DIR = '.github/workflows'
@@ -806,6 +873,7 @@ const COMMIT_FACTS_CACHE = new Map()
 export function runViewPr(pr, io = {}) {
   const view = io.view ?? (() => ghJson(['pr', 'view', String(pr), '--json', PR_FIELDS]))
   const facts = io.facts ?? (() => runCommitFacts(pr))
+  const files = io.files ?? (() => ghPrFiles(pr))
   const issueStates = io.issueStates ?? runIssueStates
   const cache = io.cache ?? COMMIT_FACTS_CACHE
 
@@ -814,6 +882,16 @@ export function runViewPr(pr, io = {}) {
   const key = `${pr}:${res.data?.headRefOid ?? '?'}`
   if (!cache.has(key)) cache.set(key, facts())
   let data = withCommitFacts(res.data, cache.get(key))
+  // The change-tier proof (#597): the PAGED REST listing (canon
+  // docs/ci-guardrails.md §8 — `gh pr view --json files` truncates silently),
+  // read once per head SHA like the commit facts. A failed read stamps `null`,
+  // which the classifier floors at Ask: an unproven tier is never a lighter one.
+  const filesKey = `${key}:files`
+  if (!cache.has(filesKey)) cache.set(filesKey, files())
+  const listing = cache.get(filesKey)
+  data = listing?.ok
+    ? { ...data, tierFiles: listing.data }
+    : { ...data, tierFiles: null, tierFilesError: listing?.error ?? 'unreadable' }
   // Resolve `Part of #N` only when there is no closing reference to fall back on
   // (#299) — the second linkage exists for slices, not as a second read on every PR.
   if ((data?.closingIssuesReferences ?? []).length === 0) {

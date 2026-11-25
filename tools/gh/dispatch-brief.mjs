@@ -180,7 +180,7 @@ export function gatherState({ issueNumber, runner, exists = existsSync, cwd = pr
 
   // Changed files, when the task's worktree already exists — the sharpest scope
   // seed there is for a second-wave dispatch onto work already in flight. The
-  // tree is named absolutely with `git -C` (`.claude/rules/dev-env.md`): a
+  // tree is named absolutely with `git -C` (`AGENTS.md` §4): a
   // relative path would read whatever tree the cwd happened to drift into.
   let worktreeChanged = []
   const wtAbs = repoRoot ? `${repoRoot}/${worktreeRelPath(issueNumber)}` : null
@@ -243,7 +243,7 @@ Governing skill: \`.claude/skills/task-cycle/SKILL.md\` (stage 3 — implementat
 ## Worktree isolation (MANDATORY — read first)
 Work EXCLUSIVELY inside \`${wtAbs}\` (\`.claude/rules/parallel-sessions.md\`). The shared checkout \`${root}\` stays on \`main\` and belongs to the lead and to live acceptance stands.
 - Branch: \`${branch}\`. It exists only in this worktree; never create or switch it in the shared checkout.
-- FIRST action: \`git -C ${wtAbs} rev-parse --show-toplevel\` and confirm the worktree root before any edit. Every git call names its tree with \`git -C <abs>\` — \`cd\` drifts between calls (\`.claude/rules/dev-env.md\`).
+- FIRST action: \`git -C ${wtAbs} rev-parse --show-toplevel\` and confirm the worktree root before any edit. Every git call names its tree with \`git -C <abs>\` — \`cd\` drifts between calls (\`AGENTS.md\` §4).
 - \`pnpm install\` in the worktree (~42 s) before the first commit or test — a fresh worktree has no \`node_modules\`, so neither the pre-commit hook nor any test exists yet.
 - Node 22 first, in every bash session: \`export PATH="$LOCALAPPDATA/node22:$PATH"\`.
 - A dev stand, if the task needs one: \`pnpm dev:ports\` → \`PORT=<n> pnpm dev\`. Never bind 3000 blindly, never kill a listener you did not start.

@@ -23,7 +23,7 @@ exists only in the head of whoever opened the issues.
   spec became a pile rather than a graph: edges are missing.
 - Cross-repo children (`bbm-public-website`) **are opened** and linked because
   both repos share an organization, but they are **not implemented here** — see
-  the boundary in `CLAUDE.md`.
+  the cross-repo boundary in `AGENTS.md` §6.
 
 ## Step 1 — make sure the taxonomy exists
 
