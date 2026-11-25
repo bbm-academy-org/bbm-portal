@@ -766,6 +766,14 @@ describe('stage-b-lint: the Stage-B record is routed by change tier (#597)', () 
     expect(checkStageB(noSanity).message).toMatch(/UX-sanity/)
   })
 
+  it('a Ship UI tweak with no record is told the owner decides in chat, not on a stand', () => {
+    const res = checkStageB(tiered('Change-tier: Ship — tighter card spacing', ''))
+    expect(res.tier).toBe('ship')
+    expect(res.verdict).toBe('violation')
+    expect(res.message).toMatch(/owner.s decision in chat/)
+    expect(res.message).not.toMatch(/LIVE stand/)
+  })
+
   it('the screenshot shape is a sanctioned marker value', () => {
     expect(isEvidence('GO (screenshots) — Антон, 2026-11-25')).toBe(true)
     expect(isEvidence('GO (screenshots)')).toBe(false)

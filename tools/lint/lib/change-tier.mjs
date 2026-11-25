@@ -11,10 +11,10 @@
 // plain `.mjs` because every bbm guard lib is `.mjs` run by bare `node`
 // (docs/ci-guardrails.md §8) — no tsx in the guard toolchain. The path lists are
 // bbm's own; ds-only machinery (spec `.feature` patch proofs, e2e run-selection
-// modules, the email-copy allowlist) has no bbm counterpart and is not ported.
-// One deliberate difference: bbm's Ship is prose only (owner, 2026-11-24 —
-// «prose/typos/behaviour-free»), so a view-layer `*.tsx` / `*.css` floors at
-// Show here, where ds lets a small presentational tweak ship.
+// modules, the email-copy allowlist, the app-name lists of `ui-surface.ts`) has
+// no bbm counterpart and is not ported. The presentational Ship class is ds's
+// criterion mapped to bbm's single app: a render source is any `*.tsx` / `*.css`
+// under `src/`, minus the files that carry routing or server behaviour.
 
 import { stripNonEvidence, toPosix } from './guard.mjs'
 
@@ -94,8 +94,34 @@ const AREA_ASK_RES = [
 /** Plain prose: Ship at any size and when new (canon docs are Ask paths). */
 const PROSE_RES = [/^docs\/.+\.mdx?$/, /^DEBT\.md$/, /(?:^|\/)README\.md$/]
 
-/** Ship is an ALLOWLIST: prose, plus copy modules (line-capped, never new). */
-const SHIP_RES = [...PROSE_RES, /^src\/(?:.*\/)?(?:copy\.ts|[^/]+-copy\.ts|copy\/[^/]+\.ts)$/]
+/**
+ * Ship is an ALLOWLIST: prose, plus copy modules and presentational sources
+ * (both line-capped, never new).
+ */
+const COPY_MODULE_RE = /^src\/(?:.*\/)?(?:copy\.ts|[^/]+-copy\.ts|copy\/[^/]+\.ts)$/
+
+/** Render-capable UI source: a view-layer `*.tsx` / `*.css` under `src/`. */
+const UI_SOURCE_RE = /^src\/.+\.(?:tsx|css)$/
+const NON_RENDER_SOURCE_RE = /\.d\.[cm]?ts$|\.setup\.[cm]?[jt]sx?$/
+
+/**
+ * UI-shaped files that still carry routing or server behaviour: never a ship
+ * path, whatever their extension says. Auth, API, finance and middleware are
+ * already Ask paths above, so only what is left of ds's list is named here.
+ */
+const SERVER_ROUTE_RES = [
+  /(?:^|\/)server\//,
+  /(?:^|\/)actions\//,
+  /(?:^|\/)[^/]*action[^/]*\.[cm]?[jt]sx?$/i,
+  /(?:^|\/)app\/(?:.*\/)?(?:page|layout|route|template|default|loading|error|not-found|global-error)\.[cm]?[jt]sx?$/,
+]
+
+/** A view-layer source whose change is presentational by its path. */
+export function isUiSourcePath(path) {
+  const p = toPosix(path)
+  if (!UI_SOURCE_RE.test(p) || NON_RENDER_SOURCE_RE.test(p) || isTestPath(p)) return false
+  return !SERVER_ROUTE_RES.some((re) => re.test(p))
+}
 
 /**
  * Tests never raise the tier (outside the structural Ask paths).
@@ -128,7 +154,8 @@ export function isProseDoc(path) {
 /** A non-test path that may change under Ship. */
 export function isShipPath(path) {
   const p = toPosix(path)
-  return !isAskPath(p) && SHIP_RES.some((re) => re.test(p))
+  if (isAskPath(p)) return false
+  return PROSE_RES.some((re) => re.test(p)) || COPY_MODULE_RE.test(p) || isUiSourcePath(p)
 }
 
 /**
@@ -170,7 +197,8 @@ export function classifyChangeTier(files, expectedCount) {
       continue
     }
     if (status !== 'modified') show.push(`${status || 'unknown-status'} file: ${file.path}`)
-    if (!isShipPath(file.path)) show.push(`not a ship path (prose / copy): ${file.path}`)
+    if (!isShipPath(file.path))
+      show.push(`not a ship path (prose / copy / presentational UI): ${file.path}`)
     lines += (Number(file.additions) || 0) + (Number(file.deletions) || 0)
   }
   if (lines > SHIP_LINE_CAP) {
@@ -183,7 +211,7 @@ export function classifyChangeTier(files, expectedCount) {
   }
   return {
     minimum: 'ship',
-    reasons: [`${list.length} prose / copy file(s), ${lines} capped line(s)`],
+    reasons: [`${list.length} prose / copy / presentational file(s), ${lines} capped line(s)`],
   }
 }
 

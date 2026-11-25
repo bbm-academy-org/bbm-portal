@@ -1493,8 +1493,15 @@ describe('gateConditions — routed by change tier', () => {
     expect(res.warn.join('\n')).toMatch(/ship verified/i)
   })
 
-  it('a Ship declaration on a view-layer diff is refused — declared below the minimum', () => {
-    const res = gateConditions(withTier('Change-tier: Ship — tiny tweak', [view]))
+  it('a Ship declaration on a small presentational tweak is verified and review-free', () => {
+    const res = gateConditions(withTier('Change-tier: Ship — tighter card spacing', [view]))
+    expect(res.red).toEqual([])
+    expect(res.tier.effective).toBe('ship')
+  })
+
+  it('a Ship declaration on a route file is refused — declared below the minimum', () => {
+    const page = { ...view, path: 'src/app/(platform)/p/okr/page.tsx' }
+    const res = gateConditions(withTier('Change-tier: Ship — tiny tweak', [page]))
     expect(res.red.join('\n')).toMatch(/below the minimum show/)
   })
 

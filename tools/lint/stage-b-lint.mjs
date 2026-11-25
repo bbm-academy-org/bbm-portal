@@ -449,7 +449,11 @@ export function checkStageB(pr, issueComments = []) {
       head,
       `task-cycle stage 5: an owner-visible change does not merge without the owner's «принято» — ` +
         `routed as Change-tier ${tier}: ` +
-        (tier === 'show' ? 'on the PR screenshots or a live stand.' : 'on a LIVE stand.'),
+        (tier === 'ship'
+          ? 'the owner’s decision in chat, recorded as a GO — no stand, no screenshot ceremony.'
+          : tier === 'show'
+            ? 'on the PR screenshots or a live stand.'
+            : 'on a LIVE stand.'),
       'Record it in the PR body (or a comment on the linked issue), in one of:',
       ...SHAPES,
     ].join('\n'),

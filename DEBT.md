@@ -972,8 +972,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-11-24-594-worktree-guard-path-forms -->
 
-- [ ] 2026-11-25 Change tiers (#597): Ship is prose-only — a view-layer `*.tsx` / `*.css` floors at Show — which is stricter than ds-platform, where a small presentational tweak may Ship; and, in the other direction, a test-only PR (every file under `tests/`) is Ship as in ds-platform, which is wider than bbm's previous review-free class (non-canon docs only) — a PR that only weakens assertions merges with no review. Both applied without owner confirmation, asked together in session 2026-11-25 (review of PR #604). Return condition: the owner's answer — widen the Ship list (presentational tweaks) or narrow it (test-only) in `tools/lint/lib/change-tier.mjs` + `.claude/rules/change-tiers.md`, or delete this line as confirmed.
-
 <!-- debt-entry-end: 2026-11-25-597-ship-prose-only -->
 
 <!-- debt-append-marker -->
