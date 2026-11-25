@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PLATFORM_USER_ROLE } from '@/lib/platform/authGate'
 
@@ -96,6 +96,19 @@ const request = {
   postedAt: null,
   operationId: null,
 }
+
+// The first case to import a route paid the cold load of its whole module graph
+// (the real finance module behind the partial mock above) — measured 2026-11-25
+// on the Windows dev box at ~3.3 s of a case alone, past Vitest's 5 s default
+// under machine load (#599). The cost is inherent, so it is paid once here, in
+// a hook with its own budget; the cases then import from the module cache.
+beforeAll(async () => {
+  await Promise.all([
+    import('@/app/(platform)/p/finance/api/requests/route'),
+    import('@/app/(platform)/p/finance/api/requests/[id]/route'),
+    import('@/app/(platform)/p/finance/api/requests/[id]/actions/route'),
+  ])
+}, 60_000)
 
 beforeEach(() => {
   state.session = {
