@@ -1,31 +1,30 @@
 ---
 name: report-task-outcome
-description: The canon of the final task report — the fixed five-point stage-6 shape, the mandatory marker lines («Проверить глазами:», «Отклонения от конвенций:», plus `surface-decision-debt:`), the self-contained owner-question form, and what an honest status/percentage means here. Use when writing the final report of any task, an interim owner-facing checkpoint, or a mid-thread question to the owner. Project-local; this repo only.
+description: The canon of the owner-facing report — four parts in fixed order («Что изменилось» / «Что нужно от тебя» / «Что дальше» / a collapsed «▸ Технически» appendix that is the only place for ids, paths and the marker lines), the owner's words only in parts 1–3, the «Проверить глазами» line, tracker counts instead of percentages, and the self-contained owner-question form. Use when writing the final report of any task, an interim owner-facing checkpoint, or a mid-thread question to the owner. Project-local; this repo only.
 ---
 
-# report-task-outcome — the canon of the final report
+# report-task-outcome — the owner-facing report
 
-Ported from ds-platform (task 7.3, issue #134) onto **our** report form. This
-skill **documents the existing required shape**; it does not introduce a
-competing one. The authority is `.claude/skills/task-cycle/SKILL.md` stage 6
-(the five points) and stage 7 (the deviations line). No hook enforces it — see
-«No mechanical check» below. Where this skill and
-`task-cycle` could ever diverge, `task-cycle` wins and this file is the bug.
+The format is shared with ds-platform (its `report-task-outcome`). This file
+owns the report's shape; `.claude/skills/task-cycle/SKILL.md` stage 6 says
+WHEN the report is written and points here for WHAT it is. No hook enforces it
+— see «No mechanical check» below.
 
-**Why it is regulated:** an engineering-first report buried whether the owner had
-anything to check at all — «а что мне открыть?», «куда — в прод?». The form is
-product-first, and the "what to look at" line is not optional.
+**Why it is regulated:** a report built from identifiers buried whether the
+owner had anything to check or decide at all — «а что мне открыть?», «куда — в
+прод?», «я ничерта не понял из твоего отчёта». The form is product-first, and
+everything internal is fenced into one appendix the owner may skip.
 
 ## When it applies
 
 At the end of any task you report to the owner (a merged PR, a closed issue, a
-blocked stop), and — for the language and the question form — to every
+blocked stop), and — for the words and the question form — to every
 owner-facing interim checkpoint too.
 
 **Language:** the report is live dialogue with the owner, so it is written in
 **Russian** (`task-canon`: Russian is reserved for owner dialogue and end-user
-text; every other artifact is English). The marker strings below are fixed
-tokens — they are never translated or paraphrased.
+text; every other artifact is English). The part headings and marker strings
+below are fixed tokens — never translated or paraphrased.
 
 **Plain text in chat.** A report, status, summary, retro or plan is chat text —
 never an HTML page or a published artifact built for it (owner, 2026-08-15: a
@@ -33,54 +32,88 @@ styled page for a simple report added no fact, only layout time). A page is
 right only when the owner asks for one or the content is unreadable as text
 (an interactive diagram, a dashboard to click); unsure → ask in one line.
 
-**Product terms, numbers as references** — in reports and in live dialogue
-alike: a task is named by its product meaning («the audit ledger of edits»), its
-number follows in parentheses on first mention («(#201)») and is dropped after
-that. Tracker artifacts (issues, PRs, comments) keep their numbers.
+## Words
 
-## The fixed shape (task-cycle stage 6)
+Parts 1–3 use only words the owner used and product nouns — the hours page, the
+OKR dashboard, the lead form, the budget dashboard, a partner, an employee. No
+internal term there, glossed or not: no issue/PR number, SHA, branch, path,
+file, table, module or route name, no «stage N», no `EARS-N` id, no label or
+token syntax, no tool, library, hook or guard name. A task is named by its
+product meaning («журнал правок», not «#201»); its number lives in the appendix.
+A mechanism is always named through the product entity it serves — «гард ЧЕГО?»
+must be answerable from the sentence itself. A vendor the owner must act on is
+named once, with who it is to us.
 
-1. **Что изменилось — продуктовым языком.** 1–3 sentences a person would
-   actually notice, naming the **product entity** — the hours page, the OKR
-   dashboard, the lead form — never a bare mechanism («серверный гард», «сид
-   коллекции»): «гард ЧЕГО?» must be answerable from the sentence itself. The
-   shorthand ban and the two opening lines this point starts with are the
-   «Owner-report form» section below.
-2. **«Проверить глазами: \<URL\>»** — a real URL the owner opens themselves,
-   with the access line (login + where the password comes from) when the surface
-   is behind auth, on every change tier: this report follows the deploy, so a
-   Show change is live too. Show's PR screenshots were the pre-merge acceptance
-   (stage 5), never this line. If the change has no visual surface, the honest form is
-   the literal alternative: **«визуально ничего не меняется; проверяется так:
-   \<тест / поведение / команда\>»** — do NOT fill the point with PR/repo links
-   to make it look satisfied.
-3. **Честный статус: смержено ≠ задеплоено ≠ доступно владельцу.** Name the
-   exact landing state — «смержено в `main`, в прод НЕ выкачено» vs «выкачено в
-   прод, postcheck: HEAD совпадает». A prod deploy is its own step, never
-   implied by a merge.
-4. **% от заявленного объёма** — computed from the tracker (closed vs total via
-   `gh`), not estimated by eye; when under 100%, the stop reason comes with it.
-5. **Вопросы владельцу** — self-contained wording, no «см. выше» / «см. issue».
+_(symptom, owner 2026-08-19: «Я ничерта не понял из твоего отчёта. Можешь
+нормальным продуктовым языком разложить, что мы делаем и зачем».)_
 
-Then the two lines carried over from stage 7 (see below). Anything else — files,
-commits, CI, diff detail — goes AFTER these points, as a short technical tail:
-the report reads as a product report, not as a diff.
+## The report — four parts, fixed order
 
-## The two marker lines (stage 7, repeated in the report)
+1. **Что изменилось.** For each landed unit, one line that opens with the
+   product entity and what a person can now do or will notice — 1–3 sentences in
+   total. Merged and live in prod are stated separately: «в прод» only with the
+   deploy evidence in the appendix; a merge is never implied to be a deploy.
+   Say «работает само» only for an automatic trigger you observed running.
+   The part ends with the line
 
-```
-Отклонения от конвенций: <нет | список>
-surface-decision-debt: <[] | по пункту на отклонение — куда ушло>
-```
+   ```
+   Проверить глазами: <URL>
+   ```
 
-The first line is the stage-7 canon: it goes into the issue's closing comment
-**and** is repeated in the session's final report, because the owner reads the
-report, not the comment. A «нет» is not available to a session the owner had to
-halt: its deviations are exactly what the line exists for. The second names where each deviation was routed (its own issue
-/ a `DEBT.md` line / written off with a reason). How to derive both:
-`.claude/skills/surface-decision-debt/SKILL.md`.
+   — a real URL the owner opens themselves, with the access line (login + where
+   the password comes from) when the surface is behind auth, on every change
+   tier: this report follows the deploy, so a Show change is live too. Show's PR
+   screenshots were the pre-merge acceptance (task-cycle stage 5), never this
+   line. With no visual surface the honest form is the literal alternative
+   **«визуально ничего не меняется; проверяется так: \<тест / поведение /
+   команда\>»**. Git links — a PR, a commit, a repo page — never go on this
+   line: the owner reads them as a faked check.
 
-## No mechanical check — the markers are on you
+   **This part is the release note.** On a PR whose body carries a real
+   `## Product note (RU)` (`.github/pull_request_template.md`; the
+   `product-note` guard, `docs/ci-guardrails.md` §5, makes it non-optional on
+   a render-surface diff, and the merge-time Mattermost delivery renders it),
+   part 1's sentences are mirrored there verbatim — the report and the team's
+   note are the same text, authored once. `none` there only for a PR nobody
+   sees (tooling, docs, backend without UI).
+
+2. **Что нужно от тебя** — or «ничего». Only what the owner decides
+   (`AGENTS.md` §3) and what you provably cannot do or check yourself («The
+   owner's zone» below). Each item is a question in the owner-question form
+   below; a stand handed over carries a login that works on the first click.
+
+3. **Что дальше.** The next step and why, in product words; what is deferred
+   and why. It is named as a recommendation, not started without a «go»
+   (task-cycle stage 7).
+
+4. **▸ Технически** — the last part, collapsed where the medium folds
+   (`<details>` in a GitHub comment); in chat it is simply the final block under
+   that heading. It is the ONLY place for `#N`, PR, SHA, `EARS-N`, migrations,
+   paths and CI. It holds:
+   - the requested outcome vs the actual state — achieved / partial / not
+     achieved, with evidence and the remaining acceptance conditions; merge and
+     prod stated separately (`смержено в main` ≠ `выкачено в прод, postcheck:
+HEAD совпадает`), a prod claim with its deployed SHA or release tag;
+   - **tracker counts** — closed / total with the scope named, read from the
+     tracker via `gh` («2 из 2 PR», «4 из 6 задач эпика»), **never a
+     percentage**; under full, the stop reason comes with it;
+   - files, commits, CI, the iteration-summary comment URL
+     (`.claude/skills/write-iteration-summary/SKILL.md`);
+   - the two marker lines, last:
+
+     ```
+     Отклонения от конвенций: <нет | список>
+     surface-decision-debt: <[] | по пункту на отклонение — куда ушло>
+     ```
+
+     Their meaning and how to derive both is owned by
+     `.claude/skills/surface-decision-debt/SKILL.md`; the first is also the
+     stage-7 line of the issue's closing comment, repeated here because the
+     owner reads the report, not the comment. A «нет» is not available to a
+     session the owner had to halt: its deviations are exactly what the line
+     exists for.
+
+## No mechanical check — the shape is on you
 
 Nothing reads the final report at session Stop. Three Stop gates used to
 (`completion-report-gate`, `deviations-gate`, `surface-decision-debt-gate`); they
@@ -90,18 +123,20 @@ the same text — a pure token tax — and the free-prose recognizer behind them
 misfired again and again (#158 → #299 → #374 → #392). The retirement record:
 `docs/ci-guardrails.md` §6 and `tools/hooks/README.md`.
 
-What went is the forced rewrite, not the contract. Every point of the shape
-above and both marker lines are what a final report owes **by this canon** — a
-report without them is wrong whether or not anything catches it.
+What went is the forced rewrite, not the contract. The four parts and both
+marker lines are what a final report owes **by this canon** — a report without
+them is wrong whether or not anything catches it. (`pnpm session:last-report`
+finds a past report by its «Проверить глазами:» / «Отклонения от конвенций:»
+lines — `tools/session/last-report.mjs` — which is one more reason they stay
+literal.)
 
 ## The owner's zone — prove there is no own path first (mandatory)
 
-A report that splits the work into zones ("mine" / "the owner's") makes a claim
-in every item it routes to the owner: **that no path of your own exists.** That
+An item in part 2 makes a claim: **that no path of your own exists.** That
 claim is checked BEFORE the item is written, not asserted by default.
 
-Walk the four accesses you actually hold, and **name in the report which ones you
-checked and what each answered**:
+Walk the four accesses you actually hold, and **name in the appendix which ones
+you checked and what each answered**:
 
 1. **ssh hosts** you can reach (the boxes the service in question runs on);
 2. **PATs and service accounts** already configured in this environment;
@@ -109,10 +144,10 @@ checked and what each answered**:
    re-issue;
 4. **the provider's own API** with the token you have.
 
-Only after all four come back negative does the item go to the owner, and it goes
-with that list attached — "checked X, Y, Z; blocked because …". An item routed
-with no such list is a guess, and a wrong guess parks work in the backlog that
-was never blocked.
+Only after all four come back negative does the item go to the owner, with
+part 2 saying in plain words what was tried and why it is blocked. An item
+routed with no such check is a guess, and a wrong guess parks work in the
+backlog that was never blocked.
 
 _(symptom, owner 2026-08-19: «Почему ты перекладываешь работу на меня? Ты же сам
 заводил и прописывал все эти ключи. Сделай всё сам.» — within the same hour the
@@ -137,10 +172,10 @@ answered.
 _(symptom, 2026-08-26: a Mattermost origin nobody in the repo knew was guessed
 and wrapped in a TODO instead of being asked about.)_
 
-## Промежуточный чекпойнт — the marker, not the tail
+## Промежуточный чекпойнт — the marker, not the parts
 
-An interim message is **not** a stage-6 report and does not carry its five points
-or the two stage-7 lines. It carries one declared marker line:
+An interim message is **not** a final report and does not carry its four parts
+or the marker lines. It carries one declared marker line:
 
 ```
 Статус промежуточный
@@ -151,54 +186,34 @@ it overrides every other signal in the message — so a checkpoint that mentions
 merged PR is still a checkpoint. Everything else in the message is the actual
 content: what just landed, what is running, what is next.
 
-**Do not pay the ceremony defensively.** «Проверить глазами», an honest-status
-paragraph, a percentage and «Отклонения от конвенций: нет / surface-decision-debt:
-none» belong to the FINAL report of the iteration; repeating them on every
-checkpoint buries the content the owner is reading for. _(symptom, 2026-08-20:
-nine consecutive checkpoints in one session each carried the full tail.)_ The
-owner-question and owner-report language rules below still apply — those are about
-being understood, not about ceremony.
-
-## Owner-report form (mandatory)
-
-The twin of the question form below, applied to the report's **opening**. The
-**first two paragraphs of any owner-facing report carry no internal shorthand**:
-no bare issue/PR number without a gloss of what it is about, no table, file,
-module or route name, no «stage N», no `EARS-N` id, no label or token syntax.
-Every tool/token/process term (Payload, Zitadel, `channel:spec`, Stop-хук) is
-glossed in plain Russian on first use or dropped, and mechanism vocabulary waits
-for the technical tail. They open with two lines — **what we are building** and
-**why it matters to you** — in the owner's own product vocabulary; everything
-internal starts only after those two lines.
-
-_(symptom, owner 2026-08-19: «Я ничерта не понял из твоего отчёта. Можешь
-нормальным продуктовым языком разложить, что мы делаем и зачем».)_
+**Do not pay the ceremony defensively.** «Проверить глазами», the appendix, the
+tracker counts and «Отклонения от конвенций: нет / surface-decision-debt: []»
+belong to the FINAL report of the iteration; repeating them on every checkpoint
+buries the content the owner is reading for. _(symptom, 2026-08-20: nine
+consecutive checkpoints in one session each carried the full tail.)_ The words
+rule and the owner-question form still apply — those are about being
+understood, not about ceremony.
 
 ## Owner-question form (mandatory)
 
-Every question — in the report and in any mid-thread checkpoint — renders as a
-self-contained block of four beats: **что случилось / почему спрашиваю / что
-изменит ответ / где посмотреть** (a live URL or a concrete page — never "посмотри
-диff"). Banned: internal shorthand (token names, stage numbers, label syntax
-without a gloss) and any «см. issue/отчёт» redirect that makes the owner go read
-something before they can parse the question. Self-check each question before
-sending: someone who read nothing else must be able to answer it.
+Every question — in part 2 and in any mid-thread checkpoint — renders as a
+self-contained block: **что случилось / почему спрашиваю / что изменит ответ /
+где посмотреть** (a live URL or a concrete page — never "посмотри дифф"), then
+the options and your recommendation. Banned: internal shorthand and any «см.
+issue/отчёт» redirect that makes the owner go read something before they can
+parse the question. Self-check each question before sending: someone who read
+nothing else must be able to answer it.
 
 **One question at a time, in chat.** Questions go to the chat, ONE per message,
 each with its own context; the next is asked after the answer. A batch in one
 GitHub comment or a numbered list beside a report is not asking — the owner
 declined to answer exactly that (2026-08-26, 2026-08-31); a reminder list is not
 a question either. The GitHub comment stays the record of the decision, the
-dialogue runs in chat.
+dialogue runs in chat. A report whose part 2 holds more than one item asks the
+first and says the rest follow one by one.
 
-**The four beats are a DECLARED form** (#374): a message carrying **two or more
-of the four beat labels, each on its own line**, is a question and not a
-completion report — however many merged PRs and issue numbers it mentions.
-
-**A standalone owner question owes ONE declared line** (#392). The beats stay
-the content canon, but a real question is often written as free prose, and the
-owner must still be able to tell it apart from a report at a glance. So exactly
-one of these lines, on its own line, is what a question message owes:
+**A standalone owner question owes ONE declared line**, on its own line, so the
+owner can tell it apart from a report at a glance:
 
 ```
 Вопрос владельцу: <the question>
@@ -208,56 +223,39 @@ one of these lines, on its own line, is what a question message owes:
 Вопрос N из M — <the subject>
 ```
 
-**The colon on the singular line is not optional.** «Вопрос владельцу — …» with
-a dash is NOT read as a marker, while the numbered header takes a colon, a dash
-or nothing. The asymmetry is deliberate: a bare «Вопрос владельцу» is one
-inflection away from the plural heading below, and the colon is what separates
-them. A list bullet or a blockquote in front of either line is fine.
-
-**Singular, and the singular matters.** «Вопрос владельцу:» (SINGULAR + colon,
-markdown emphasis around it tolerated) and the numbered «Вопрос N из M» header
-are markers. The PLURAL **«Вопросы владельцу» is NOT** — it is point 5 of the
-mandatory report shape above. Write the plural only as the report's section
-heading and the singular only as a question's marker.
-
-A correctly formed report still usually ENDS on a question line, and that does
-not relieve it of its own markers — a final report owes points 1–5 and the two
-stage-7 lines by this canon.
-
 **Unanswered across more than two consecutive reports → escalate, do not
-restate.** A question that has ridden point 5 of three reports has been shown to
-be invisible there: the owner reads the report for what changed, and a tail item
-is not where an unanswered decision gets noticed. On its third crossing it leaves
-the report and is sent as its **own standalone chat message** — nothing but the
-four beats, and the note that the work is waiting on it. Restating it as point 5
-a fourth time is the failure, not the persistence.
+restate.** A question that has ridden part 2 of three reports has been shown to
+be invisible there: the owner reads the report for what changed. On its third
+crossing it leaves the report and is sent as its **own standalone chat message**
+— nothing but the question block, and the note that the work is waiting on it.
 
 _(symptom, 2026-08-26: the same owner question restated six times across
 consecutive reports, never once asked on its own.)_
 
 ## Failure modes
 
+- **A line built from identifiers instead of a product fact**, or any internal
+  term in parts 1–3, glossed or not.
 - **Filling «Проверить глазами» with a PR or repo link** when there is nothing
-  visual — the owner reads that as faking a check that does not exist. The
-  honest no-visual formula is the correct answer.
+  visual — the honest no-visual formula is the correct answer.
 - **«Готово / отгружено»** with no landing state — the owner then has to ask
   «куда, в прод?».
-- **A percentage by eye** instead of the tracker's closed/total.
-- **Jargon-first report**: a mechanism with no product entity, however green the
-  CI.
+- **A percentage** of anything instead of the tracker's closed / total.
+- **Part 1 and the PR's `## Product note (RU)` saying different things** — the
+  note is the same text, not a second draft.
+- **A question you could have answered yourself**, or a lead decision (anything
+  off the `AGENTS.md` §3 owner list) pushed into part 2.
 - **`surface-decision-debt: []` next to a paragraph describing a deviation** —
   the empty list asserts the opposite of the paragraph.
-- **«Отклонения от конвенций: нет» after the owner had to stop the session** —
-  that session's deviations are exactly what the line exists for.
-- **Questions in internal shorthand** — costs a full round-trip.
+- **«Отклонения от конвенций: нет» after the owner had to stop the session.**
 - **A guessed external value with a `TODO` beside it** — the placeholder ships
   and the question is never asked.
-- **The same unanswered question as point 5 for the third report running** — it
-  is a standalone message by then, not a tail item.
+- **The same unanswered question in part 2 for the third report running** — it
+  is a standalone message by then.
 
 ## Related
 
-- `.claude/skills/task-cycle/SKILL.md` — stages 5–7, the authority for this form.
+- `.claude/skills/task-cycle/SKILL.md` — stages 5–7: when this report is due.
 - `.claude/skills/surface-decision-debt/SKILL.md` — deriving the two marker lines.
 - `.claude/skills/write-iteration-summary/SKILL.md` — the stage-7 issue comment;
   the durable English record this Russian owner report is deliberately not.

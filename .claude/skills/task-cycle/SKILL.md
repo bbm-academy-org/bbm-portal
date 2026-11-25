@@ -303,14 +303,8 @@ final report and name it there. Invisible work (internals, refactors, tooling)
 carries no KB instruction; the spec and tests still apply. A spec that changed
 behavior gets its `status:` moved in the same PR (`docs/specs/README.md`).
 
-Then the final task report, fixed form:
-
-1. What changed — in product language.
-2. **«Проверить глазами: \<URL\>»** — or honestly «визуально ничего не
-   меняется; проверяется так: …».
-3. Honest status: merged ≠ deployed ≠ reachable by the owner.
-4. % delivered of the stated scope.
-5. Questions to the owner — self-contained wording (no "see above").
+Then the final task report to the owner, in the fixed four-part shape owned by
+`.claude/skills/report-task-outcome/SKILL.md` — read it at report time.
 
 ## Stage 7 — close
 

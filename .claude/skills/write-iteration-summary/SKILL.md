@@ -85,13 +85,13 @@ session's final report carries — the report is where the owner reads it, this
 comment is where it survives the session. Deriving it:
 `.claude/skills/surface-decision-debt/SKILL.md`.
 
-**Record the comment URL** in the final report's technical tail, so the owner's
+**Record the comment URL** in the final report's «▸ Технически» appendix, so the owner's
 report and the durable record are one click apart.
 
 ## What this comment is NOT
 
 - **Not the owner's report.** The stage-6 report is a live message in Russian,
-  product-first, with «Проверить глазами: \<URL\>» — its canon is
+  in the owner's words, ids fenced into its appendix — its canon is
   `.claude/skills/report-task-outcome/SKILL.md`. This comment is an English
   project artifact for whoever opens the issue later. Neither replaces the other,
   and neither is produced by pasting the other.
