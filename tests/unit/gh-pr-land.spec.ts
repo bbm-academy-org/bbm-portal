@@ -32,6 +32,8 @@ import {
  * Canon: `.claude/skills/task-canon/SKILL.md` §7.
  */
 
+const noFiles = () => ({ ok: true, data: [] })
+
 describe('classifyChecks', () => {
   it('everything completed successfully is green', () => {
     expect(
@@ -452,13 +454,14 @@ describe('runViewPr', () => {
     const res = runViewPr(7, {
       view: () => ({ ok: false, error: 'gh crashed' }),
       facts,
+      files: noFiles,
       cache: new Map(),
     })
     expect(res).toMatchObject({ ok: false, error: 'gh crashed' })
   })
 
   it('stamps the facts onto a successful read', () => {
-    const res = runViewPr(7, { view: view('h1'), facts, cache: new Map() })
+    const res = runViewPr(7, { view: view('h1'), facts, files: noFiles, cache: new Map() })
     expect(res.data.commits[0]).toMatchObject({ oid: 'h1', githubCreated: true })
   })
 
@@ -471,12 +474,12 @@ describe('runViewPr', () => {
   it('reads the facts once per head SHA, not once per poll', () => {
     const spy = vi.fn(facts)
     const cache = new Map()
-    const io = { view: view('h1'), facts: spy, cache }
+    const io = { view: view('h1'), facts: spy, files: noFiles, cache }
     runViewPr(7, io)
     runViewPr(7, io)
     runViewPr(7, io)
     expect(spy).toHaveBeenCalledTimes(1)
-    runViewPr(7, { view: view('h2'), facts: spy, cache })
+    runViewPr(7, { view: view('h2'), facts: spy, files: noFiles, cache })
     expect(spy).toHaveBeenCalledTimes(2)
   })
 })
@@ -1133,6 +1136,7 @@ describe('runViewPr — Part of resolution', () => {
     const res = runViewPr(7, {
       view: () => ({ ok: true, data: { body: 'Part of #201', closingIssuesReferences: [] } }),
       facts: () => null,
+      files: noFiles,
       issueStates,
       cache: new Map(),
     })
@@ -1148,6 +1152,7 @@ describe('runViewPr — Part of resolution', () => {
         data: { body: 'Part of #201', closingIssuesReferences: [{ number: 5 }] },
       }),
       facts: () => null,
+      files: noFiles,
       issueStates,
       cache: new Map(),
     })
@@ -1427,5 +1432,134 @@ describe('runWarnPlane', () => {
     expect(runWarnPlane(null, { api }).size).toBe(0)
     expect(runWarnPlane('  ', { api }).size).toBe(0)
     expect(calls).toEqual([])
+  })
+})
+
+/**
+ * Change tiers, slice B of #597 (`.claude/rules/change-tiers.md`). The gate
+ * re-proves the tier itself from the changed-file set through the shared
+ * classifier — the PR body line alone is never trusted — and routes the review
+ * requirement and the stage-5 reminder by the EFFECTIVE tier.
+ */
+describe('gateConditions — routed by change tier', () => {
+  const doc = { path: 'docs/runbooks/deploy.md', status: 'modified', additions: 3, deletions: 1 }
+  const view = {
+    path: 'src/app/(platform)/p/okr/OkrBoard.tsx',
+    status: 'modified',
+    additions: 12,
+    deletions: 4,
+  }
+  const base = {
+    state: 'OPEN',
+    isDraft: false,
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
+    reviewDecision: '',
+    comments: [],
+    closingIssuesReferences: [{ number: 597 }],
+  }
+  const withTier = (body: string, files: object[]) => ({
+    ...base,
+    body,
+    tierFiles: files,
+    changedFiles: files.length,
+  })
+
+  it('a verified Ship PR needs no separate review', () => {
+    const res = gateConditions(withTier('Change-tier: Ship — a typo in the runbook', [doc]))
+    expect(res.red).toEqual([])
+    expect(res.tier.effective).toBe('ship')
+    expect(res.warn.join('\n')).toMatch(/ship verified/i)
+  })
+
+  it('a Ship declaration on a view-layer diff is refused — declared below the minimum', () => {
+    const res = gateConditions(withTier('Change-tier: Ship — tiny tweak', [view]))
+    expect(res.red.join('\n')).toMatch(/below the minimum show/)
+  })
+
+  it('a Show declaration on an Ask path is refused', () => {
+    const tool = { path: 'tools/gh/pr-land.mjs', status: 'modified', additions: 1, deletions: 1 }
+    const res = gateConditions({
+      ...withTier('Change-tier: Show — small', [tool]),
+      reviewDecision: 'APPROVED',
+    })
+    expect(res.red.join('\n')).toMatch(/below the minimum ask/)
+  })
+
+  it('a Show PR keeps the review requirement', () => {
+    const res = gateConditions(withTier('Change-tier: Show — a new empty state', [view]))
+    expect(res.red.join('\n')).toMatch(/review is not confirmed/)
+  })
+
+  it('a Show PR is reminded of the screenshot acceptance, not of a live stand', () => {
+    const res = gateConditions({
+      ...withTier('Change-tier: Show — a new empty state', [view]),
+      reviewDecision: 'APPROVED',
+    })
+    expect(res.red).toEqual([])
+    const warn = res.warn.join('\n')
+    expect(warn).toMatch(/stage 5/)
+    expect(warn).toMatch(/screenshots/)
+    expect(warn).not.toMatch(/live stand/)
+  })
+
+  it('an Ask PR is reminded of the live-stand acceptance', () => {
+    const res = gateConditions({
+      ...withTier('Change-tier: Ask', [view]),
+      reviewDecision: 'APPROVED',
+    })
+    expect(res.tier.effective).toBe('ask')
+    expect(res.warn.join('\n')).toMatch(/live stand/)
+  })
+
+  it('no file listing at all floors at Ask, so the review stays required', () => {
+    const res = gateConditions({ ...base, body: 'Change-tier: Ship — typo' })
+    expect(res.tier.minimum).toBe('ask')
+    expect(res.red.join('\n')).toMatch(/review is not confirmed|below the minimum/)
+  })
+
+  it('a truncated listing (count mismatch) cannot verify Ship', () => {
+    const res = gateConditions({
+      ...withTier('Change-tier: Ship — typo', [doc]),
+      changedFiles: 4,
+    })
+    expect(res.red.join('\n')).toMatch(/below the minimum ask/)
+  })
+
+  it('a missing declaration is not refused here, but runs the full (Ask) procedure', () => {
+    const res = gateConditions({ ...withTier('no tier line', [doc]), reviewDecision: 'APPROVED' })
+    expect(res.red).toEqual([])
+    expect(res.tier.effective).toBe('ask')
+    expect(res.warn.join('\n')).toMatch(/no valid `Change-tier:` line/)
+  })
+})
+
+describe('runViewPr — the changed-file listing the tier is proven on', () => {
+  const view = (oid: string) => () => ({
+    ok: true,
+    data: { headRefOid: oid, commits: [], closingIssuesReferences: [{ number: 5 }] },
+  })
+
+  it('stamps the listing onto the payload, read once per head SHA', () => {
+    const files = vi.fn(() => ({ ok: true, data: [{ path: 'docs/a.md', status: 'modified' }] }))
+    const cache = new Map()
+    const io = { view: view('h1'), facts: () => null, files, cache }
+    const res = runViewPr(7, io)
+    runViewPr(7, io)
+    expect(res.data.tierFiles).toEqual([{ path: 'docs/a.md', status: 'modified' }])
+    expect(files).toHaveBeenCalledTimes(1)
+    runViewPr(7, { ...io, view: view('h2') })
+    expect(files).toHaveBeenCalledTimes(2)
+  })
+
+  it('an unreadable listing leaves no files, so the tier floors at Ask', () => {
+    const res = runViewPr(7, {
+      view: view('h1'),
+      facts: () => null,
+      files: () => ({ ok: false, error: 'gh blip' }),
+      cache: new Map(),
+    })
+    expect(res.data.tierFiles).toBeNull()
+    expect(res.data.tierFilesError).toBe('gh blip')
   })
 })

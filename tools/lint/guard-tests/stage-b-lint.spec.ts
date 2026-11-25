@@ -693,3 +693,87 @@ describe('stage-b-lint: a GO on a UI diff needs the lead UX-sanity record (#485)
     expect(template).toMatch(/^UX-sanity: </m)
   })
 })
+
+/**
+ * Slice B of #597 — Stage-B routed by the EFFECTIVE change tier
+ * (`.claude/rules/change-tiers.md`; the tier comes from the shared classifier
+ * `tools/lint/lib/change-tier.mjs`, re-proven on the changed-file set, never
+ * from the body line alone). Show accepts the owner's GO given on agent-captured
+ * PR screenshots; Ask still requires the GO from a live stand.
+ */
+describe('stage-b-lint: the Stage-B record is routed by change tier (#597)', () => {
+  const view = {
+    path: 'src/app/(platform)/p/okr/OkrBoard.tsx',
+    status: 'modified',
+    additions: 10,
+    deletions: 2,
+  }
+  const finance = {
+    path: 'src/app/(platform)/p/finance/RequestList.tsx',
+    status: 'modified',
+    additions: 10,
+    deletions: 2,
+  }
+  const tiered = (tierLine: string, stageB: string, files = [view]) => ({
+    number: 9,
+    body: [tierLine, stageB].join('\n'),
+    comments: [{ body: SANITY_BLOCK }],
+    files,
+    changedFiles: files.length,
+  })
+  const SCREENSHOT_GO = 'Stage-B: GO (screenshots) — Антон, 2026-11-25'
+  const LIVE_GO = 'Stage-B: GO — Антон, 2026-11-25'
+
+  it('a screenshot GO is evidence on a Show PR', () => {
+    const res = checkStageB(tiered('Change-tier: Show — a new empty state', SCREENSHOT_GO))
+    expect(res.verdict).toBe('pass')
+    expect(res.tier).toBe('show')
+  })
+
+  it('a live-stand GO is evidence on a Show PR too (the stronger record)', () => {
+    expect(checkStageB(tiered('Change-tier: Show — a new empty state', LIVE_GO)).verdict).toBe(
+      'pass',
+    )
+  })
+
+  it('a screenshot GO is NOT evidence on an Ask PR — Ask still needs the live stand', () => {
+    const res = checkStageB(tiered('Change-tier: Ask', SCREENSHOT_GO))
+    expect(res.verdict).toBe('violation')
+    expect(res.message).toMatch(/live stand/)
+  })
+
+  it('an Ask PR passes on a live-stand GO', () => {
+    expect(checkStageB(tiered('Change-tier: Ask', LIVE_GO)).verdict).toBe('pass')
+  })
+
+  it('declaring Show does not buy the screenshot route on an Ask path (finance)', () => {
+    const res = checkStageB(tiered('Change-tier: Show — list tweak', SCREENSHOT_GO, [finance]))
+    expect(res.tier).toBe('ask')
+    expect(res.verdict).toBe('violation')
+  })
+
+  it('an undeclared tier routes as Ask', () => {
+    const res = checkStageB(tiered('', SCREENSHOT_GO))
+    expect(res.tier).toBe('ask')
+    expect(res.verdict).toBe('violation')
+  })
+
+  it('a screenshot GO still needs the attribution and the UX-sanity record', () => {
+    expect(
+      checkStageB(tiered('Change-tier: Show — state', 'Stage-B: GO (screenshots)')).verdict,
+    ).toBe('violation')
+    const noSanity = { ...tiered('Change-tier: Show — state', SCREENSHOT_GO), comments: [] }
+    expect(checkStageB(noSanity).message).toMatch(/UX-sanity/)
+  })
+
+  it('the screenshot shape is a sanctioned marker value', () => {
+    expect(isEvidence('GO (screenshots) — Антон, 2026-11-25')).toBe(true)
+    expect(isEvidence('GO (screenshots)')).toBe(false)
+  })
+
+  it('the PR view asks for changedFiles, so a truncated listing floors at Ask', () => {
+    expect(ghPrArgs(9).join(' ')).toMatch(/changedFiles/)
+    const truncated = { ...tiered('Change-tier: Show — state', SCREENSHOT_GO), changedFiles: 7 }
+    expect(checkStageB(truncated).tier).toBe('ask')
+  })
+})
