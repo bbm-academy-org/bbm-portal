@@ -576,7 +576,21 @@ export function gateConditions(pr, { requireReview = false, reviewGate = true } 
   if (requireReview) {
     if (!humanApproved) red.push('no human APPROVE review (--require-review)')
   } else if (reviewFree) {
-    if (!humanApproved && !agent.ok) {
+    // Ship lifts the requirement to RUN a review, not an outstanding rejection:
+    // a REQUEST_CHANGES newer than the last diff-changing commit still holds.
+    const baseline = Date.parse(reviewBaselineDate(pr) ?? '')
+    const rejectedAt = Date.parse(agent.at ?? '')
+    const outstandingRejection =
+      !humanApproved &&
+      agent.reason === 'changes' &&
+      !(Number.isFinite(baseline) && Number.isFinite(rejectedAt) && rejectedAt < baseline)
+    if (outstandingRejection) {
+      red.push(
+        `review is not confirmed: ${AGENT_REASON.changes} (${agent.at}), newer than the last ` +
+          `commit that changed the diff. Change-tier ship lifts the need to run a review, not an ` +
+          `outstanding rejection — address it and push, or re-run the review`,
+      )
+    } else if (!humanApproved && !agent.ok) {
       warn.push(
         `review not required — Change-tier ship verified (${tier.testOnly ? 'test-only, ' : ''}` +
           `${(pr?.tierFiles ?? []).length} file(s)): the review-free class, .claude/rules/change-tiers.md`,
