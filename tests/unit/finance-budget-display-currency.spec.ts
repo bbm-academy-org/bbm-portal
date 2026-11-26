@@ -39,7 +39,7 @@ const PRECISIONS = new Map([
 ])
 const noFallback: CbrFallback = () => null
 
-describe('EARS-728 — the actual amount along the item own chain', () => {
+describe('EARS-728: the actual amount along the item own chain', () => {
   // A USD invoice paid from the baht account: a USD expense and one THB → USD step.
   const steps: DisplayStep[] = [
     { stepNo: 1, fromCurrency: 'THB', toCurrency: 'USD', fromAmount: 3_500_00n, toAmount: 100_00n },
@@ -153,7 +153,7 @@ describe('EARS-728 — the actual amount along the item own chain', () => {
   })
 })
 
-describe('EARS-729 — the dated Bank of Russia fallback', () => {
+describe('EARS-729: the dated Bank of Russia fallback', () => {
   const base = {
     currency: 'RUB',
     amount: 9_000_00n,
@@ -181,7 +181,7 @@ describe('EARS-729 — the dated Bank of Russia fallback', () => {
   })
 })
 
-describe('EARS-721 / EARS-703 — the switch and the stale notice', () => {
+describe('EARS-721/703: the switch and the stale notice', () => {
   it('offers ₽ $ € and B, falls back to RUB, else B, and disables what cannot convert', () => {
     const candidates = budgetDisplayCandidates('THB', (code) => code !== 'EUR')
     expect(candidates).toEqual([
@@ -323,7 +323,7 @@ const known = (figure: BudgetFigure | null): bigint => {
   return figure.amount
 }
 
-describe('EARS-722 — the dashboard in D', () => {
+describe('EARS-722: the dashboard in D', () => {
   it('converts nothing while D is B, and says so', () => {
     const rub = view(ledger(), display('RUB'))
     expect(rub.display.currency).toBe('RUB')

@@ -180,7 +180,7 @@ function expectSums(view: BudgetDashboard) {
 }
 
 describe('budget dashboard (spec 584)', () => {
-  it('buckets months that sum to spent, marks partial months and averages the last 3 complete', () => {
+  it('EARS-710/711/712: buckets months that sum to spent, marks partial months and averages the last 3 complete', () => {
     const view = dashboard([
       contribute('2026-01-10', 500_000_00n),
       spend('2026-01-20', 10_000_00n, FUND, TEAM),
@@ -210,7 +210,7 @@ describe('budget dashboard (spec 584)', () => {
     expectSums(view)
   })
 
-  it('keeps the runway on gross burn when income exists, and ends the waterline at income − spent', () => {
+  it('EARS-707/713: keeps the runway on gross burn when income exists, and ends the waterline at income − spent', () => {
     const view = dashboard([
       contribute('2026-01-10', 500_000_00n),
       spend('2026-03-05', 30_000_00n, FUND, TEAM),
@@ -229,7 +229,7 @@ describe('budget dashboard (spec 584)', () => {
     expectSums(view)
   })
 
-  it('decides the runway cases in their stated order', () => {
+  it('EARS-707: decides the runway cases in their stated order', () => {
     const overrun = dashboard([spend('2026-02-05', 2_000_00n, FUND, TEAM)], { limit: 1_000_00n })
     expect(overrun.runway.case).toBe('exhausted')
     expect(overrun.glass.state).toBe('overflow')
@@ -245,7 +245,7 @@ describe('budget dashboard (spec 584)', () => {
     expect(idle.runway.n).toBe(3)
   })
 
-  it('groups by project, category and counterparty, with the exchange-result line last', () => {
+  it('EARS-716/717: groups by project, category and counterparty, with the exchange-result line last', () => {
     const meta = new Map<number, BudgetOperationMeta>()
     const operations = [
       contribute('2026-01-10', 500_000_00n),
@@ -284,7 +284,7 @@ describe('budget dashboard (spec 584)', () => {
     expectSums(view)
   })
 
-  it('marks the provisional value of an open foreign debt, and clears it on reimbursement', () => {
+  it('EARS-719: marks the provisional value of an open foreign debt, and clears it on reimbursement', () => {
     const open = [contribute('2026-01-10', 500_000_00n), personalUsd('2026-03-03', 100_00n, 900)]
     const provisional = dashboard(open)
     expect(provisional.glass.provisional).toEqual({
@@ -302,7 +302,7 @@ describe('budget dashboard (spec 584)', () => {
     expect(settled.months.some((month) => month.provisional)).toBe(false)
   })
 
-  it('narrows the months and the breakdown to the period, leaving the glass and runway alone', () => {
+  it('EARS-715: narrows the months and the breakdown to the period, leaving the glass and runway alone', () => {
     const operations = [
       contribute('2026-01-10', 500_000_00n),
       spend('2026-03-05', 30_000_00n, FUND, TEAM),
@@ -350,13 +350,13 @@ describe('budget dashboard (spec 584)', () => {
     expect(view.empty).toBe(false)
   })
 
-  it('says the window is empty while no operation counts', () => {
+  it('EARS-705: says the window is empty while no operation counts', () => {
     const view = dashboard([], { startsOn: '2026-06-01' })
     expect(view.empty).toBe(true)
     expect(view.glass.spent).toEqual({ status: 'known', amount: 0n })
   })
 
-  it('withholds a month and every waterline point from it on', () => {
+  it('EARS-720: withholds a month and every waterline point from it on', () => {
     const view = dashboard([
       spend('2026-02-05', 1_000_00n, FUND, TEAM),
       op('2026-03-05', [
