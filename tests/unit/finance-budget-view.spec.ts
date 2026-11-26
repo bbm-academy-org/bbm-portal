@@ -2,12 +2,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  budgetHref,
   cbrMarkText,
   differenceText,
   figureText,
   formatMoney,
   limitText,
   parseLimitAmount,
+  segmentLabel,
 } from '@/app/(platform)/p/finance/reports/budget/budget-view'
 
 describe('budget dashboard display helpers', () => {
@@ -68,5 +70,19 @@ describe('budget dashboard display helpers', () => {
     expect(parseLimitAmount('abc', 2)).toBeNull()
     expect(limitText(100050n, 2)).toBe('1000,50')
     expect(limitText(100000000n, 2)).toBe('1000000')
+  })
+
+  it('keeps the period and the reporting currency in the URL, each omitted at its default (EARS-721)', () => {
+    expect(budgetHref('all', 'RUB', 'RUB')).toBe('?')
+    expect(budgetHref('year', 'RUB', 'RUB')).toBe('?period=year')
+    expect(budgetHref('all', 'USD', 'RUB')).toBe('?currency=USD')
+    expect(budgetHref('quarter', 'EUR', 'RUB')).toBe('?period=quarter&currency=EUR')
+    expect(budgetHref('month', 'USD', 'USD')).toBe('?period=month')
+  })
+
+  it('labels a currency segment with its sign and code, the code alone without a sign', () => {
+    expect(segmentLabel('RUB')).toBe('₽ RUB')
+    expect(segmentLabel('USD')).toBe('$ USD')
+    expect(segmentLabel('THB')).toBe('THB')
   })
 })
