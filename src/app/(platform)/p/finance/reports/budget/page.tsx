@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { forbidden, redirect } from 'next/navigation'
 
 import { auth } from '@/auth'
 import {
@@ -14,6 +15,7 @@ import {
   type BudgetGrouping,
   type FinanceActor,
 } from '@/lib/finance'
+import { PLATFORM_USER_ROLE, resolveClaimGate } from '@/lib/platform/authGate'
 import { cn } from '@/ui/utils'
 
 import { formatDate } from '../../requests/constants'
@@ -46,6 +48,8 @@ import {
  */
 export const dynamic = 'force-dynamic'
 
+const ROUTE = '/p/finance/reports/budget'
+
 export default async function BudgetDashboardPage({
   searchParams = Promise.resolve({}),
 }: {
@@ -55,6 +59,13 @@ export default async function BudgetDashboardPage({
   const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value)
   const period = parseBudgetPeriod(first(query.period))
   const session = await auth()
+  // The /p layout's gate, answered again HERE: «Выйти» re-renders this route in
+  // the sign-out action's own response with the session already gone, and Next
+  // renders a page in parallel with its layouts — so the layout's redirect does
+  // not keep this body from handing an empty actor to the finance module.
+  const gate = resolveClaimGate(session, ROUTE, PLATFORM_USER_ROLE)
+  if (gate.type === 'redirect') redirect(gate.to)
+  if (gate.type === 'forbidden') forbidden()
   const actor: FinanceActor = {
     email: session?.user?.email?.trim().toLowerCase() ?? '',
     roles: (session?.user as { roles?: string[] } | undefined)?.roles ?? [],
