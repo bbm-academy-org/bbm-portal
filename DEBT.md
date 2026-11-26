@@ -960,6 +960,14 @@ Entry format:
 
 <!-- debt-entry-end: 2026-11-25-585-research-in-design-source -->
 
+- [ ] 2026-11-26 Deploy Ship (#623, PR #625): the workstation→`portal-prod-tw` link carries only ~40 KB/s per connection (RTT 278 ms, while the same workstation uploads 3.4 MB/s to Cloudflare), and the cause was not investigated; #623 removed the symptom by shrinking the archive (~77 MiB → ~3 MiB, Ship ~1.5 min) instead of fixing the path. Recorded rather than filed because nothing is lost at the current archive size and no deliverable waits on it. Return condition: a Ship of the lean archive takes longer than 5 min, or a deploy needs to move a payload larger than ~10 MiB, or the next change to `tools/deploy/prod.mjs` Ship transport — at that point the path is measured (per-hop RTT/loss, a parallel or multiplexed transfer, the box's TCP window) and fixed or explicitly accepted.
+
+<!-- debt-entry-end: 2026-11-26-623-slow-link-to-prod -->
+
+- [ ] 2026-11-26 Deploy Ship watchdog (#623, PR #625): one 2-min no-progress budget (`STALL_BUDGET_SHIP_MS`) covers both the upload and the silent tail after the last byte is handed to ssh (~2 MiB still in the ssh channel window, then extract + swap). At ~40 KB/s that tail is ~50–60 s, a ~2x margin; below ~17 KB/s the watchdog would kill a healthy deploy and print the "may be mid-swap" branch. The complete-upload branch of `formatShipStallMessage` also has no unit test. Threshold chosen by the implementer, not by a spec. Return condition: a `STALLED: ship` with "The whole archive was sent" is observed, or a measured link below ~20 KB/s, or the next change to `streamShipArchive` — at that point the post-upload phase gets its own longer budget and a RED test covers the complete branch.
+
+<!-- debt-entry-end: 2026-11-26-623-ship-tail-budget -->
+
 <!-- debt-append-marker -->
 
 _(Swept 2026-09-02 (#440, owner-requested full sweep of the 44 open lines: 43

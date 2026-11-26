@@ -1097,9 +1097,10 @@ export function createStallWatchdog({ label, budgetMs, host, onStall }) {
 }
 
 /**
- * The ship transfer's no-progress budget. Progress here is BYTES ACCEPTED by the
- * ssh child's stdin (the read stream pauses under backpressure, so a channel
- * that stops draining stops the count) plus any line the box prints. A healthy
+ * The ship transfer's no-progress budget. Progress here is BYTES HANDED to the
+ * ssh child's stdin pipe — read from the archive, so at most one buffered chunk
+ * ahead of what ssh took (the read stream pauses under backpressure, so a
+ * channel that stops draining stops the count) — plus any line the box prints. A healthy
  * upload moves every second; two minutes of nothing is a stuck channel.
  */
 export const STALL_BUDGET_SHIP_MS = 2 * 60 * 1000
