@@ -298,7 +298,7 @@ function display(
     precisions: PRECISIONS,
     fallback: (amount, date) => ({ amount: (amount + 50n) / 100n, rateDate: date }),
     latest: { rateDate: '2026-06-13', convert: (amount) => (amount * 10n + 400n) / 800n },
-    latestRateDate: '2026-06-13',
+    newestRateOn: '2026-06-13',
     ...overrides,
   }
 }

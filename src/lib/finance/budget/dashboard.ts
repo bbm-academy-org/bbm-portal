@@ -95,7 +95,7 @@ export type BudgetDisplayInput = {
   /** `B` → `D` at the latest Bank of Russia rate (EARS-722 item 2); null when none qualifies. */
   latest: { rateDate: string; convert: (amountB: bigint) => bigint } | null
   /** The newest stored Bank of Russia rate, for EARS-703's stale notice. */
-  latestRateDate: string | null
+  newestRateOn: string | null
 }
 
 export type BudgetMonth = {
@@ -646,7 +646,7 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
   const base = buildInOneCurrency(input)
   const { reading, display, today } = input
   const B = reading.currency
-  const latestRateDate = display?.latestRateDate ?? null
+  const newestRateOn = display?.newestRateOn ?? null
   if (display === undefined || display.currency === B) {
     return {
       ...base,
@@ -657,7 +657,7 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
         fallback: null,
         differences: { limit: null, equation: null, paidOut: null, provisional: null },
         // EARS-703 — in `B` only the provisional value is a Bank of Russia rate.
-        staleSince: base.glass.provisional === null ? null : rateStaleSince(latestRateDate, today),
+        staleSince: base.glass.provisional === null ? null : rateStaleSince(newestRateOn, today),
       },
     }
   }
@@ -781,7 +781,7 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
       },
       staleSince:
         stockRate !== null || fallback.operations > 0 || base.glass.provisional !== null
-          ? rateStaleSince(latestRateDate, today)
+          ? rateStaleSince(newestRateOn, today)
           : null,
     },
   }

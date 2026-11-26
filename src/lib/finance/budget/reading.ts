@@ -274,7 +274,7 @@ export async function getBudgetDisplayReading(
               rateDate: latestProbe.rateDate,
               convert: (amountB) => at(amountB, today)?.amount ?? 0n,
             },
-      latestRateDate: newest,
+      newestRateOn: newest,
     },
   }
 }
