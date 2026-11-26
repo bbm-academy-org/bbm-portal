@@ -23,12 +23,10 @@
 // because a test was present. A reviewer reading a green `tdd-signal` check
 // read it as an attestation that TDD had happened. It never checked that.
 //
-// PRESENCE is what this guard owns, and presence is all it claims. The ORDER
-// half — a new module's test must land in a strictly earlier COMMIT than its
-// implementation — is `tools/lint/tdd-order-lint.mjs`, which reads the PR's
-// commit graph rather than its file set. Neither guard is the other's
-// duplicate: a module with no test at all is this guard's finding and is
-// deliberately silent in `tdd-order`.
+// PRESENCE is what this guard owns, and presence is all it claims. Commit ORDER
+// is not judged anywhere since #621 — it is not the evidence of TDD; tests that
+// cover the change, green, and confirmed by review are. `tdd-order-lint.mjs` is
+// only a pre-commit note on how a new module and its test were staged.
 //
 // Why it exists: task-cycle stage 3 makes TDD a hard rule for platform-module
 // code ("no production module code without a failing test first"). A rule stated

@@ -13,9 +13,8 @@ import { caseDir, ghDir, runGuard } from './run-guard'
  * 2026-08-05; renamed from `tdd-signal` on 2026-08-27 by #355, rule unchanged).
  *
  * The name is the point of the rename: this guard checks that a test EXISTS, not
- * that one was written first. The order question belongs to `tdd-order-lint.mjs`
- * and its spec next door — see this guard's header for the #354 incident that
- * separated them.
+ * that one was written first. Commit order is judged nowhere since #621 — see
+ * this guard's header.
  *
  * task-cycle stage 3 makes TDD a hard rule for platform-module code; this is the
  * signal that the rule was skipped, visible to the reviewer at review time.
