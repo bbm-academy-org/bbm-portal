@@ -102,61 +102,6 @@ export function ghViewJson(kind, number, fields, cwd) {
 }
 
 /**
- * The PR's commits, oldest first: `[{ sha, … }]`.
- *
- * There is no `gh pr view --json` field carrying per-commit FILES, so a guard
- * that reasons about commit ORDER (`tdd-order`) needs the REST pair — this call
- * for the sequence, `ghCommit` below for each commit's file list. `gh` resolves
- * `{owner}/{repo}` from the cwd.
- *
- * Fixture seam: `<LINT_GH_FIXTURE_DIR>/pr-commits-<n>.json`.
- *
- * Known limit, inherited from the endpoint and worth naming rather than
- * discovering: the commits endpoint pages at 250 commits. A PR that long is its
- * own review problem, but a guard reading this must not assume completeness
- * silently.
- */
-export function ghPrCommits(number, cwd) {
-  const fixtureDir = process.env.LINT_GH_FIXTURE_DIR
-  const res = fixtureDir
-    ? fixtureRead(resolve(fixtureDir, `pr-commits-${number}.json`))
-    : ghRun(['api', '--paginate', `repos/{owner}/{repo}/pulls/${number}/commits`], cwd)
-  if (!res.ok) return res
-  return { ok: true, data: Array.isArray(res.data) ? res.data : [] }
-}
-
-/**
- * ONE PAGE of a commit: `{ sha, parents, files: [{ filename, status, patch }] }`.
- * `status` is git's own verdict for that commit (`added` / `modified` /
- * `renamed` / …), which is what lets a caller tell a NEW file from a rename
- * without re-deriving it; `parents` is what tells a merge from a commit.
- *
- * The endpoint pages its `files` array and caps it at 300 entries however you
- * page, so this is deliberately a SINGLE-PAGE primitive: the caller owns the
- * loop and owns what to do when the cap is hit. `--paginate` is not usable here
- * — it concatenates whole JSON objects for an object-shaped response rather
- * than merging their arrays.
- *
- * Fixture seam: `<LINT_GH_FIXTURE_DIR>/commit-<sha>.json` for page 1, and
- * `commit-<sha>-page<N>.json` for each page after it.
- *
- * @param {string} sha
- * @param {string} cwd
- * @param {number} page 1-based page number
- * @param {number} perPage page size (the endpoint's own maximum is 100)
- */
-export function ghCommit(sha, cwd, page = 1, perPage = 100) {
-  const fixtureDir = process.env.LINT_GH_FIXTURE_DIR
-  const res = fixtureDir
-    ? fixtureRead(
-        resolve(fixtureDir, page === 1 ? `commit-${sha}.json` : `commit-${sha}-page${page}.json`),
-      )
-    : ghRun(['api', `repos/{owner}/{repo}/commits/${sha}?per_page=${perPage}&page=${page}`], cwd)
-  if (!res.ok) return res
-  return { ok: true, data: res.data ?? {} }
-}
-
-/**
  * The native sub-issue graph of an issue: `[{ number, state, title }]`.
  * There is no `gh issue view --json` field for it — the sub-issues REST endpoint
  * is the only source, and `{owner}/{repo}` is resolved by `gh` from the cwd.

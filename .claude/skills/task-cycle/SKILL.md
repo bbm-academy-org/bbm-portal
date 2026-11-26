@@ -125,6 +125,9 @@ not workarounds — if a workaround is unavoidable, stop and file a separate
 blocked-by task (memory: `fix-root-cause-not-workarounds`). **TDD — hard rule
 for platform-module code:** no production module code without a failing test
 first; derive tests from the spec's acceptance scenarios where a spec exists.
+That is a working practice, not a history to prove: the evidence is tests that
+cover the change, green, and confirmed by the stage-4 review. A separate RED
+commit is welcome, never required.
 (The CMS mirror is covered by the site's contract test — unchanged.) Before
 pushing, run `pnpm ci:verify-base` (exit 0 green / 1 red / 2 pending): an
 inherited red on `main` must not be mistaken for your own, and on exit 1 the
@@ -156,7 +159,8 @@ default** — the lead re-dispatches `bbm-reviewer` on the same PR; scope and
 full-review fallbacks are owned by `.claude/agents/bbm-reviewer.md` («Re-review:
 delta mode»); add «full review» to the brief to force one. **TDD extends to review
 fixes: every blocker gets a RED test before its fix**, asserting the behaviour
-the reviewer said is missing or wrong, and the fix commit is what turns it green.
+the reviewer said is missing or wrong and green once the fix lands — test and
+fix may share a commit.
 A blocker rejected with reasoning needs no test; a blocker that is genuinely
 untestable says so in the thread, in that blocker's own reply. **Tests are read
 against the SPEC's acceptance scenarios, never against the implementation:** a

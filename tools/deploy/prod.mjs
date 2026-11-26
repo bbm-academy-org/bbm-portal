@@ -60,7 +60,7 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -1096,6 +1096,147 @@ export function createStallWatchdog({ label, budgetMs, host, onStall }) {
   }
 }
 
+/**
+ * The ship transfer's no-progress budget. Progress here is BYTES HANDED to the
+ * ssh child's stdin pipe — read from the archive, so at most one buffered chunk
+ * ahead of what ssh took (the read stream pauses under backpressure, so a
+ * channel that stops draining stops the count) — plus any line the box prints. A healthy
+ * upload moves every second; two minutes of nothing is a stuck channel.
+ */
+export const STALL_BUDGET_SHIP_MS = 2 * 60 * 1000
+
+/** How often a running ship prints its byte count. The workstation→box path
+ *  moves ~40 KB/s per connection (#623), so even a lean archive takes a minute
+ *  or more — a silent minute is what got read as a hang. */
+export const SHIP_PROGRESS_EVERY_MS = 15 * 1000
+
+/**
+ * The ship's own STALLED message. Unlike a docker step, a stalled ship has a
+ * known box state: the remote script swaps only AFTER tar has read the whole
+ * archive, so an incomplete upload leaves the live tree untouched and only a
+ * partial `.next` behind — which the next ship's `rm -rf` clears. A re-run is
+ * therefore the safe next step, not a box investigation.
+ */
+export function formatShipStallMessage(sentBytes, totalBytes, budgetMs, host) {
+  const mins = budgetMs / 60000
+  const n = Number.isInteger(mins) ? String(mins) : mins.toFixed(1)
+  const complete = sentBytes >= totalBytes
+  return (
+    `STALLED: ship — ${sentBytes} of ${totalBytes} bytes sent, no progress for ${n}m.
+` +
+    (complete
+      ? `  The whole archive was sent; the box may be mid-swap. Check before re-running: pnpm deploy:smoke
+` + `  (or: ssh ${host} ls -d ${REMOTE_TREE} ${REMOTE_TREE}.prev ${REMOTE_TREE}.next)`
+      : `  The upload did not complete, so the live ${REMOTE_TREE} is untouched ` +
+        `(a partial .next is cleared by the next ship). Re-run: pnpm deploy:prod`)
+  )
+}
+
+/**
+ * Stream the deploy archive into an already-spawned ship child (`ssh … tar -xz`)
+ * under a byte-progress watchdog. Resolves on exit 0; rejects on a non-zero exit
+ * or a stall — and on a stall it KILLS the child, so the run ends instead of
+ * waiting on a channel that will never drain (#623). The child's stdout/stderr
+ * are forwarded (they also count as progress).
+ *
+ * @param {{
+ *   child: {
+ *     stdin: import('node:stream').Writable,
+ *     stdout?: import('node:stream').Readable | null,
+ *     stderr?: import('node:stream').Readable | null,
+ *     kill(): unknown,
+ *     on(event: string, listener: (...args: unknown[]) => void): unknown,
+ *   },
+ *   source: import('node:stream').Readable,
+ *   totalBytes: number,
+ *   host: string,
+ *   budgetMs?: number,
+ *   progressEveryMs?: number,
+ *   stdout?: { write(d: string | Uint8Array): unknown },
+ *   stderr?: { write(d: string | Uint8Array): unknown },
+ * }} opts
+ * @returns {Promise<void>}
+ */
+export function streamShipArchive({
+  child,
+  source,
+  totalBytes,
+  host,
+  budgetMs = STALL_BUDGET_SHIP_MS,
+  progressEveryMs = SHIP_PROGRESS_EVERY_MS,
+  stdout = process.stdout,
+  stderr = process.stderr,
+}) {
+  return new Promise((resolvePromise, reject) => {
+    let sent = 0
+    let stalled = false
+    const mib = (b) => (b / (1024 * 1024)).toFixed(1)
+    let lastReported = -1
+    const progress = setInterval(() => {
+      if (sent === lastReported) return
+      lastReported = sent
+      stdout.write(`[ship] ${mib(sent)} of ${mib(totalBytes)} MiB sent
+`)
+    }, progressEveryMs)
+    progress.unref?.()
+    const watchdog = createStallWatchdog({
+      label: 'ship',
+      budgetMs,
+      host,
+      onStall: () => {
+        stalled = true
+        clearInterval(progress)
+        const msg = formatShipStallMessage(sent, totalBytes, budgetMs, host)
+        stderr.write(`
+✗ ${msg}
+`)
+        source.destroy()
+        child.kill()
+        reject(new Error(msg))
+      },
+    })
+    child.stdout?.on('data', (d) => {
+      watchdog.touch()
+      stdout.write(d)
+    })
+    child.stderr?.on('data', (d) => {
+      watchdog.touch()
+      stderr.write(d)
+    })
+    child.on('error', (e) => {
+      watchdog.stop()
+      clearInterval(progress)
+      if (!stalled) reject(e)
+    })
+    child.on('close', (c) => {
+      watchdog.stop()
+      clearInterval(progress)
+      if (stalled) return
+      if (c === 0) resolvePromise()
+      else reject(new Error(`tar extract on the box exited ${c}`))
+    })
+    // The remote script has abort paths (`SHIP ABORTED`, a broken swap) that
+    // exit while the archive is still being written, and the box's tar closes
+    // stdin once it has read the whole archive. Both make this pipe fail with
+    // EPIPE. Without a handler that is an UNHANDLED stream error: the process
+    // dies with a stack trace instead of the remote message and the real exit
+    // code. EPIPE is therefore swallowed on purpose — `close` decides the
+    // verdict — while any other read/write error is still surfaced.
+    const note = (what) => (e) => {
+      if (e?.code !== 'EPIPE')
+        stderr.write(`  ⚠ ${what}: ${e?.message ?? String(e)}
+`)
+    }
+    source.on('error', note('reading the deploy archive failed'))
+    child.stdin.on('error', note('writing the archive to the box failed'))
+    source.on('data', (chunk) => {
+      sent += chunk.length
+      watchdog.touch()
+    })
+    source.pipe(child.stdin)
+  })
+}
+
 // The remote command DRAINS the whole script first (`script=$(cat)`) and only
 // then executes it. NEVER a bare `bash -s`: that reads the script from stdin
 // incrementally, so any command which itself reads stdin swallows the rest of
@@ -1177,30 +1318,14 @@ async function shipTree(sha) {
     )
   })
   try {
-    await new Promise((resolvePromise, reject) => {
-      const child = spawn('ssh', [...sshBaseArgs(PROD_SSH), buildShipCommand()], {
-        stdio: ['pipe', 'inherit', 'inherit'],
-      })
-      child.on('error', reject)
-      child.on('close', (c) =>
-        c === 0 ? resolvePromise() : reject(new Error(`tar extract on the box exited ${c}`)),
-      )
-      // The remote script has abort paths (`SHIP ABORTED`, a broken swap) that
-      // exit while the archive is still being written, and the box's tar closes
-      // stdin once it has read the whole archive. Both make this pipe fail with
-      // EPIPE. Without a handler that is an UNHANDLED stream error: the process
-      // dies with a stack trace instead of the remote message and the real exit
-      // code, which is the diagnosis the operator needs. EPIPE is therefore
-      // swallowed on purpose — `close` above is what decides the verdict — while
-      // any other read/write error is still surfaced.
-      const archive = createReadStream(tmp)
-      const note = (what) => (e) => {
-        if (e?.code !== 'EPIPE') console.error(`  ⚠ ${what}: ${e?.message ?? String(e)}`)
-      }
-      archive.on('error', note('reading the deploy archive failed'))
-      child.stdin.on('error', note('writing the archive to the box failed'))
-      archive.pipe(child.stdin)
+    const totalBytes = (await stat(tmp)).size
+    console.log(`[ship] uploading ${(totalBytes / (1024 * 1024)).toFixed(1)} MiB`)
+    // stdout/stderr are piped, not inherited: the box's lines are progress for
+    // the watchdog too, and `streamShipArchive` forwards them to the terminal.
+    const child = spawn('ssh', [...sshBaseArgs(PROD_SSH), buildShipCommand()], {
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+    await streamShipArchive({ child, source: createReadStream(tmp), totalBytes, host: PROD_SSH })
   } finally {
     await rm(tmp, { force: true })
   }

@@ -19,8 +19,7 @@ describe('lib/gh: argv that survives the Windows shell', () => {
    * found), and cmd.exe splits an UNQUOTED `&` into a second command — so
    * `…/files?per_page=100&page=1` ran `gh api …?per_page=100` and then tried to
    * execute `page=1`, and every paged guard failed locally with
-   * «'page' is not recognized as an internal or external command». The same
-   * latent break existed on the `ghCommit` URL that `tdd-order` uses.
+   * «'page' is not recognized as an internal or external command».
    */
   it('quotes an argument carrying a query string, and leaves plain argv alone', () => {
     const args = prFilesArgs(449, 2)

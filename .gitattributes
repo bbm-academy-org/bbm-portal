@@ -55,3 +55,10 @@ tests/unit/fixtures/cbr/*.xml binary
 
 # The CBR sync cron wrapper runs on the Linux production box (#548).
 deploy/cron/*.sh text eol=lf
+
+# Acceptance evidence (screenshots, capture scripts) is a record for reviewers,
+# never read by the Docker build or the running app. It is kept OUT of the
+# `git archive` that `pnpm deploy:prod` ships (#623): it was 96% of the archive's
+# bytes, and the workstation→box path moves ~40 KB/s per connection, so it alone
+# made the Ship stage a ~35-minute silence.
+docs/evidence/** export-ignore

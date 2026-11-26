@@ -170,10 +170,8 @@ Entry format:
       defect is not fixed,** and its cost changed direction — at BLOCK the gate
       now certifies test presence it never actually verified. Return condition,
       superseding the above: the first `test-presence` or `tdd-order` finding
-      disputed as false, the next edit to `needlesFor`, or the `tdd-order`
-      WARN→BLOCK promotion review (earliest 2026-09-24,
-      `docs/ci-guardrails.md` §5), which reads this same matcher — whichever
-      comes first.
+      disputed as false, or the next edit to `needlesFor` — whichever comes
+      first.
 
 <!-- debt-entry-end: 2026-08-05-8fa8f75d9b -->
 
@@ -742,25 +740,7 @@ Entry format:
 
 <!-- debt-entry-end: 2026-08-27-5c8f2a1d94 -->
 
-- [ ] 2026-08-30 `pnpm lint:tdd-order` cannot complete its PR-mode GitHub
-      pagination on Windows: the guard's shell-backed `ghRun` passes an API URL
-      containing `&page=` through `cmd.exe`, which executes `page=` as a second
-      command (`'page' is not recognized`). Exact-head Linux CI still runs the
-      same guard successfully, so this is a local-verification gap rather than a
-      release blocker — return condition: the next edit to `tdd-order-lint.mjs`'s
-      GitHub pagination/runner, or the next Windows session that needs a local
-      PR-mode verdict before CI is available (#317)
-
 <!-- debt-entry-end: 2026-08-30-317-tdd-order-windows -->
-
-- [ ] 2026-08-31 PR #402 merged with a genuine historical TDD-order inversion:
-      production route code preceded its test, the exact-head `tdd-order` guard
-      was red, and the final review acknowledged the finding rather than
-      classifying it as a false positive. Rewriting merged history is not a
-      remedy; this record closes only when recurrence is mechanically prevented
-      — return condition: the `tdd-order` WARN→BLOCK promotion review (earliest
-      2026-09-24), or the next proposed merge with a genuine `tdd-order` finding,
-      whichever comes first (#382, PR #402, #416)
 
 <!-- debt-entry-end: 2026-08-31-416-tdd-order-402 -->
 
@@ -948,8 +928,6 @@ Entry format:
 
 <!-- debt-entry-end: 2026-09-15-483-samename-collision -->
 
-- [ ] 2026-09-03 The `tdd-order` guard's WARN on `src/app/(platform)/p/finance/requests/request-board-contract.ts` (#388, PR #470) is ACCEPTED rather than fixed. The file is a pure type module that arrived with the backend half ported verbatim from the superseded #430 branch (`c74b477`/`152690a` tests →`e40de0a`/`8d38e87` impl →`aeff020`); those ported tests cite the API route and the board MODEL, never the type file by path, so the first commit naming it is this session's UI test commit `5368c62` — later than `e40de0a`, hence the verdict. The guard's prescribed fix is an interactive rebase, which would rewrite four ported commits whose hashes the stop-state comment on #388 records as the branch's state, to reorder work this session did not do. The real gap is in the guard: it has no notion of a verbatim port, and a second port will trip it the same way — return condition: the next branch that ports commits verbatim from a superseded branch and trips `tdd-order`, or the guard's §4 promotion review to BLOCK (earliest 2026-09-24), whichever comes first (#388, PR #470). The SAME WARN also names `src/app/(platform)/p/finance/requests/request-board-provider.ts`, and that file is NOT the ported case: its 68 lines were written in this session's implementation commit `a01a441` before any test named it — implementation-first, plainly, and recorded here rather than under a rationale that does not apply to it (review of PR #470). It is not untested today: the multipart increment was test-first (`58b585a` RED → `b99c965`), and the JSON path, the refusal mapping and — since the review — the five CRUD `501` refusals are all asserted by `tests/unit/finance-request-board-provider.spec.ts`. Same return condition as above. Wave 3 (2026-09-14…16) widened the SAME WARN to three more paths, recorded here on 2026-09-16 under the same return condition: `constants.ts` and `loading.tsx` were created in the 2026-09-03 board commit `43c40a3` with no test naming them by path, and the first tests that do are wave-3 RED commits (`1c9a73d` the status colours → `8768671`; `f311c12` the loading view → `93ede37`) — the BEHAVIOUR was test-first, the module path predates its first citing test, which is what the guard reads; `RequestsTable.tsx` arrived in `2b1de5b` (2026-09-14) after the table view was specified RED in `8fd30aa` through its parent shell, and is first named by path in the defect-A test `5366b39` — implementation-first by path, plainly, and recorded as such. Not rewritten: the interactive rebase the guard prescribes would reorder the 60+ commits the owner's Stage-B «Принято» of 2026-09-16 was given on.
-
 <!-- debt-entry-end: 2026-09-03-388-tdd-order-ported-contract -->
 
 - [ ] 2026-09-03 `/p/finance/requests` (#388, PR #470) does NOT go through the cabinet data provider `src/lib/platform/cabinet/dataProvider.ts` that #315 established as the workspace pattern this surface was blocked on. It ships its own `custom`-only provider (`request-board-provider.ts`) whose CRUD methods throw `501`, because ONE authenticated GET answers with the board, the reference tables, the reader's permissions and the liability view at once (`RequestsSnapshot`) — a kanban that fetched five collections would render five different moments of the same ledger, and the cabinet provider speaks the paged `/p/api/<module>/admin/<resource>` contract this endpoint is not. What IS shared is the part that must be identical everywhere: the Refine query plumbing and the single feedback channel (`useNotificationProvider` → the kit's sonner `Toaster`, #434). Deliberate and reversible, and the rationale is in the file header — but one screen-shaped snapshot provider is a sample of one, and the pattern is currently unnamed anywhere the next surface would look — return condition: the SECOND workspace surface that needs a whole-screen snapshot instead of a paged resource (#389, the intake workspace, is the likely one), at which point the snapshot provider belongs beside the cabinet provider under `src/lib/platform/` with a named contract (#388, PR #470). **Amended 2026-09-15 (#388 wave 3):** the provider is no longer `custom`-only — it answers `getList` for two registers (`finance-requests`, `finance-liabilities`) from that same one GET, because the owner's acceptance withdrew the «a snapshot is not a paged resource» argument and put the register on the whitelist's List block. The deviation itself STANDS and so does its return condition: the screen still does not go through the cabinet data provider, and the pattern is still unnamed. What changed is that this provider now speaks a resource contract of its own on top of the snapshot, which makes the naming question more pressing, not less. A second, smaller property of the same one-GET choice, recorded with it: the snapshot is UNPAGED and reads documents per item (`listIntakeItems` has no LIMIT by design — paging is the surface's call — and `GET /p/finance/api/requests` runs one `listFinanceDocuments` per request), which is right at the ledger's current size and grows linearly with its history; the paging and the batched document read belong to the same named contract and land with it (review of PR #470).
@@ -993,6 +971,13 @@ Entry format:
 - [ ] 2026-11-26 Budget dashboard (#586, PR #624): the monthly-burn and waterline charts render two server-side SVG geometries (510 units at md and up, 360 below) switched by CSS, because the charts take no client measurement; every chart ships twice in the markup. Return condition: a chart on the page gains client interactivity or a third breakpoint is needed — the charts then move to one responsive geometry (client measurement or `viewBox` scaling) in that PR.
 
 <!-- debt-entry-end: 2026-11-26-586-two-chart-geometries -->
+- [ ] 2026-11-26 Deploy Ship (#623, PR #625): the workstation→`portal-prod-tw` link carries only ~40 KB/s per connection (RTT 278 ms, while the same workstation uploads 3.4 MB/s to Cloudflare), and the cause was not investigated; #623 removed the symptom by shrinking the archive (~77 MiB → ~3 MiB, Ship ~1.5 min) instead of fixing the path. Recorded rather than filed because nothing is lost at the current archive size and no deliverable waits on it. Return condition: a Ship of the lean archive takes longer than 5 min, or a deploy needs to move a payload larger than ~10 MiB, or the next change to `tools/deploy/prod.mjs` Ship transport — at that point the path is measured (per-hop RTT/loss, a parallel or multiplexed transfer, the box's TCP window) and fixed or explicitly accepted.
+
+<!-- debt-entry-end: 2026-11-26-623-slow-link-to-prod -->
+
+- [ ] 2026-11-26 Deploy Ship watchdog (#623, PR #625): one 2-min no-progress budget (`STALL_BUDGET_SHIP_MS`) covers both the upload and the silent tail after the last byte is handed to ssh (~2 MiB still in the ssh channel window, then extract + swap). At ~40 KB/s that tail is ~50–60 s, a ~2x margin; below ~17 KB/s the watchdog would kill a healthy deploy and print the "may be mid-swap" branch. The complete-upload branch of `formatShipStallMessage` also has no unit test. Threshold chosen by the implementer, not by a spec. Return condition: a `STALLED: ship` with "The whole archive was sent" is observed, or a measured link below ~20 KB/s, or the next change to `streamShipArchive` — at that point the post-upload phase gets its own longer budget and a RED test covers the complete branch.
+
+<!-- debt-entry-end: 2026-11-26-623-ship-tail-budget -->
 
 <!-- debt-append-marker -->
 
@@ -1237,3 +1222,15 @@ those gates ran. #589 retired all three Stop gates (owner decision, Anton,
 2026-11-24; register: `docs/ci-guardrails.md` §6 «Retired hook guards»), so the
 function and its evidence list no longer exist and neither return condition can
 fire.)_
+
+_(Written off 2026-11-25 (#621, PR #622), bodies removed, anchors kept:
+`2026-08-31-416-tdd-order-402` and `2026-09-03-388-tdd-order-ported-contract`.
+Both recorded commit-order inversions — a module committed before, or together
+with, its first citing test — and both waited on the `tdd-order` WARN→BLOCK
+promotion. #621 retired commit order as evidence of TDD (owner decision, Anton,
+2026-11-25): the criterion is tests that cover the change, green, and confirmed
+by review, which both entries already said held. The guard's CI job is removed
+and the promotion cancelled, so neither premise nor return condition remains.
+The same change removed the guard's PR mode, whose pagination on Windows
+`2026-08-30-317-tdd-order-windows` was about; that body is removed too, anchor
+kept — its subject no longer exists.)_
