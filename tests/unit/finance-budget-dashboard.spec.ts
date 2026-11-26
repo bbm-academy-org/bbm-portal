@@ -224,7 +224,8 @@ describe('budget dashboard (spec 584)', () => {
     const last = view.waterline.at(-1)!
     expect(last.net).toEqual({ status: 'known', amount: 9_000_00n - 90_000_00n })
     expect(last.contributed).toEqual({ status: 'known', amount: 500_000_00n })
-    expect(view.incomeNote).toBe(true)
+    // EARS-713 — in B, the income note while cumulative income is not zero
+    expect(view.waterlineNote).toBe('income')
     expect(view.money.equation).not.toBeNull()
     expectSums(view)
   })
@@ -354,6 +355,50 @@ describe('budget dashboard (spec 584)', () => {
     const view = dashboard([], { startsOn: '2026-06-01' })
     expect(view.empty).toBe(true)
     expect(view.glass.spent).toEqual({ status: 'known', amount: 0n })
+  })
+
+  it('EARS-713: shows no waterline note in B while cumulative income is zero', () => {
+    const view = dashboard([
+      contribute('2026-01-10', 500_000_00n),
+      spend('2026-03-05', 1_000_00n, FUND, TEAM),
+    ])
+    expect(view.waterlineNote).toBeNull()
+  })
+
+  it('EARS-710: a future-dated operation enters its own month, so the months still sum to spent', () => {
+    const view = dashboard([
+      contribute('2026-01-10', 500_000_00n),
+      spend('2026-03-05', 10_000_00n, FUND, TEAM),
+      spend('2026-07-02', 4_000_00n, FUND, TEAM),
+    ])
+    expect(known(view.glass.spent)).toBe(14_000_00n)
+    expect(view.months.at(-1)!.month).toBe('2026-07')
+    expect(view.months.at(-1)!.gross).toEqual({ status: 'known', amount: 4_000_00n })
+    // a month after today's is not complete, so it never enters the trailing averages
+    expect(view.runway.averagedMonths).toEqual(['2026-03', '2026-04', '2026-05'])
+    expect(known(view.waterline.at(-1)!.net)).toBe(-14_000_00n)
+    expectSums(view)
+  })
+
+  it('EARS-719: marks only the postings the open foreign debt values, not the rest of its operation', () => {
+    const mixed = op(
+      '2026-03-03',
+      [
+        leg(account('liability', 'USD'), -100_00n, { memberId: MEMBER }),
+        leg(account('expense', 'USD'), 100_00n, { projectId: DOCTOR, categoryId: ADS }),
+        leg(bank(), -2_000_00n),
+        leg(account('expense', 'RUB'), 2_000_00n, { projectId: FUND, categoryId: TEAM }),
+      ],
+      { intakeItemId: 950 },
+    )
+    const view = dashboard([contribute('2026-01-10', 500_000_00n), mixed])
+    const line = (name: string) => view.breakdown.category.lines.find((l) => l.name === name)!
+    expect(line('Реклама').provisional).toBe(true)
+    expect(line('Команда').provisional).toBe(false)
+    expect(view.glass.provisional).toEqual({
+      count: 1,
+      amount: { status: 'known', amount: 9_000_00n },
+    })
   })
 
   it('EARS-720: withholds a month and every waterline point from it on', () => {

@@ -278,6 +278,12 @@ const repayRub = (date: string, amount: bigint, itemId: number, settles: number 
     { intakeItemId: itemId, settlesItemId: settles },
   )
 
+const earn = (date: string, amount: bigint) =>
+  op(date, [
+    [bank(), amount],
+    [account('income', 'RUB'), -amount],
+  ])
+
 const TODAY = '2026-06-15'
 const ledger = () => [
   contribute('2026-01-10', 500_000_00n),
@@ -388,6 +394,40 @@ describe('EARS-722: the dashboard in D', () => {
       noRateOn: ['2026-03-05'],
     })
     expect(known(usd.glass.remaining)).toBe(7_500_00n)
+  })
+
+  it('EARS-713: shows the rate note in D whatever income is, and the income note only in B', () => {
+    expect(view(ledger(), display('USD')).waterlineNote).toBe('rate')
+    const earning = [...ledger(), earn('2026-05-20', 9_000_00n)]
+    expect(view(earning, display('USD')).waterlineNote).toBe('rate')
+    expect(view(earning, display('RUB')).waterlineNote).toBe('income')
+    expect(view(ledger(), display('RUB')).waterlineNote).toBeNull()
+  })
+
+  it('EARS-720: an unknown exchange result stays withheld in D even where its steps reach D', () => {
+    // Baht contributed at no recorded cost, then sold for roubles: the result is unknown.
+    const thb = account('bank', 'THB')
+    const sale = op('2026-02-02', [
+      [thb, -10_000_00n],
+      [bank(), 25_000_00n],
+      [account('conversion', 'THB'), 10_000_00n, { conversionStepNo: 1 }],
+      [account('conversion', 'RUB'), -25_000_00n, { conversionStepNo: 1 }],
+    ])
+    sale.steps = [{ stepNo: 1, fromCurrency: 'THB', toCurrency: 'RUB' }]
+    const operations = [
+      op('2026-02-01', [
+        [thb, 10_000_00n],
+        [account('equity', 'THB'), -10_000_00n, { memberId: MEMBER }],
+      ]),
+      sale,
+    ]
+    const steps = new Map([[sale.operationId, operationSteps(sale)]])
+    const inThb = view(operations, display('THB', { operationSteps: steps }))
+    expect(inThb.glass.spent.status).toBe('withheld')
+    expect(inThb.months.find((month) => month.month === '2026-02')!.gross.status).toBe('withheld')
+    const fx = inThb.breakdown.project.lines.find((line) => line.exchange)!
+    expect(fx.value.status).toBe('withheld')
+    expect(inThb.breakdown.project.addsUp).toBe(false)
   })
 
   it('converts «paid out» item by item, less the part still owed at its own operation', () => {
