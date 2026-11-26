@@ -235,10 +235,16 @@ export default async function BudgetDashboardPage({
         Сторно убирает операцию из её собственного месяца: возврат от поставщика уменьшает месяц
         расхода, а не месяц возврата, поэтому прошлый месяц может измениться.
       </p>
-      {dashboard.incomeNote && (
-        <p className="mt-2 text-xs text-muted-foreground">
+      {dashboard.waterlineNote === 'income' && (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="budget-waterline-note">
           Ватерлиния пересекает −лимит не в тот момент, когда стакан пустеет: доход не пополняет
           лимит, поэтому они совпадают, только пока дохода нет.
+        </p>
+      )}
+      {dashboard.waterlineNote === 'rate' && (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="budget-waterline-note">
+          В {D} уровень −лимит пересчитан по последнему курсу ЦБ, а ватерлиния — по курсу каждой
+          операции, поэтому их пересечение может не совпасть с «лимит исчерпан»: это решается в {B}.
         </p>
       )}
 

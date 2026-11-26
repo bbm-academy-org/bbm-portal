@@ -552,14 +552,21 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
   for (const holding of holdingPools.values()) cash = addCost(cash, holding.cost)
   let owed: Cost = knownCost(owedB)
   let owedProvisional = false
-  /** EARS-719 — the operations whose open lot still carries a provisional value. */
-  const provisionalOperations = new Set<number>()
-  for (const lots of owedLots.values()) {
+  /**
+   * EARS-719 — per operation, the currencies of its open lots that still carry a provisional
+   * value. The mark is per posting: an expense debit is the debt's value only in the debt's
+   * currency, so a posting of the same operation in another currency stays unmarked.
+   */
+  const provisionalCurrencies = new Map<number, Set<string>>()
+  for (const [lotsKey, lots] of owedLots) {
+    const currency = lotsKey.slice(lotsKey.indexOf(String.fromCharCode(0)) + 1)
     for (const lot of lots) {
       owed = addCost(owed, lot.cost)
       if (lot.quantity !== 0n) {
         owedProvisional = true
-        provisionalOperations.add(lot.operationId)
+        const currencies = provisionalCurrencies.get(lot.operationId) ?? new Set<string>()
+        currencies.add(currency)
+        provisionalCurrencies.set(lot.operationId, currencies)
       }
     }
   }
@@ -575,7 +582,9 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
       ({
         ...item,
         value: figure(withOpaque(cost)),
-        provisional: item.kind === 'expense' && provisionalOperations.has(item.operationId),
+        provisional:
+          item.kind === 'expense' &&
+          (provisionalCurrencies.get(item.operationId)?.has(item.currency) ?? false),
       }) as BudgetItem,
   )
   let provisionalAmount: Cost = ZERO

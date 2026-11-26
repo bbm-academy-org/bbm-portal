@@ -116,7 +116,8 @@ function shortestPath(own: string, reaches: (currency: string) => boolean, steps
 /** One item in `D`: its own chain first (EARS-728), the dated Bank of Russia fallback else (EARS-729). */
 export function convertOwnAmount(input: {
   currency: string
-  amount: bigint
+  /** The item's own amount; null where it has none (an unknown exchange result). */
+  amount: bigint | null
   valueB: BudgetFigure
   occurredOn: string
   steps: readonly DisplayStep[]
@@ -126,8 +127,9 @@ export function convertOwnAmount(input: {
 }): DisplayAmount {
   const D = input.display
   const reaches = (currency: string) => currency === D || (D === 'USD' && USD_PEGGED.has(currency))
-  const path = shortestPath(input.currency, reaches, [...input.steps])
-  if (path !== null) {
+  const path =
+    input.amount === null ? null : shortestPath(input.currency, reaches, [...input.steps])
+  if (path !== null && input.amount !== null) {
     let numerator = input.amount * path.numerator
     let denominator = path.denominator
     if (path.node !== D) {

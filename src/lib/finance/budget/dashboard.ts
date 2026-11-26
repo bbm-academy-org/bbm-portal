@@ -221,8 +221,12 @@ export type BudgetDashboard = {
   period: { key: BudgetPeriodKey; from: string; to: string }
   months: BudgetMonth[]
   waterline: BudgetWaterlinePoint[]
-  /** EARS-713 — the waterline crossing −limit coincides with an empty glass only while income is zero. */
-  incomeNote: boolean
+  /**
+   * EARS-713 — the chart's one note: `rate` WHILE `D` ≠ `B` (the −limit crossing need not
+   * coincide with «лимит исчерпан», decided in `B`), else `income` while cumulative income is
+   * not zero (the crossing coincides with an empty glass only while income is zero), else none.
+   */
+  waterlineNote: 'income' | 'rate' | null
   breakdown: {
     project: BudgetGrouping
     category: BudgetGrouping
@@ -324,14 +328,19 @@ const isSpend = (item: BudgetItem) => item.kind === 'expense' || item.kind === '
 function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 'display'> {
   const { reading, today, names } = input
   const { startsOn } = reading
-  const items = reading.items.filter((item) => item.occurredOn <= today)
+  // EARS-710 — every item the replay counted, a future-dated one included: spent sums them all,
+  // so the months must too, each item in its own month.
+  const { items } = reading
   const bounds = budgetPeriodBounds(input.period, startsOn, today)
   const currentMonth = monthOf(today)
 
   // EARS-710 / 711
+  const lastMonth = items
+    .map((item) => monthOf(item.occurredOn))
+    .reduce((last, month) => (month > last ? month : last), currentMonth)
   const monthKeys = monthsFrom(
     monthOf(startsOn),
-    currentMonth > monthOf(startsOn) ? currentMonth : monthOf(startsOn),
+    lastMonth > monthOf(startsOn) ? lastMonth : monthOf(startsOn),
   )
   const months: BudgetMonth[] = monthKeys.map((month) => {
     const inMonth = items.filter((item) => monthOf(item.occurredOn) === month)
@@ -419,7 +428,8 @@ function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 
       provisional: provisionalSoFar,
     }
   })
-  const incomeNote = incomeSoFar.status !== 'known' || incomeSoFar.amount !== 0n
+  const waterlineNote: BudgetDashboard['waterlineNote'] =
+    incomeSoFar.status !== 'known' || incomeSoFar.amount !== 0n ? 'income' : null
 
   // EARS-708 / 709
   const { contributed, income, owed, cashAtCost } = reading
@@ -588,7 +598,7 @@ function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 
     period: { key: input.period, ...bounds },
     months,
     waterline,
-    incomeNote,
+    waterlineNote,
     breakdown: {
       project: grouping((item) => ({
         key: `p${item.projectId ?? 0}`,
@@ -669,11 +679,14 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
     currency: string
     quantity: bigint
     value: BudgetFigure
+    kind?: BudgetItem['kind']
   }): BudgetFigure =>
     displayFigure(
       convertOwnAmount({
         currency: item.currency,
-        amount: item.quantity,
+        // An unknown exchange result has no own amount, so no own chain (EARS-720).
+        amount:
+          item.kind === 'exchangeResult' && item.value.status === 'withheld' ? null : item.quantity,
         valueB: item.value,
         occurredOn: item.occurredOn,
         steps: display.operationSteps.get(item.operationId) ?? [],
@@ -763,7 +776,7 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
       avgNet: converted.runway.avgNet,
     },
     money: { ...money, reconciles: base.money.reconciles, paidOut },
-    incomeNote: base.incomeNote,
+    waterlineNote: 'rate',
     display: {
       currency: D,
       converted: true,
