@@ -38,7 +38,7 @@ describe('SegmentedNav — EARS-721 / EARS-729 item 4: a currency with no rate i
     expect(describedBy).toBeTruthy()
     const description = host.querySelector(`[id="${describedBy}"]`)
     expect(description?.textContent).toBe('нет курса ЦБ для USD')
-    expect(inert!.textContent).toContain('$')
+    expect(inert!.textContent).toBe('$')
   })
 
   it('renders an available segment as a plain link, with no disabled or description attributes', () => {

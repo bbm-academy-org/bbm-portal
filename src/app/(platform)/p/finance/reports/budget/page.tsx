@@ -43,9 +43,11 @@ import {
  * (platform) layout is the sign-in gate and the limit writes are refused by
  * the module without `finance-approve` (EARS-723).
  *
- * The ₽/$/€ switch (spec 584 §G) travels as `?currency=`; the module converts,
- * this route only labels: the rate line, the dated-rate marks, the stock
- * figures' «по курсу ЦБ на <date>» and the relation lines of EARS-722 item 4.
+ * The ₽/$/€ switch (spec 584 §G) travels as `?currency=`, the period as
+ * `?period=`; the module converts, this route only says how: one pointer line
+ * under the header while the view is converted, and the «Как посчитано» block
+ * at the bottom (the conversion rules, EARS-729's marked months, the relation
+ * lines of EARS-722 item 4, the waterline notes). No figure carries a rate mark.
  */
 export const dynamic = 'force-dynamic'
 

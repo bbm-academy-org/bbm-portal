@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { useId } from 'react'
 
 import { cn } from '@/ui/utils'
 
@@ -7,7 +8,11 @@ export type Segment = {
   label: string
   href: string
   current: boolean
-  /** Why the segment cannot be chosen; it then renders inert, the reason as its title. */
+  /**
+   * Why the segment cannot be chosen. It then renders as a focusable disabled
+   * link whose reason is its accessible description (and its hover title), so a
+   * keyboard or screen-reader user hears why, not only a mouse user.
+   */
   disabledReason?: string | null
 }
 
@@ -26,6 +31,7 @@ export function SegmentedNav({
   segments: Segment[]
   testId?: string
 }) {
+  const idBase = useId()
   return (
     <nav
       aria-label={label}
@@ -34,13 +40,20 @@ export function SegmentedNav({
     >
       {segments.map((segment) =>
         segment.disabledReason ? (
-          <span
-            key={segment.key}
-            aria-disabled="true"
-            title={segment.disabledReason}
-            className="cursor-not-allowed rounded-md px-2.5 py-1 text-xs text-muted-foreground opacity-50"
-          >
-            {segment.label}
+          <span key={segment.key} className="contents">
+            <span
+              role="link"
+              tabIndex={0}
+              aria-disabled="true"
+              aria-describedby={`${idBase}-${segment.key}-reason`}
+              title={segment.disabledReason}
+              className="cursor-not-allowed rounded-md px-2.5 py-1 text-xs text-muted-foreground opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {segment.label}
+            </span>
+            <span id={`${idBase}-${segment.key}-reason`} className="sr-only">
+              {segment.disabledReason}
+            </span>
           </span>
         ) : (
           <Link
