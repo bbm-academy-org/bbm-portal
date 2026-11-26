@@ -24,7 +24,9 @@ async function shoot(page: Page, name: string) {
 test.describe('budget dashboard (spec 584)', () => {
   test.skip(!memberUsername || !memberPassword, 'E2E_MEMBER_USERNAME / E2E_MEMBER_PASSWORD unset')
 
-  test('a member reads the dashboard and switches its reporting currency', async ({ page }) => {
+  test('EARS-701/721: a member reads the dashboard and switches its reporting currency', async ({
+    page,
+  }) => {
     test.setTimeout(180_000)
     await signInThroughZitadel(
       page,
@@ -38,8 +40,8 @@ test.describe('budget dashboard (spec 584)', () => {
     await expect(page.getByTestId('budget-glass')).toBeVisible()
     await expect(page.getByTestId('budget-runway')).toBeVisible()
     await expect(page.getByTestId('budget-money')).toBeVisible()
-    await expect(page.getByTestId('budget-monthly').locator('svg')).toBeVisible()
-    await expect(page.getByTestId('budget-waterline').locator('svg')).toBeVisible()
+    await expect(page.getByTestId('budget-monthly').locator('svg:visible')).toBeVisible()
+    await expect(page.getByTestId('budget-waterline').locator('svg:visible')).toBeVisible()
     await expect(page.getByTestId('budget-rate-line')).toContainText('точно, без пересчёта')
     await shoot(page, 'desktop-light-rub')
 

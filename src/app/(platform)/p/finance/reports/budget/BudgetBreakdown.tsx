@@ -29,6 +29,8 @@ export type BreakdownRowView = {
   counterparty: string
   own: string
   value: string
+  /** EARS-729's conversion mark for the value, shown under it; null when exact. */
+  mark: string | null
   provisional: boolean
   href: string | null
 }
@@ -37,6 +39,8 @@ export type BreakdownLineView = {
   key: string
   name: string
   value: string
+  /** EARS-729's conversion mark for the value, shown under it; null when exact. */
+  mark: string | null
   amount: number | null
   share: string | null
   provisional: boolean
@@ -145,7 +149,7 @@ function Breakdown({ groupings, periodCaption }: BreakdownProps) {
                 onFocus={() => setHover(line.key)}
                 onBlur={() => setHover(null)}
                 className={cn(
-                  'grid grid-cols-[1fr_auto_48px_12px] items-center gap-2 rounded-md px-1.5 py-2 text-left tabular-nums transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:grid-cols-[260px_1fr_130px_60px_16px] md:gap-3.5',
+                  'grid grid-cols-[1fr_auto_48px_12px] items-center gap-2 rounded-md px-1.5 py-2 text-left tabular-nums transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:grid-cols-[260px_1fr_190px_60px_16px] md:gap-3.5',
                   hover === line.key && 'bg-muted',
                   line.exchange && 'mt-1 border-t pt-3 text-muted-foreground',
                 )}
@@ -165,7 +169,12 @@ function Breakdown({ groupings, periodCaption }: BreakdownProps) {
                     }}
                   />
                 </span>
-                <span className="text-right text-[13px] font-medium">{line.value}</span>
+                <span className="flex flex-col items-end text-right">
+                  <span className="text-[13px] font-medium">{line.value}</span>
+                  {line.mark !== null && (
+                    <span className="text-[11px] leading-4 text-muted-foreground">{line.mark}</span>
+                  )}
+                </span>
                 <span className="text-right text-xs text-muted-foreground">
                   {line.share === null ? '—' : `${line.share}%`}
                 </span>
@@ -199,6 +208,7 @@ function Breakdown({ groupings, periodCaption }: BreakdownProps) {
                 <SheetTitle>{open.name}</SheetTitle>
                 <SheetDescription>
                   {open.value}
+                  {open.mark !== null && ` · ${open.mark}`}
                   {open.share !== null && ` · ${open.share}% потраченного`}
                   {open.provisional && <ProvisionalMark />}
                 </SheetDescription>
@@ -255,6 +265,11 @@ function OperationsTable({ rows, exchange }: { rows: BreakdownRowView[]; exchang
           <span className="tabular-nums">
             {row.original.value}
             {row.original.provisional && <ProvisionalMark />}
+            {row.original.mark !== null && (
+              <span className="block text-[11px] leading-4 text-muted-foreground">
+                {row.original.mark}
+              </span>
+            )}
           </span>
         ),
       },
@@ -425,7 +440,7 @@ function Treemap({
                 onMouseLeave={() => onHover(null)}
                 onClick={() => onOpen(t.line)}
               >
-                <title>{`${t.line.name}: ${t.line.value} · ${t.line.share ?? '—'}%`}</title>
+                <title>{`${t.line.name}: ${[t.line.value, t.line.mark].filter(Boolean).join(' · ')} · ${t.line.share ?? '—'}%`}</title>
                 <rect
                   x={t.x}
                   y={t.y}

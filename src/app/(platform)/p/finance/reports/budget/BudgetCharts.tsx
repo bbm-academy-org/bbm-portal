@@ -27,7 +27,12 @@ export type AverageLevels = {
   caption: string
 } | null
 
-const W = 510
+/**
+ * The geometry's width in viewBox units. The SVG scales to its card, so a phone
+ * card (~310 px) renders the desktop geometry at ~0.6× and its 11 px labels at
+ * ~7 px; the page renders the narrow geometry below `md` to keep them legible.
+ */
+export const CHART_WIDTH = { wide: 510, narrow: 360 } as const
 const H = 270
 const PAD_L = 64
 const PAD_R = 96
@@ -47,10 +52,13 @@ function column(x: number, v: number, y: (v: number) => number, bw: number, r: n
 export function MonthlyBurnChart({
   columns,
   averages,
+  width = CHART_WIDTH.wide,
 }: {
   columns: MonthlyColumn[]
   averages: AverageLevels
+  width?: number
 }) {
+  const W = width
   const padT = 14
   const padB = 34
   const iw = W - PAD_L - PAD_R
@@ -168,7 +176,11 @@ export function MonthlyBurnChart({
             y={y(averages.net) + 44}
             className={`${labelClass} text-[10px]`}
           >
-            {averages.caption}
+            {averages.caption.split(/(?<=:) /).map((part, i) => (
+              <tspan key={part} x={PAD_L + iw + 12} dy={i === 0 ? 0 : 12}>
+                {part}
+              </tspan>
+            ))}
           </text>
         </g>
       )}
@@ -188,11 +200,14 @@ export function WaterlineChart({
   points,
   limit,
   labels,
+  width = CHART_WIDTH.wide,
 }: {
   points: WaterPoint[]
   limit: number
   labels: { net: string; contributed: string; limit: string }
+  width?: number
 }) {
+  const W = width
   const padT = 16
   const padB = 26
   const iw = W - PAD_L - PAD_R

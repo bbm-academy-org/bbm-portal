@@ -20,7 +20,7 @@ import { formatDate } from '../../requests/constants'
 import { ReportingCurrencySelect } from '../../reporting-currency-select'
 
 import { BudgetBreakdown, type BreakdownGroupingView } from './BudgetBreakdown'
-import { MonthlyBurnChart, WaterlineChart } from './BudgetCharts'
+import { CHART_WIDTH, MonthlyBurnChart, WaterlineChart } from './BudgetCharts'
 import { BudgetLimitActions } from './BudgetLimitActions'
 import {
   cbrMarkText,
@@ -267,7 +267,8 @@ export default async function BudgetDashboardPage({
       lines: grouping.lines.map((line) => ({
         key: line.key,
         name: line.name,
-        value: withMark(format(line.value), cbr(line.value)),
+        value: format(line.value),
+        mark: cbr(line.value),
         amount: figureValue(line.value, precision),
         share: line.share,
         provisional: line.provisional,
@@ -287,7 +288,8 @@ export default async function BudgetDashboardPage({
               }).text
             })
             .join(' + '),
-          value: withMark(format(row.value, true), cbr(row.value)),
+          value: format(row.value, true),
+          mark: cbr(row.value),
           provisional: row.provisional,
           href:
             row.requestItemId === null ? null : `/p/finance/requests?request=${row.requestItemId}`,
@@ -295,10 +297,6 @@ export default async function BudgetDashboardPage({
       })),
     }
   }
-}
-
-function withMark(text: string, mark: string | null): string {
-  return mark === null ? text : `${text} · ${mark}`
 }
 
 function periodHref(period: string, currency: string | null): string {
@@ -398,7 +396,7 @@ function Mark({ kind, children }: { kind: 'prov' | 'plain'; children: React.Reac
   return (
     <span
       className={cn(
-        'ml-1.5 inline-block rounded-full px-1.5 align-[1px] text-[11px] leading-4 font-medium whitespace-nowrap',
+        'ml-1.5 inline-block max-w-full rounded-lg px-1.5 align-[1px] text-[11px] leading-4 font-medium md:rounded-full md:whitespace-nowrap',
         kind === 'prov'
           ? 'bg-mark-provisional text-mark-provisional-foreground'
           : 'bg-muted text-muted-foreground',
@@ -759,6 +757,18 @@ function Dynamics({
     }
   })
   const last = dashboard.waterline.at(-1)
+  const water = {
+    points,
+    limit: (figureValueSafe(dashboard.glass.limit) ?? 0) / unit,
+    labels: {
+      net: last === undefined ? '—' : money(last.net),
+      contributed: last === undefined ? '—' : money(last.contributed),
+      limit:
+        dashboard.glass.limit.status === 'known'
+          ? money({ status: 'known' as const, amount: -dashboard.glass.limit.amount })
+          : money(dashboard.glass.limit),
+    },
+  }
   return (
     <div className="mt-4 grid gap-4 md:grid-cols-2">
       <Card>
@@ -776,7 +786,12 @@ function Dynamics({
           ]}
         />
         <div data-testid="budget-monthly">
-          <MonthlyBurnChart columns={columns} averages={averages} />
+          <div className="hidden md:block">
+            <MonthlyBurnChart columns={columns} averages={averages} />
+          </div>
+          <div className="md:hidden">
+            <MonthlyBurnChart columns={columns} averages={averages} width={CHART_WIDTH.narrow} />
+          </div>
         </div>
       </Card>
       <Card>
@@ -792,18 +807,12 @@ function Dynamics({
           ]}
         />
         <div data-testid="budget-waterline">
-          <WaterlineChart
-            points={points}
-            limit={(figureValueSafe(dashboard.glass.limit) ?? 0) / unit}
-            labels={{
-              net: last === undefined ? '—' : money(last.net),
-              contributed: last === undefined ? '—' : money(last.contributed),
-              limit:
-                dashboard.glass.limit.status === 'known'
-                  ? money({ status: 'known', amount: -dashboard.glass.limit.amount })
-                  : money(dashboard.glass.limit),
-            }}
-          />
+          <div className="hidden md:block">
+            <WaterlineChart {...water} />
+          </div>
+          <div className="md:hidden">
+            <WaterlineChart {...water} width={CHART_WIDTH.narrow} />
+          </div>
         </div>
       </Card>
     </div>
