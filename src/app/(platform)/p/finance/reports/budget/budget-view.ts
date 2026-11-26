@@ -178,3 +178,23 @@ export function limitText(amount: bigint, precision: number): string {
     ? `${digits.slice(0, -precision)},${fraction}`
     : digits.slice(0, -precision)
 }
+
+/**
+ * The page's own query (EARS-721): period and reporting currency travel in the
+ * URL, each omitted at the value the page reads when it is absent — «С начала
+ * бюджета» and RUB (`parseBudgetDisplayCurrency`; when RUB is unavailable its
+ * segment is inert, so every linked currency other than RUB is written out).
+ */
+export function budgetHref(period: string, currency: string): string {
+  const params = new URLSearchParams()
+  if (period !== 'all') params.set('period', period)
+  if (currency !== 'RUB') params.set('currency', currency)
+  const query = params.toString()
+  return query === '' ? '?' : `?${query}`
+}
+
+/** «₽ RUB» — the reporting-currency segment, after `design-source/finance/BudgetDashboard.html`. */
+export function segmentLabel(currency: string): string {
+  const sign = SIGN[currency]
+  return sign === undefined ? currency : `${sign} ${currency}`
+}

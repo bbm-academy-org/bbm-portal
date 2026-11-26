@@ -6,8 +6,8 @@ import { signInThroughZitadel } from './support/zitadel-sign-in'
  * Spec 584 (issue #586) — «Бюджет BBM» as a plain platform member (no finance
  * role reads it; EARS-701's link and refusal clauses stay on the #586 list):
  * the glass, the runway, the money tier, the two charts and the breakdown
- * render over the seeded budget, a breakdown line opens its operations, and the reporting-currency switch (EARS-721) re-renders the
- * page with the rate line of EARS-722 item 5 and the waterline's rate note
+ * render over the seeded budget, a breakdown line opens its operations, and the one-click reporting-currency switch (EARS-721) re-renders the
+ * page in place (period and currency switches keep the scroll position) with the rate line of EARS-722 item 5 and the waterline's rate note
  * (EARS-713). Needs a stand with a Bank of Russia USD rate; seeds nothing and
  * writes nothing.
  */
@@ -52,28 +52,49 @@ test.describe('budget dashboard (spec 584)', () => {
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.keyboard.press('Escape')
 
-    // EARS-721 — the switch travels in the URL and converts every tier
-    await page.getByRole('combobox', { name: 'Валюта итога' }).click()
-    const usd = page.getByRole('option', { name: /^USD/ })
-    await expect(usd).toBeVisible()
-    // The conversion half always runs: a stand without a Bank of Russia USD rate fails here
-    // loudly instead of passing on the rouble half alone.
+    // EARS-721 — one click on the segmented switch travels in the URL and converts every tier,
+    // the page staying where it was scrolled to
+    const currencies = page.getByTestId('budget-currencies')
+    const usd = currencies.getByRole('link', { name: /USD/ })
+    // The conversion half always runs: a stand without a Bank of Russia USD rate renders USD
+    // inert and fails here loudly instead of passing on the rouble half alone.
     await expect(
       usd,
-      'USD is disabled on this stand — it has no Bank of Russia USD rate; sync the rates first',
-    ).not.toHaveAttribute('aria-disabled', 'true')
+      'USD is not a link on this stand — it has no Bank of Russia USD rate; sync the rates first',
+    ).toBeVisible()
+    // Scrolled off the top yet with the switch still on screen, so the click itself scrolls
+    // nothing (Playwright scrolls an off-screen target into view before clicking it).
+    await page.evaluate(() => window.scrollTo(0, 40))
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(40)
+    await expect(usd).toBeInViewport({ ratio: 1 })
     await usd.click()
     await expect(page).toHaveURL(/currency=USD/)
     await expect(page.getByTestId('budget-rate-line')).toContainText(
       'по фактическому курсу каждой операции',
     )
+    await expect(currencies.getByRole('link', { name: /USD/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(await page.evaluate(() => window.scrollY), 'a currency switch keeps the scroll').toBe(40)
     await expect(page.getByTestId('budget-spent')).toContainText('$')
     await expect(page.getByTestId('budget-waterline-note')).toContainText('−лимит пересчитан')
     await shoot(page, 'desktop-light-usd')
 
-    // the period selector keeps the chosen currency
-    await page.getByTestId('budget-periods').getByRole('link', { name: 'Этот год' }).click()
+    // the period switch keeps the chosen currency and does not throw the page to the top
+    const periods = page.getByTestId('budget-periods')
+    await periods.scrollIntoViewIfNeeded()
+    const before = await page.evaluate(() => window.scrollY)
+    expect(before, 'the period switch sits below the first screen').toBeGreaterThan(0)
+    await periods.getByRole('link', { name: 'Этот год' }).click()
     await expect(page).toHaveURL(/period=year/)
     await expect(page).toHaveURL(/currency=USD/)
+    await expect(periods.getByRole('link', { name: 'Этот год' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(await page.evaluate(() => window.scrollY), 'a period switch keeps the scroll').toBe(
+      before,
+    )
   })
 })

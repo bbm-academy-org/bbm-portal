@@ -19,18 +19,20 @@ import { PLATFORM_USER_ROLE, resolveClaimGate } from '@/lib/platform/authGate'
 import { cn } from '@/ui/utils'
 
 import { formatDate } from '../../requests/constants'
-import { ReportingCurrencySelect } from '../../reporting-currency-select'
 
 import { BudgetBreakdown, type BreakdownGroupingView } from './BudgetBreakdown'
 import { CHART_WIDTH, MonthlyBurnChart, WaterlineChart } from './BudgetCharts'
 import { BudgetLimitActions } from './BudgetLimitActions'
+import { SegmentedNav } from './SegmentedNav'
 import {
+  budgetHref,
   cbrMarkText,
   differenceText,
   figureText,
   figureValue,
   longDate,
   monthShort,
+  segmentLabel,
 } from './budget-view'
 
 /**
@@ -141,15 +143,21 @@ export default async function BudgetDashboardPage({
         meta={`${budget.name} · валюта бюджета ${B} · ${since} · рассчитано ${computedAt}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <ReportingCurrencySelect
-              currencies={dashboard.candidates.map((candidate) => ({
-                code: candidate.code,
-                name: nameOf(candidate.code),
-                disabledReason: candidate.disabled ? `нет курса ЦБ для ${candidate.code}` : null,
-              }))}
-              value={D}
-              className="w-[180px]"
-            />
+            {dashboard.candidates.length > 1 && (
+              <SegmentedNav
+                label="Валюта итога"
+                testId="budget-currencies"
+                segments={dashboard.candidates.map((candidate) => ({
+                  key: candidate.code,
+                  label: segmentLabel(candidate.code),
+                  href: budgetHref(period, candidate.code),
+                  current: candidate.code === D,
+                  disabledReason: candidate.disabled
+                    ? `${nameOf(candidate.code)}: нет курса ЦБ для ${candidate.code}`
+                    : null,
+                }))}
+              />
+            )}
             {canApprove ? (
               <BudgetLimitActions
                 current={{
@@ -216,25 +224,16 @@ export default async function BudgetDashboardPage({
 
       <div className="mt-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <h2 className="text-base font-semibold">Динамика</h2>
-        <nav
-          aria-label="Период"
-          className="inline-flex flex-wrap gap-0.5 rounded-lg bg-muted p-[3px]"
-          data-testid="budget-periods"
-        >
-          {BUDGET_PERIODS.map((option) => (
-            <Link
-              key={option.value}
-              href={periodHref(option.value, display.converted || D !== 'RUB' ? D : null)}
-              aria-current={option.value === period ? 'page' : undefined}
-              className={cn(
-                'rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                option.value === period && 'bg-background font-medium text-foreground shadow-xs',
-              )}
-            >
-              {option.label}
-            </Link>
-          ))}
-        </nav>
+        <SegmentedNav
+          label="Период"
+          testId="budget-periods"
+          segments={BUDGET_PERIODS.map((option) => ({
+            key: option.value,
+            label: option.label,
+            href: budgetHref(option.value, D),
+            current: option.value === period,
+          }))}
+        />
       </div>
       <Dynamics dashboard={dashboard} money={money} precision={precision} />
       {markedMonths(dashboard).length > 0 && (
@@ -314,14 +313,6 @@ export default async function BudgetDashboardPage({
       })),
     }
   }
-}
-
-function periodHref(period: string, currency: string | null): string {
-  const params = new URLSearchParams()
-  if (period !== 'all') params.set('period', period)
-  if (currency !== null) params.set('currency', currency)
-  const query = params.toString()
-  return query === '' ? '?' : `?${query}`
 }
 
 /** EARS-729 item 2 — the month columns that sum an item at a dated rate. */

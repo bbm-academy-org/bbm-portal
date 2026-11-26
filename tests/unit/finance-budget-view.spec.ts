@@ -72,12 +72,11 @@ describe('budget dashboard display helpers', () => {
     expect(limitText(100000000n, 2)).toBe('1000000')
   })
 
-  it('keeps the period and the reporting currency in the URL, each omitted at its default (EARS-721)', () => {
-    expect(budgetHref('all', 'RUB', 'RUB')).toBe('?')
-    expect(budgetHref('year', 'RUB', 'RUB')).toBe('?period=year')
-    expect(budgetHref('all', 'USD', 'RUB')).toBe('?currency=USD')
-    expect(budgetHref('quarter', 'EUR', 'RUB')).toBe('?period=quarter&currency=EUR')
-    expect(budgetHref('month', 'USD', 'USD')).toBe('?period=month')
+  it('keeps the period and the reporting currency in the URL, each omitted at the value read when absent (EARS-721)', () => {
+    expect(budgetHref('all', 'RUB')).toBe('?')
+    expect(budgetHref('year', 'RUB')).toBe('?period=year')
+    expect(budgetHref('all', 'USD')).toBe('?currency=USD')
+    expect(budgetHref('quarter', 'EUR')).toBe('?period=quarter&currency=EUR')
   })
 
   it('labels a currency segment with its sign and code, the code alone without a sign', () => {
