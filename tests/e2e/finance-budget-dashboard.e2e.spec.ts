@@ -3,11 +3,13 @@ import { expect, test, type Page } from '@playwright/test'
 import { signInThroughZitadel } from './support/zitadel-sign-in'
 
 /**
- * Spec 584 (issue #586) — «Бюджет BBM» as a plain platform member (EARS-701:
- * no finance role reads it): the glass, the runway, the money tier, the two
- * charts and the breakdown render over the seeded budget, a breakdown line opens
- * its operations, and the reporting-currency switch (EARS-721) re-renders the
- * page with the rate line of EARS-722 item 5. Seeds nothing and writes nothing.
+ * Spec 584 (issue #586) — «Бюджет BBM» as a plain platform member (no finance
+ * role reads it; EARS-701's link and refusal clauses stay on the #586 list):
+ * the glass, the runway, the money tier, the two charts and the breakdown
+ * render over the seeded budget, a breakdown line opens its operations, and the reporting-currency switch (EARS-721) re-renders the
+ * page with the rate line of EARS-722 item 5 and the waterline's rate note
+ * (EARS-713). Needs a stand with a Bank of Russia USD rate; seeds nothing and
+ * writes nothing.
  */
 const idpHost = process.env.E2E_IDP_HOST
 const memberUsername = process.env.E2E_MEMBER_USERNAME
@@ -24,7 +26,7 @@ async function shoot(page: Page, name: string) {
 test.describe('budget dashboard (spec 584)', () => {
   test.skip(!memberUsername || !memberPassword, 'E2E_MEMBER_USERNAME / E2E_MEMBER_PASSWORD unset')
 
-  test('EARS-701/721: a member reads the dashboard and switches its reporting currency', async ({
+  test('EARS-721: a plain member reads the dashboard and switches its reporting currency', async ({
     page,
   }) => {
     test.setTimeout(180_000)
@@ -54,17 +56,19 @@ test.describe('budget dashboard (spec 584)', () => {
     await page.getByRole('combobox', { name: 'Валюта итога' }).click()
     const usd = page.getByRole('option', { name: /^USD/ })
     await expect(usd).toBeVisible()
-    if ((await usd.getAttribute('aria-disabled')) === 'true') {
-      await expect(usd).toContainText('нет курса ЦБ для USD')
-      await page.keyboard.press('Escape')
-      return
-    }
+    // The conversion half always runs: a stand without a Bank of Russia USD rate fails here
+    // loudly instead of passing on the rouble half alone.
+    await expect(
+      usd,
+      'USD is disabled on this stand — it has no Bank of Russia USD rate; sync the rates first',
+    ).not.toHaveAttribute('aria-disabled', 'true')
     await usd.click()
     await expect(page).toHaveURL(/currency=USD/)
     await expect(page.getByTestId('budget-rate-line')).toContainText(
       'по фактическому курсу каждой операции',
     )
     await expect(page.getByTestId('budget-spent')).toContainText('$')
+    await expect(page.getByTestId('budget-waterline-note')).toContainText('−лимит пересчитан')
     await shoot(page, 'desktop-light-usd')
 
     // the period selector keeps the chosen currency

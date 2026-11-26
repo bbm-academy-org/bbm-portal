@@ -3,7 +3,8 @@
  * actual-rate conversion of flow figures along an item's own chain (EARS-728),
  * the dated Bank of Russia fallback (EARS-729), the latest-rate conversion of
  * stock figures and the ratios kept in `B` (EARS-722), the switch's candidates
- * (EARS-721) and the stale-rate notice (EARS-703). Synthetic ledgers only.
+ * (EARS-721) and the stale-rate condition of the header notice (EARS-703, whose
+ * header clauses stay on the #586 list). Synthetic ledgers only.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -181,7 +182,7 @@ describe('EARS-729: the dated Bank of Russia fallback', () => {
   })
 })
 
-describe('EARS-721/703: the switch and the stale notice', () => {
+describe('EARS-721: the switch, and the stale-rate condition the header notice uses', () => {
   it('offers ₽ $ € and B, falls back to RUB, else B, and disables what cannot convert', () => {
     const candidates = budgetDisplayCandidates('THB', (code) => code !== 'EUR')
     expect(candidates).toEqual([

@@ -191,7 +191,9 @@ const DEFERRALS_BY_ISSUE = {
   },
   586: {
     ids: [
+      'EARS-701',
       'EARS-702',
+      'EARS-703',
       'EARS-704',
       'EARS-706',
       'EARS-708',
@@ -199,6 +201,7 @@ const DEFERRALS_BY_ISSUE = {
       'EARS-714',
       'EARS-718',
       'EARS-723',
+      'EARS-724',
       'EARS-725',
       'EARS-726',
       'EARS-727',

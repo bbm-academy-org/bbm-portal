@@ -60,7 +60,7 @@ describe('budget dashboard display helpers', () => {
     expect(differenceText(-5_50n, 'USD', 2)).toBe('−5,50 $')
   })
 
-  it('reads the typed limit into minor units, refusing finer-than-precision input (EARS-724)', () => {
+  it('reads the typed limit into minor units, refusing finer-than-precision input', () => {
     expect(parseLimitAmount('1 000 000', 2)).toBe(100000000n)
     expect(parseLimitAmount('1000,5', 2)).toBe(100050n)
     expect(parseLimitAmount('1,005', 2)).toBeNull()
