@@ -26,7 +26,10 @@ import {
   noteHasPaymentDetails,
   receiptAfterActFailed,
   refundAccounts,
+  refundAmountAfterSwitch,
+  refundCrossesCurrency,
   refundDue,
+  refundPrefill,
   reimburseDefaults,
   sheetActs,
   sheetAmount,
@@ -723,6 +726,7 @@ describe('«Отметить возврат» form (EARS-544)', () => {
       occurredOn: '2026-11-18',
       accountId: '',
       amount: '',
+      agentFee: '',
     })
   })
 
@@ -734,14 +738,11 @@ describe('«Отметить возврат» form (EARS-544)', () => {
       feeAmount: '1600',
       feeCurrency: 'RUB',
     })
-    expect(refundAccounts(stated, REFERENCES).map((account) => account.currency)).toEqual([
-      'RUB',
-      'RUB',
-    ])
     expect(refundDue(stated)).toEqual({ amount: '901600', currency: 'RUB' })
+    expect(refundPrefill(stated, REFERENCES, '1')).toBe('9016,00')
   })
 
-  it('EARS-544: a posted debt is refunded in its booked currency, for its booked sum', () => {
+  it('EARS-544/568: a posted debt is refunded from its booked currency for its booked sum, or from any other account for the sum that left it', () => {
     const booked = item({
       ...owed,
       status: 'posted',
@@ -750,12 +751,96 @@ describe('«Отметить возврат» form (EARS-544)', () => {
       paidCurrency: 'RUB',
     })
     expect(refundDue(booked)).toEqual({ amount: '900000', currency: 'RUB' })
-    const usdOnly = item({ ...owed, status: 'posted', operationId: 9 })
-    expect(refundAccounts(usdOnly, REFERENCES).map((account) => account.id)).toEqual([3])
-    expect(reimburseDefaults(usdOnly, REFERENCES, '2026-11-18')).toEqual({
+    const usdDebt = item({ ...owed, status: 'posted', operationId: 9 })
+    expect(refundAccounts(usdDebt, REFERENCES).map((account) => account.id)).toEqual([1, 2, 3])
+    expect(refundPrefill(usdDebt, REFERENCES, '3')).toBe('100,00')
+    expect(refundPrefill(usdDebt, REFERENCES, '1')).toBe('')
+    expect(refundCrossesCurrency(usdDebt, REFERENCES, '1')).toBe(true)
+    expect(refundCrossesCurrency(usdDebt, REFERENCES, '3')).toBe(false)
+    expect(reimburseDefaults(usdDebt, REFERENCES, '2026-11-18')).toEqual({
       occurredOn: '2026-11-18',
       accountId: '3',
       amount: '100,00',
+      agentFee: '',
+    })
+  })
+
+  it('EARS-544: switching accounts sets the required sum on the debt’s own account and keeps a typed amount between cross-currency ones', () => {
+    const usdDebt = item({ ...owed, status: 'posted', operationId: 9 })
+    // From the debt's own account (prefill 100,00) to a rouble one: the prefill goes.
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '3', '1', '100,00')).toBe('')
+    // A typed sum survives the switch.
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '3', '1', '95,00')).toBe('95,00')
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '1', '2', '9 500')).toBe('9 500')
+    // To the debt's own account: the required booked sum, whatever was typed.
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '1', '3', '')).toBe('100,00')
+    expect(refundAmountAfterSwitch(usdDebt, REFERENCES, '1', '3', '9 500')).toBe('100,00')
+  })
+
+  it('EARS-544: an unbooked request refunded in another currency is not the agent-fee case', () => {
+    expect(refundCrossesCurrency(owed, REFERENCES, '1')).toBe(false)
+    expect(
+      toReimburseBody(
+        { occurredOn: '2026-11-18', accountId: '1', amount: '9 016', agentFee: '150' },
+        owed,
+        REFERENCES,
+      ),
+    ).not.toHaveProperty('agentFeeAmount')
+  })
+
+  describe('EARS-568: the cross-currency refund of a booked debt', () => {
+    const usdDebt = item({ ...owed, status: 'posted', operationId: 9 })
+    const schema = createReimburseSchema(usdDebt, REFERENCES)
+    const messages = (value: Record<string, string>) =>
+      schema
+        .safeParse({ occurredOn: '2026-11-18', accountId: '1', amount: '9 500', ...value })
+        .error?.issues.map((issue) => issue.message)
+
+    it('EARS-568: the agent fee is optional, positive and smaller than the paid sum', () => {
+      expect(messages({ agentFee: '' })).toBeUndefined()
+      expect(messages({ agentFee: '150' })).toBeUndefined()
+      expect(messages({ agentFee: '0' })).toEqual(['Комиссия агента — положительная сумма в RUB.'])
+      expect(messages({ agentFee: '9 500' })).toEqual([
+        'Комиссия агента должна быть меньше суммы возврата.',
+      ])
+      expect(messages({ amount: '', agentFee: '150' })).toEqual([
+        'Укажите сумму, ушедшую со счёта, в RUB.',
+      ])
+    })
+
+    it('EARS-568: the body forwards the roubles that left the account and the agent fee', () => {
+      expect(
+        toReimburseBody(
+          { occurredOn: '2026-11-18', accountId: '1', amount: '9 500', agentFee: '150,50' },
+          usdDebt,
+          REFERENCES,
+        ),
+      ).toEqual({
+        act: 'mark-reimbursed',
+        snapshot: 'tok-12',
+        occurredOn: '2026-11-18',
+        accountId: 1,
+        amount: '950000',
+        agentFeeAmount: '15050',
+      })
+      expect(
+        toReimburseBody(
+          { occurredOn: '2026-11-18', accountId: '1', amount: '9 500', agentFee: '' },
+          usdDebt,
+          REFERENCES,
+        ),
+      ).not.toHaveProperty('agentFeeAmount')
+    })
+
+    it('EARS-568: a same-currency refund of the debt ignores any fee text', () => {
+      expect(messages({ accountId: '3', amount: '100', agentFee: '0' })).toBeUndefined()
+      expect(
+        toReimburseBody(
+          { occurredOn: '2026-11-18', accountId: '3', amount: '100', agentFee: '5' },
+          usdDebt,
+          REFERENCES,
+        ),
+      ).not.toHaveProperty('agentFeeAmount')
     })
   })
 
@@ -776,7 +861,7 @@ describe('«Отметить возврат» form (EARS-544)', () => {
   it('EARS-544/548: the body is the refund in the account’s minor units with the token', () => {
     expect(
       toReimburseBody(
-        { occurredOn: '2026-11-18', accountId: '1', amount: '9 016' },
+        { occurredOn: '2026-11-18', accountId: '1', amount: '9 016', agentFee: '' },
         owed,
         REFERENCES,
       ),

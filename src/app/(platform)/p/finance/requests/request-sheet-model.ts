@@ -689,17 +689,35 @@ export type ReimburseFormValue = ReceiptFields & {
   occurredOn: string
   accountId: string
   amount: string
+  /** EARS-568's payment-agent fee — read only on a cross-currency refund of a booked debt. */
+  agentFee?: string
 }
 
-/** The accounts a refund may leave: any, or only those in the currency the debt already has. */
+/**
+ * The accounts a refund may leave: any. A booked debt is refunded from its own
+ * currency for its booked sum, or from an account in another currency — the
+ * roubles through a payment agent (EARS-568) — for the sum that left it.
+ */
 export function refundAccounts(
-  request: RequestBoardItem,
+  _request: RequestBoardItem,
   references: RequestBoardReferences,
 ): RequestBoardReferences['accounts'] {
+  return references.accounts
+}
+
+/**
+ * EARS-568's case: the debt is already booked in one currency and the chosen
+ * account holds another. Only here the agent fee is asked and forwarded; an
+ * unbooked request refunded in another currency stays EARS-544's posting.
+ */
+export function refundCrossesCurrency(
+  request: RequestBoardItem,
+  references: RequestBoardReferences,
+  accountId: string,
+): boolean {
   const fixed = refundCurrencyFixed(request)
-  return fixed === null
-    ? references.accounts
-    : references.accounts.filter((account) => account.currency === fixed)
+  const account = accountOf(references, accountId)
+  return fixed !== null && account !== null && account.currency !== fixed
 }
 
 /**
@@ -719,14 +737,43 @@ export function refundPrefill(
   return fromMinorUnits(due.amount, currencyPrecision(references.currencies, due.currency))
 }
 
+/**
+ * The amount field after the account changes: an account with a required sum
+ * (the debt's own currency) always takes it; otherwise an empty field, or one
+ * still holding the previous account's prefill, is cleared, and a sum the user
+ * typed between cross-currency accounts is kept.
+ */
+export function refundAmountAfterSwitch(
+  request: RequestBoardItem,
+  references: RequestBoardReferences,
+  previousAccountId: string,
+  nextAccountId: string,
+  current: string,
+): string {
+  const required = refundPrefill(request, references, nextAccountId)
+  if (required !== '') return required
+  const untouched =
+    current.trim() === '' || current === refundPrefill(request, references, previousAccountId)
+  return untouched ? '' : current
+}
+
 export function reimburseDefaults(
   request: RequestBoardItem,
   references: RequestBoardReferences,
   today: string,
 ): ReimburseFormValue {
   const accounts = refundAccounts(request, references)
-  const accountId = accounts.length === 1 ? String(accounts[0].id) : ''
-  return { occurredOn: today, accountId, amount: refundPrefill(request, references, accountId) }
+  // A booked debt with ONE account in its own currency starts there, at the booked sum.
+  const fixed = refundCurrencyFixed(request)
+  const own = fixed === null ? [] : accounts.filter((account) => account.currency === fixed)
+  const accountId =
+    own.length === 1 ? String(own[0].id) : accounts.length === 1 ? String(accounts[0].id) : ''
+  return {
+    occurredOn: today,
+    accountId,
+    amount: refundPrefill(request, references, accountId),
+    agentFee: '',
+  }
 }
 
 export function createReimburseSchema(
@@ -734,7 +781,13 @@ export function createReimburseSchema(
   references: RequestBoardReferences,
 ) {
   return z
-    .object({ occurredOn: z.string(), accountId: z.string(), amount: z.string(), ...receiptShape })
+    .object({
+      occurredOn: z.string(),
+      accountId: z.string(),
+      amount: z.string(),
+      agentFee: z.string().optional(),
+      ...receiptShape,
+    })
     .superRefine((value, context) => {
       if (!ISO_DATE.test(value.occurredOn)) {
         context.addIssue({
@@ -754,14 +807,34 @@ export function createReimburseSchema(
         })
         return
       }
-      if (
-        toMinorUnits(value.amount, currencyPrecision(references.currencies, account.currency)) ===
-        null
-      ) {
+      const precision = currencyPrecision(references.currencies, account.currency)
+      const crosses = refundCrossesCurrency(request, references, value.accountId)
+      const amount = toMinorUnits(value.amount, precision)
+      if (amount === null) {
         context.addIssue({
           code: 'custom',
           path: ['amount'],
-          message: `Укажите сумму возврата в ${account.currency}.`,
+          message: crosses
+            ? `Укажите сумму, ушедшую со счёта, в ${account.currency}.`
+            : `Укажите сумму возврата в ${account.currency}.`,
+        })
+        return
+      }
+      const feeText = value.agentFee?.trim() ?? ''
+      if (!crosses || feeText === '') return
+      // The act's own refusals (EARS-568), said before the round-trip.
+      const fee = toMinorUnits(feeText, precision)
+      if (fee === null) {
+        context.addIssue({
+          code: 'custom',
+          path: ['agentFee'],
+          message: `Комиссия агента — положительная сумма в ${account.currency}.`,
+        })
+      } else if (BigInt(fee) >= BigInt(amount)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['agentFee'],
+          message: 'Комиссия агента должна быть меньше суммы возврата.',
         })
       }
     })
@@ -773,6 +846,8 @@ export type ReimburseBody = {
   occurredOn: string
   accountId: number
   amount: string
+  /** EARS-568: the payment agent's itemized fee, in the paying account's minor units. */
+  agentFeeAmount?: string
 }
 
 export function toReimburseBody(
@@ -781,14 +856,19 @@ export function toReimburseBody(
   references: RequestBoardReferences,
 ): ReimburseBody {
   const account = accountOf(references, value.accountId)!
-  return {
+  const precision = currencyPrecision(references.currencies, account.currency)
+  const body: ReimburseBody = {
     act: 'mark-reimbursed',
     snapshot: request.snapshot ?? '',
     occurredOn: value.occurredOn,
     accountId: account.id,
-    amount:
-      toMinorUnits(value.amount, currencyPrecision(references.currencies, account.currency)) ?? '',
+    amount: toMinorUnits(value.amount, precision) ?? '',
   }
+  const fee = toMinorUnits(value.agentFee?.trim() ?? '', precision)
+  if (refundCrossesCurrency(request, references, value.accountId) && fee !== null) {
+    body.agentFeeAmount = fee
+  }
+  return body
 }
 
 // ── the receipt the forms may carry (EARS-543/544: optional) ───────────────
