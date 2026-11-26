@@ -431,6 +431,74 @@ describe('EARS-722: the dashboard in D', () => {
     expect(inThb.breakdown.project.addsUp).toBe(false)
   })
 
+  it('EARS-720: an unmodelled posting withholds every aggregate in D as in B; a row on its own chain still shows', () => {
+    const usdBank = account('bank', 'USD')
+    const usdSpend = op('2026-03-10', [
+      [usdBank, -100_00n],
+      [account('expense', 'USD'), 100_00n],
+    ])
+    const operations = [
+      contribute('2026-01-10', 500_000_00n),
+      op('2026-01-20', [
+        [usdBank, 1_000_00n],
+        [account('equity', 'USD'), -1_000_00n, { memberId: MEMBER }],
+      ]),
+      // an expense credit outside a reversed pair: the replay does not model it
+      op('2026-02-05', [
+        [bank(), 1_000_00n],
+        [account('expense', 'RUB'), -1_000_00n],
+      ]),
+      usdSpend,
+    ]
+    const usd = view(operations, display('USD'))
+    const march = usd.months.find((month) => month.month === '2026-03')!
+    expect(march.gross.status).toBe('withheld')
+    expect(usd.glass.spent.status).toBe('withheld')
+    expect(usd.money.contributed.status).toBe('withheld')
+    expect(usd.waterline.at(-1)!.net.status).toBe('withheld')
+    const line = usd.breakdown.project.lines.find((candidate) => !candidate.exchange)!
+    expect(line.value.status).toBe('withheld')
+    expect(usd.breakdown.project.total.status).toBe('withheld')
+    const row = line.rows.find((candidate) => candidate.operationId === usdSpend.operationId)!
+    expect(row.value).toEqual({ status: 'known', amount: 100_00n })
+  })
+
+  it('EARS-719: in D the provisional part is the outstanding share of a partly repaid debt', () => {
+    const operations = [
+      contribute('2026-01-10', 500_000_00n),
+      op(
+        '2026-02-05',
+        [
+          [account('liability', 'USD'), -100_00n, { memberId: MEMBER }],
+          [account('expense', 'USD'), 100_00n],
+        ],
+        { intakeItemId: 960 },
+      ),
+      // a backfill repays 40 $ of the 100 $ debt
+      (() => {
+        const repay = op('2026-03-05', [
+          [bank(), -3_600_00n],
+          [account('conversion', 'RUB'), 3_600_00n, { conversionStepNo: 1 }],
+          [account('conversion', 'USD'), -40_00n, { conversionStepNo: 1 }],
+          [account('liability', 'USD'), 40_00n, { memberId: MEMBER }],
+        ])
+        repay.steps = [{ stepNo: 1, fromCurrency: 'RUB', toCurrency: 'USD' }]
+        return repay
+      })(),
+    ]
+    const rub = view(operations)
+    // 100 $ at 90 = 9 000 ₽ provisional; 60 $ of it still owed = 5 400 ₽
+    expect(rub.glass.provisional).toEqual({
+      count: 1,
+      amount: { status: 'known', amount: 5_400_00n },
+    })
+    const usd = view(operations, display('USD'))
+    expect(usd.glass.provisional).toMatchObject({
+      count: 1,
+      amount: { status: 'known', amount: 60_00n },
+    })
+  })
+
   it('converts «paid out» item by item, less the part still owed at its own operation', () => {
     const operations = [
       contribute('2026-01-10', 500_000_00n),

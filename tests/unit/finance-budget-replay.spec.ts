@@ -576,6 +576,34 @@ describe('budget cost-basis replay — spec 338 §D fixtures', () => {
     expectIdentity(reading)
   })
 
+  it('EARS-719: a partly repaid backfill debt is provisional only in its outstanding share', () => {
+    const provisional = (currency: string, _date: string, quantity: bigint) =>
+      currency === 'THB' ? (quantity * 5n) / 2n : null
+    const reading = read(
+      [
+        contribute('2026-11-01', 'RUB', 100_000n),
+        personalExpense('2026-11-02', 'THB', 4_000n, P, 901),
+        personalExpense('2026-11-03', 'THB', 6_000n, P, 902),
+        // a backfill draws the oldest lot whole and 1 000 THB of the second
+        op(
+          '2026-11-20',
+          [
+            leg(bank('RUB'), -13_000n),
+            leg(sys('conversion', 'RUB'), 13_000n, { conversionStepNo: 1 }),
+            leg(sys('conversion', 'THB'), -5_000n, { conversionStepNo: 1 }),
+            leg(sys('liability', 'THB'), 5_000n, { memberId: MEMBER }),
+          ],
+          { steps: [{ fromCurrency: 'RUB', toCurrency: 'THB' }] },
+        ),
+      ],
+      { provisional },
+    )
+    // the second debt: 15 000 provisional, 2 500 of it repaid
+    expect(known(reading.owed)).toBe(12_500n)
+    expect(reading.provisional).toEqual({ count: 1, amount: { status: 'known', amount: 12_500n } })
+    expectIdentity(reading)
+  })
+
   it('EARS-340: a posting the replay does not model (an expense credit outside a reversed pair) withholds the figures', () => {
     const reading = read([
       contribute('2026-02-01', 'RUB', 100_000n),
