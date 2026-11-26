@@ -26,7 +26,6 @@ import { BudgetLimitActions } from './BudgetLimitActions'
 import { SegmentedNav } from './SegmentedNav'
 import {
   budgetHref,
-  cbrMarkText,
   differenceText,
   figureText,
   figureValue,
@@ -126,14 +125,11 @@ export default async function BudgetDashboardPage({
   const precision = currencies.find((c) => c.code === D)?.precision ?? 2
   const money = (figure: BudgetFigure | null, cents = false) =>
     figureText(figure, D, precision, { cents }).text
-  const cbr = (figure: BudgetFigure | null) => cbrMarkText(figure, D, precision)
   const diff = (amount: bigint | null) =>
     amount === null ? null : differenceText(amount, D, precision)
   const since = `с ${longDate(dashboard.startsOn)}`
   const { display } = dashboard
-  const stockMark =
-    display.stockRate === null ? null : `по курсу ЦБ на ${longDate(display.stockRate)}`
-  const view: View = { dashboard, money, cbr, diff, stockMark, B, D }
+  const view: View = { dashboard, money, diff, B, D }
   const nameOf = (code: string) => currencies.find((c) => c.code === code)?.name ?? code
 
   return (
@@ -182,32 +178,17 @@ export default async function BudgetDashboardPage({
           Курсы ЦБ устарели: последние — на {longDate(display.staleSince)}.
         </p>
       )}
-      <p
-        className="mt-2.5 max-w-[900px] text-xs text-muted-foreground"
-        data-testid="budget-rate-line"
-      >
-        {display.converted ? (
-          <>
-            Операции, выплаты и предварительная часть — по фактическому курсу каждой операции;
-            лимит, остаток, долги участникам и деньги на счетах —{' '}
-            {display.stockRate === null
-              ? `нет курса ЦБ на ${longDate(dashboard.today)}`
-              : `по курсу ЦБ на ${longDate(display.stockRate)}`}
-            ; графики совпадают по форме с видом в {B} с точностью до разницы курсов операций.{' '}
-            {display.fallback === null || display.fallback.operations === 0
-              ? 'По курсу ЦБ операций периода нет.'
-              : `По курсу ЦБ: ${display.fallback.operations} из ${display.fallback.of} операций периода.`}{' '}
-            <Link
-              href="/p/finance/reports/market-rate"
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              Курс против рынка
-            </Link>
-          </>
-        ) : (
-          <>Все суммы в {B}, точно, без пересчёта.</>
-        )}
-      </p>
+      {display.converted && (
+        <p className="mt-2.5 text-xs text-muted-foreground" data-testid="budget-rate-line">
+          Суммы пересчитаны в {D} ·{' '}
+          <a
+            href="#budget-method"
+            className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            как пересчитано
+          </a>
+        </p>
+      )}
       {dashboard.empty && (
         <p className="mt-4 rounded-md border border-dashed px-3.5 py-2.5 text-sm text-muted-foreground">
           С {longDate(dashboard.startsOn)} операций нет.
@@ -236,33 +217,11 @@ export default async function BudgetDashboardPage({
         />
       </div>
       <Dynamics dashboard={dashboard} money={money} precision={precision} />
-      {markedMonths(dashboard).length > 0 && (
-        <p className="mt-2 text-xs text-muted-foreground" data-testid="budget-months-cbr">
-          Месяцы с операциями по курсу ЦБ: {markedMonths(dashboard).join(', ')}.
-        </p>
-      )}
-      <p className="mt-2 text-xs text-muted-foreground">
-        Сторно убирает операцию из её собственного месяца: возврат от поставщика уменьшает месяц
-        расхода, а не месяц возврата, поэтому прошлый месяц может измениться.
-      </p>
-      {dashboard.waterlineNote === 'income' && (
-        <p className="mt-2 text-xs text-muted-foreground" data-testid="budget-waterline-note">
-          Ватерлиния пересекает −лимит не в тот момент, когда стакан пустеет: доход не пополняет
-          лимит, поэтому они совпадают, только пока дохода нет.
-        </p>
-      )}
-      {dashboard.waterlineNote === 'rate' && (
-        <p className="mt-2 text-xs text-muted-foreground" data-testid="budget-waterline-note">
-          В {D} уровень −лимит пересчитан по последнему курсу ЦБ, а ватерлиния — по курсу каждой
-          операции, поэтому их пересечение может не совпасть с «лимит исчерпан»: это решается в {B}.
-        </p>
-      )}
-
       <Card className="mt-4">
         <h2 className="text-[15px] font-semibold">Куда ушли деньги</h2>
         <p className="mb-2.5 text-xs text-muted-foreground">
           {periodCaption(dashboard)} · площадь — доля потраченного · плитка или строка открывает
-          операции{display.converted ? ` · суммы в ${D}` : ''}
+          операции
         </p>
         <BudgetBreakdown
           periodCaption={periodCaption(dashboard)}
@@ -273,6 +232,7 @@ export default async function BudgetDashboardPage({
           }}
         />
       </Card>
+      <Method view={view} />
     </section>
   )
 
@@ -284,7 +244,6 @@ export default async function BudgetDashboardPage({
         key: line.key,
         name: line.name,
         value: format(line.value),
-        mark: cbr(line.value),
         amount: figureValue(line.value, precision),
         share: line.share,
         provisional: line.provisional,
@@ -305,7 +264,6 @@ export default async function BudgetDashboardPage({
             })
             .join(' + '),
           value: format(row.value, true),
-          mark: cbr(row.value),
           provisional: row.provisional,
           href:
             row.requestItemId === null ? null : `/p/finance/requests?request=${row.requestItemId}`,
@@ -346,20 +304,114 @@ type Money = (figure: BudgetFigure | null, cents?: boolean) => string
 type View = {
   dashboard: BudgetDashboard
   money: Money
-  cbr: (figure: BudgetFigure | null) => string | null
   diff: (amount: bigint | null) => string | null
-  /** «по курсу ЦБ на <date>» on every stock figure while `D` ≠ `B`. */
-  stockMark: string | null
   B: string
   D: string
 }
 
-/** EARS-722 item 4 — one relation line; null where its difference is not shown. */
-function RelationLine({ children, testId }: { children: React.ReactNode; testId: string }) {
+/** One line of the «Как посчитано» block. */
+function MethodLine({ children, testId }: { children: React.ReactNode; testId?: string }) {
   return (
     <p className="mt-1.5 text-xs text-muted-foreground" data-testid={testId}>
       {children}
     </p>
+  )
+}
+
+/**
+ * «Как посчитано» — the page's one methodology block, at the very bottom (owner,
+ * 2026-11-26, live-stand acceptance: no per-figure rate captions, one place that
+ * says how the figures were converted). Spec 584 §G; a withheld figure still
+ * renders as unknown in place (EARS-720) — that is data, not methodology.
+ */
+function Method({ view }: { view: View }) {
+  const { dashboard, diff, B, D } = view
+  const { display } = dashboard
+  const stockDate = display.stockRate === null ? null : longDate(display.stockRate)
+  const months = markedMonths(dashboard)
+  const relation = (testId: string, amount: bigint | null, text: (d: string) => string) => {
+    const d = diff(amount)
+    return d === null ? null : <MethodLine testId={testId}>{text(d)}</MethodLine>
+  }
+  return (
+    <Card className="mt-4">
+      <h2 id="budget-method" className="scroll-mt-4 text-[15px] font-semibold">
+        Как посчитано
+      </h2>
+      <div data-testid="budget-method">
+        {display.converted ? (
+          <>
+            <MethodLine>
+              Операции, выплаты и предварительная часть — по фактическому курсу каждой операции;
+              лимит, остаток, долги участникам и деньги на счетах —{' '}
+              {stockDate === null
+                ? `нет курса ЦБ на ${longDate(dashboard.today)}`
+                : `по курсу ЦБ на ${stockDate}`}
+              . Графики совпадают по форме с видом в {B} с точностью до разницы курсов операций.
+            </MethodLine>
+            <MethodLine testId="budget-method-fallback">
+              {display.fallback === null || display.fallback.operations === 0
+                ? 'По курсу ЦБ операций периода нет.'
+                : `По курсу ЦБ, у операции нет своего курса: ${display.fallback.operations} из ${display.fallback.of} операций периода.`}
+              {months.length > 0 && ` Месяцы с такими операциями: ${months.join(', ')}.`}
+            </MethodLine>
+            {relation(
+              'budget-limit-difference',
+              display.differences.limit,
+              (d) =>
+                `В ${D} лимит ≠ потрачено + остаток на ${d}: лимит и остаток — по курсу ЦБ, расходы — по курсу операций; точно — в ${B}.`,
+            )}
+            {relation(
+              'budget-provisional-difference',
+              display.differences.provisional,
+              (d) =>
+                `В ${D} предварительная часть ≠ её доле в долгах участникам на ${d}: долги — по курсу ЦБ, предварительная часть — по курсу операций; точно — в ${B}.`,
+            )}
+            {relation(
+              'budget-equation-difference',
+              display.differences.equation,
+              (d) =>
+                `В ${D} взносы + доход ≠ потрачено + на счетах − долги на ${d}: на счетах и долги — по курсу ЦБ, взносы, доход и расходы — по курсу операций; точно — в ${B}.`,
+            )}
+            {dashboard.money.paidOut !== null &&
+              relation(
+                'budget-paid-out-difference',
+                display.differences.paidOut,
+                (d) =>
+                  `В ${D} потрачено ≠ выплачено + долги участникам на ${d}: долги — по курсу ЦБ, расходы и выплаты — по курсу операций; точно — в ${B}.`,
+              )}
+            {dashboard.waterlineNote === 'rate' && (
+              <MethodLine testId="budget-waterline-note">
+                В {D} уровень −лимит пересчитан по последнему курсу ЦБ, а ватерлиния — по курсу
+                каждой операции, поэтому их пересечение может не совпасть с «лимит исчерпан»: это
+                решается в {B}.
+              </MethodLine>
+            )}
+            <MethodLine>
+              <Link
+                href="/p/finance/reports/market-rate"
+                className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Курс против рынка
+              </Link>
+            </MethodLine>
+          </>
+        ) : (
+          <MethodLine>Все суммы в {B}, точно, без пересчёта.</MethodLine>
+        )}
+        <MethodLine>Деньги на счетах — по себестоимости.</MethodLine>
+        <MethodLine>
+          Сторно убирает операцию из её собственного месяца: возврат от поставщика уменьшает месяц
+          расхода, а не месяц возврата, поэтому прошлый месяц может измениться.
+        </MethodLine>
+        {dashboard.waterlineNote === 'income' && (
+          <MethodLine testId="budget-waterline-note">
+            Ватерлиния пересекает −лимит не в тот момент, когда стакан пустеет: доход не пополняет
+            лимит, поэтому они совпадают, только пока дохода нет.
+          </MethodLine>
+        )}
+      </div>
+    </Card>
   )
 }
 
@@ -401,38 +453,21 @@ function Header({
   )
 }
 
-function Mark({ kind, children }: { kind: 'prov' | 'plain'; children: React.ReactNode }) {
-  return (
-    <span
-      className={cn(
-        'ml-1.5 inline-block max-w-full rounded-lg px-1.5 align-[1px] text-[11px] leading-4 font-medium md:rounded-full md:whitespace-nowrap',
-        kind === 'prov'
-          ? 'bg-mark-provisional text-mark-provisional-foreground'
-          : 'bg-muted text-muted-foreground',
-      )}
-    >
-      {children}
-    </span>
-  )
-}
-
-const Prov = () => <Mark kind="prov">предварительно</Mark>
-
-function Plain({ text }: { text: string | null }) {
-  return text === null ? null : <Mark kind="plain">{text}</Mark>
-}
+const Prov = () => (
+  <span className="ml-1.5 inline-block max-w-full rounded-lg bg-mark-provisional px-1.5 align-[1px] text-[11px] leading-4 font-medium text-mark-provisional-foreground md:rounded-full md:whitespace-nowrap">
+    предварительно
+  </span>
+)
 
 function Glass({ view, since }: { view: View; since: string }) {
-  const { dashboard, money, cbr, diff, stockMark, B, D } = view
-  const { glass, display } = dashboard
-  const stockDate = display.stockRate === null ? '' : longDate(display.stockRate)
+  const { dashboard, money } = view
+  const { glass } = dashboard
   const remainPct = glass.fill === null ? null : Math.max(0, 1 - glass.fill) * 100
   return (
     <Card>
       <div aria-label="Стакан бюджета" data-testid="budget-glass">
         <div className="text-[13px] text-muted-foreground">
           Остаток лимита {glass.spentProvisional && <Prov />}
-          <Plain text={stockMark} />
         </div>
         <div
           className={cn(
@@ -483,7 +518,6 @@ function Glass({ view, since }: { view: View; since: string }) {
               <b className="block text-sm font-semibold text-foreground">
                 {money(glass.limit, true)}
               </b>
-              <Plain text={stockMark} />
             </div>
             <div>
               Факт · потрачено
@@ -491,7 +525,6 @@ function Glass({ view, since }: { view: View; since: string }) {
                 {money(glass.spent)}
               </b>
               {glass.shareUsed === null ? '' : `использовано ${glass.shareUsed}%`}
-              <Plain text={cbr(glass.spent)} />
             </div>
             <div>
               Осталось
@@ -505,21 +538,7 @@ function Glass({ view, since }: { view: View; since: string }) {
           <div className="mt-2.5 text-xs text-muted-foreground">
             из них предварительно {money(glass.provisional.amount)} · открытых долгов в валюте:{' '}
             {glass.provisional.count}
-            <Plain text={cbr(glass.provisional.amount)} />
-            {diff(display.differences.provisional) !== null && (
-              <RelationLine testId="budget-provisional-difference">
-                в {D} предварительная часть ≠ её доле в долгах участникам на{' '}
-                {diff(display.differences.provisional)}: долги участникам — по курсу ЦБ на{' '}
-                {stockDate}, предварительная часть — по курсу операций; точно — в {B}
-              </RelationLine>
-            )}
           </div>
-        )}
-        {diff(display.differences.limit) !== null && (
-          <RelationLine testId="budget-limit-difference">
-            в {D} лимит ≠ потрачено + остаток на {diff(display.differences.limit)}: лимит и остаток
-            — по курсу ЦБ на {stockDate}, расходы — по курсу операций; точно — в {B}
-          </RelationLine>
         )}
       </div>
     </Card>
@@ -597,49 +616,32 @@ function figureValueSafe(figure: BudgetFigure): number | null {
 }
 
 function MoneyTier({ view, since }: { view: View; since: string }) {
-  const { dashboard, money, cbr, diff, stockMark, B, D } = view
+  const { dashboard, money } = view
   const m = dashboard.money
-  const { display } = dashboard
-  const stockDate = display.stockRate === null ? '' : longDate(display.stockRate)
   const tiles: { k: string; v: string; marks: React.ReactNode }[] = [
-    { k: 'Взносы', v: money(m.contributed), marks: <Plain text={cbr(m.contributed)} /> },
-    { k: 'Доход', v: money(m.income), marks: <Plain text={cbr(m.income)} /> },
+    { k: 'Взносы', v: money(m.contributed), marks: null },
+    { k: 'Доход', v: money(m.income), marks: null },
     {
       k: 'Потрачено',
       v: money(m.spent),
-      marks: (
-        <>
-          {dashboard.glass.spentProvisional && <Prov />}
-          <Plain text={cbr(m.spent)} />
-        </>
-      ),
+      marks: dashboard.glass.spentProvisional && <Prov />,
     },
     {
       k: 'Долги участникам',
       v: money(m.owed, true),
-      marks: (
-        <>
-          {m.owedProvisional && <Prov />}
-          <Plain text={stockMark} />
-        </>
-      ),
+      marks: m.owedProvisional && <Prov />,
     },
     {
       k: 'Деньги на счетах',
       v: money(m.cashAtCost, true),
-      marks: (
-        <>
-          <Mark kind="plain">по себестоимости</Mark>
-          <Plain text={stockMark} />
-        </>
-      ),
+      marks: null,
     },
   ]
   if (m.paidOut !== null) {
     tiles.push({
       k: 'Выплачено',
       v: money(m.paidOut, true),
-      marks: <Plain text={cbr(m.paidOut)} />,
+      marks: null,
     })
   }
   return (
@@ -686,13 +688,6 @@ function MoneyTier({ view, since }: { view: View; since: string }) {
                 {money({ status: 'known', amount: m.equation.right }, true)}
               </b>
             </span>
-            {diff(display.differences.equation) !== null && (
-              <RelationLine testId="budget-equation-difference">
-                в {D} взносы + доход ≠ потрачено + на счетах − долги на{' '}
-                {diff(display.differences.equation)}: на счетах и долги — по курсу ЦБ на {stockDate}
-                , взносы, доход и расходы — по курсу операций; точно — в {B}
-              </RelationLine>
-            )}
           </div>
         ) : m.reconciles ? (
           <p>Сверка не показана: часть цифр не посчитана.</p>
@@ -701,13 +696,6 @@ function MoneyTier({ view, since }: { view: View; since: string }) {
             Операции до {longDate(dashboard.startsOn)} — вне стакана, поэтому цифры между собой не
             сходятся, и сверка не показана.
           </p>
-        )}
-        {m.paidOut !== null && diff(display.differences.paidOut) !== null && (
-          <RelationLine testId="budget-paid-out-difference">
-            в {D} потрачено ≠ выплачено + долги участникам на {diff(display.differences.paidOut)}:
-            долги участникам — по курсу ЦБ на {stockDate}, расходы и выплаты — по курсу операций;
-            точно — в {B}
-          </RelationLine>
         )}
       </div>
     </Card>

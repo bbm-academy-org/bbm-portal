@@ -44,7 +44,8 @@ test.describe('budget dashboard (spec 584)', () => {
     await expect(page.getByTestId('budget-money')).toBeVisible()
     await expect(page.getByTestId('budget-monthly').locator('svg:visible')).toBeVisible()
     await expect(page.getByTestId('budget-waterline').locator('svg:visible')).toBeVisible()
-    await expect(page.getByTestId('budget-rate-line')).toContainText('точно, без пересчёта')
+    await expect(page.getByTestId('budget-method')).toContainText('точно, без пересчёта')
+    await expect(page.getByTestId('budget-rate-line')).toHaveCount(0)
     await shoot(page, 'desktop-light-rub')
 
     // a breakdown line opens its operations
@@ -69,16 +70,23 @@ test.describe('budget dashboard (spec 584)', () => {
     await expect(usd).toBeInViewport({ ratio: 1 })
     await usd.click()
     await expect(page).toHaveURL(/currency=USD/)
-    await expect(page.getByTestId('budget-rate-line')).toContainText(
+    await expect(page.getByTestId('budget-rate-line')).toContainText('Суммы пересчитаны в USD')
+    // owner, 2026-11-26: the method is said once, at the bottom, and no figure carries a caption
+    await expect(page.getByTestId('budget-method')).toContainText(
       'по фактическому курсу каждой операции',
     )
+    await expect(page.getByTestId('budget-glass')).not.toContainText('по курсу ЦБ')
+    await expect(page.getByTestId('budget-money')).not.toContainText('по курсу ЦБ')
+    await expect(page.getByTestId('budget-breakdown-rows')).not.toContainText('по курсу ЦБ')
     await expect(currencies.getByRole('link', { name: /USD/ })).toHaveAttribute(
       'aria-current',
       'page',
     )
     expect(await page.evaluate(() => window.scrollY), 'a currency switch keeps the scroll').toBe(40)
     await expect(page.getByTestId('budget-spent')).toContainText('$')
-    await expect(page.getByTestId('budget-waterline-note')).toContainText('−лимит пересчитан')
+    await expect(
+      page.getByTestId('budget-method').getByTestId('budget-waterline-note'),
+    ).toContainText('−лимит пересчитан')
     await shoot(page, 'desktop-light-usd')
 
     // the period switch keeps the chosen currency and does not throw the page to the top

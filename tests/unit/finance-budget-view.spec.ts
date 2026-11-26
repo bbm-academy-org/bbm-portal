@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   budgetHref,
-  cbrMarkText,
   differenceText,
   figureText,
   formatMoney,
@@ -41,20 +40,6 @@ describe('budget dashboard display helpers', () => {
         2,
       ),
     ).toEqual({ text: 'нет курса ЦБ на 5 марта 2026 и ещё 2 даты', withheld: true })
-  })
-
-  it('marks a flow figure the fallback converted, wholly or in part (EARS-729 items 1–2)', () => {
-    const known = (cbr?: { amount: bigint; items: number; of: number; rateDate?: string }) =>
-      ({ status: 'known', amount: 100_00n, cbr }) as const
-    expect(cbrMarkText(known(), 'USD', 2)).toBeNull()
-    expect(cbrMarkText(known({ amount: 0n, items: 0, of: 3 }), 'USD', 2)).toBeNull()
-    expect(cbrMarkText(known({ amount: 100_00n, items: 3, of: 3 }), 'USD', 2)).toBe('по курсу ЦБ')
-    expect(
-      cbrMarkText(known({ amount: 100_00n, items: 1, of: 1, rateDate: '2026-03-05' }), 'USD', 2),
-    ).toBe('по курсу ЦБ на 5 марта 2026')
-    expect(cbrMarkText(known({ amount: 40_00n, items: 1, of: 3 }), 'USD', 2)).toBe(
-      'частично по курсу ЦБ: 40 $',
-    )
   })
 
   it('writes a relation difference with its sign (EARS-722 item 4)', () => {

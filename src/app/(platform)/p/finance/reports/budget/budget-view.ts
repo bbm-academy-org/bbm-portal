@@ -58,24 +58,6 @@ function datesWord(n: number): string {
   return 'дат'
 }
 
-/**
- * EARS-729 items 1–2 — a converted flow figure's mark: «по курсу ЦБ (на <date>)»
- * where every item it sums took the dated fallback, «частично по курсу ЦБ» with
- * those items' sum where some did, nothing where none did.
- */
-export function cbrMarkText(
-  figure: BudgetFigure | null,
-  currency: string,
-  precision: number,
-): string | null {
-  if (figure?.status !== 'known' || figure.cbr === undefined || figure.cbr.items === 0) return null
-  const { cbr } = figure
-  if (cbr.items === cbr.of) {
-    return cbr.rateDate === undefined ? 'по курсу ЦБ' : `по курсу ЦБ на ${longDate(cbr.rateDate)}`
-  }
-  return `частично по курсу ЦБ: ${formatMoney(cbr.amount, currency, precision)}`
-}
-
 /** EARS-722 item 4 — a relation's difference as shown, with its sign. */
 export function differenceText(amount: bigint, currency: string, precision: number): string {
   const text = formatMoney(amount, currency, precision, { cents: true })
