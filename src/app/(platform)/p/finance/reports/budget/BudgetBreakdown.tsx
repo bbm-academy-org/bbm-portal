@@ -7,6 +7,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import Link from 'next/link'
 import React from 'react'
 
+import { Button } from '@/ui/button'
 import { DataTable } from '@/ui/refine-ui/data-table/data-table'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/ui/tabs'
@@ -140,16 +141,17 @@ function Breakdown({ groupings, periodCaption }: BreakdownProps) {
           )}
           <div className="mt-3.5 flex flex-col" data-testid="budget-breakdown-rows">
             {grouping.lines.map((line) => (
-              <button
+              <Button
                 key={line.key}
                 type="button"
+                variant="ghost"
                 onClick={() => setOpen(line)}
                 onMouseEnter={() => setHover(line.key)}
                 onMouseLeave={() => setHover(null)}
                 onFocus={() => setHover(line.key)}
                 onBlur={() => setHover(null)}
                 className={cn(
-                  'grid grid-cols-[1fr_auto_48px_12px] items-center gap-2 rounded-md px-1.5 py-2 text-left tabular-nums transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:grid-cols-[260px_1fr_190px_60px_16px] md:gap-3.5',
+                  'grid h-auto grid-cols-[1fr_auto_48px_12px] items-center justify-stretch gap-2 rounded-md px-1.5 py-2 text-left font-normal whitespace-normal tabular-nums focus-visible:bg-muted md:grid-cols-[260px_1fr_190px_60px_16px] md:gap-3.5',
                   hover === line.key && 'bg-muted',
                   line.exchange && 'mt-1 border-t pt-3 text-muted-foreground',
                 )}
@@ -181,7 +183,7 @@ function Breakdown({ groupings, periodCaption }: BreakdownProps) {
                 <span className="text-muted-foreground" aria-hidden>
                   ›
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
           <p className="mt-2.5 text-xs text-muted-foreground">
@@ -433,6 +435,8 @@ function Treemap({
             const mid = t.w >= 58 && t.h >= 34
             const name = mid ? fit(t.line.name, t.w - pad * 2) : null
             return (
+              // interaction-states-ok: tiles are a pointer shortcut inside role=img; the row
+              // buttons below are the keyboard/AT path, each with its own focus-visible state.
               <g
                 key={t.line.key}
                 className="cursor-pointer"
