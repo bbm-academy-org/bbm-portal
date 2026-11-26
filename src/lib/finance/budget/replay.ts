@@ -28,6 +28,8 @@ export type BudgetPostingFact = {
   amount: bigint
   projectId: number | null
   memberId: number | null
+  /** The expense posting's category (spec 584 EARS-716); absent on legs that carry none. */
+  categoryId?: number | null
   conversionStepNo: number | null
 }
 
@@ -64,9 +66,19 @@ export type BudgetReplayInput = {
 
 // ── output ───────────────────────────────────────────────────────────────────
 
-/** A figure is a number, or withheld with the currencies that caused it (EARS-340 item 7). */
+/**
+ * A figure is a number, or withheld with the currencies that caused it (EARS-340
+ * item 7). In a display currency other than `B` (spec 584 §G) a known figure may
+ * carry the share of it the Bank of Russia fallback converted (EARS-729 item 2),
+ * and a withheld one the dates no rate qualified for (EARS-729 item 3); the
+ * replay itself never sets either.
+ */
 export type BudgetFigure =
-  { status: 'known'; amount: bigint } | { status: 'withheld'; currencies: string[] }
+  | { status: 'known'; amount: bigint; cbr?: CbrMark }
+  | { status: 'withheld'; currencies: string[]; noRateOn?: string[] }
+
+/** EARS-729 item 2 — of `of` items summed, `items` were converted at a dated rate, adding up to `amount`. */
+export type CbrMark = { amount: bigint; items: number; of: number; rateDate?: string }
 
 export type BudgetReading = {
   /** `B` — every figure is in it, whatever the reporting currency (EARS-344). */
@@ -93,7 +105,53 @@ export type BudgetReading = {
    * screen: only when `starts_on` is on or before BBM's first operation.
    */
   reconciles: boolean
+  /** The date of BBM's first active operation, or null while the ledger has none. */
+  firstOperationOn: string | null
+  /**
+   * Spec 584 — every windowed value behind spent, contributed and income, exactly
+   * as this replay produced it: an expense posting's value, an operation's
+   * exchange result, an income or a contribution credit. The dashboard buckets
+   * and groups these; it never re-values one (EARS-702).
+   */
+  items: BudgetItem[]
+  /** EARS-719 — the open foreign-currency debts whose provisional value spent includes. */
+  provisional: { count: number; amount: BudgetFigure } | null
+  /**
+   * Spec 584 EARS-722 item 1 — what is still owed to members, by the operation
+   * that created the debt, in that debt's own currency: «paid out» in a display
+   * currency is spent's items less these, each at its own operation's rate.
+   */
+  owedParts: {
+    operationId: number
+    occurredOn: string
+    currency: string
+    quantity: bigint
+    value: BudgetFigure
+  }[]
 }
+
+export type BudgetItem =
+  | {
+      kind: 'expense'
+      operationId: number
+      occurredOn: string
+      projectId: number | null
+      categoryId: number | null
+      currency: string
+      quantity: bigint
+      value: BudgetFigure
+      provisional: boolean
+    }
+  | {
+      kind: 'exchangeResult' | 'income' | 'contribution'
+      operationId: number
+      occurredOn: string
+      /** The item's own currency and amount (spec 584 EARS-728 item 1): `B` and the result itself for an exchange result. */
+      currency: string
+      quantity: bigint
+      value: BudgetFigure
+      provisional: boolean
+    }
 
 // ── cost arithmetic ──────────────────────────────────────────────────────────
 
@@ -164,11 +222,32 @@ function figure(cost: Cost): BudgetFigure {
 
 // ── the replay ───────────────────────────────────────────────────────────────
 
-type Lot = Holding & { key: string }
+type Lot = Holding & { key: string; operationId: number }
+
+type RoubleLot = { key: string | null; operationId: number; quantity: bigint }
+
+/** A repayment in `B` draws the debt it settles first, then the member's oldest. */
+function repayInB(lots: RoubleLot[], quantity: bigint, settlesItemId: number | null): void {
+  let left = quantity
+  const named =
+    settlesItemId === null ? [] : lots.filter((lot) => lot.key === `item:${settlesItemId}`)
+  for (const lot of [...named, ...lots]) {
+    if (left === 0n) return
+    const take = left < lot.quantity ? left : lot.quantity
+    lot.quantity -= take
+    left -= take
+  }
+}
 
 type Use =
   | { kind: 'money'; postingId: number; quantity: bigint }
-  | { kind: 'expense'; postingId: number; quantity: bigint; projectId: number | null }
+  | {
+      kind: 'expense'
+      postingId: number
+      quantity: bigint
+      projectId: number | null
+      categoryId: number | null
+    }
   | { kind: 'liability'; postingId: number; quantity: bigint; memberId: number }
   | { kind: 'opaque'; postingId: number; quantity: bigint }
 
@@ -191,6 +270,15 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
   let contributed: Cost = ZERO
   let income: Cost = ZERO
   const byProject = new Map<number, Cost>()
+  type RawItem = {
+    item: BudgetItem extends infer T
+      ? T extends unknown
+        ? Omit<T, 'value' | 'provisional'>
+        : never
+      : never
+    cost: Cost
+  }
+  const rawItems: RawItem[] = []
   /** Currencies of postings the replay does not model — every figure is withheld (item 3). */
   const opaque = new Set<string>()
 
@@ -199,6 +287,16 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
     if (found === undefined) {
       found = { quantity: 0n, cost: ZERO }
       holdingPools.set(currency, found)
+    }
+    return found
+  }
+  /** The B-currency debts by origin, for spec 584's owed parts only — owedB stays the figure. */
+  const owedLotsB = new Map<number, RoubleLot[]>()
+  const owedInB = (memberId: number): RoubleLot[] => {
+    let found = owedLotsB.get(memberId)
+    if (found === undefined) {
+      found = []
+      owedLotsB.set(memberId, found)
     }
     return found
   }
@@ -274,6 +372,7 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
               postingId: posting.postingId,
               quantity: amount,
               projectId: posting.projectId,
+              categoryId: posting.categoryId ?? null,
             })
           } else opaquePosting(posting)
           continue
@@ -289,6 +388,16 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
           if (counted) {
             if (posting.accountKind === 'equity') contributed = addCost(contributed, cost)
             else income = addCost(income, cost)
+            rawItems.push({
+              item: {
+                kind: posting.accountKind === 'equity' ? 'contribution' : 'income',
+                operationId: operation.operationId,
+                occurredOn: operation.occurredOn,
+                currency,
+                quantity: -amount,
+              },
+              cost,
+            })
           }
           continue
         }
@@ -310,6 +419,11 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
           if (currency === B) {
             owedB += quantity
             supply(currency, quantity, knownCost(quantity))
+            owedInB(posting.memberId).push({
+              key: operation.intakeItemId === null ? null : `item:${operation.intakeItemId}`,
+              operationId: operation.operationId,
+              quantity,
+            })
             continue
           }
           // Item 3 — the provisional value at the Bank of Russia rate of the spend day.
@@ -323,7 +437,8 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
               : `item:${operation.intakeItemId}`
           const lots = lotsOf(posting.memberId, currency)
           const lot = lots.find((candidate) => candidate.key === key)
-          if (lot === undefined) lots.push({ key, quantity, cost })
+          if (lot === undefined)
+            lots.push({ key, quantity, cost, operationId: operation.operationId })
           else {
             lot.quantity += quantity
             lot.cost = addCost(lot.cost, cost)
@@ -373,6 +488,7 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
           if (currency === B) {
             owedB -= entry.quantity
             value = knownCost(entry.quantity)
+            repayInB(owedInB(entry.memberId), entry.quantity, operation.settlesItemId)
           } else {
             value = drawOwed(
               lotsOf(entry.memberId, currency),
@@ -399,12 +515,36 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
           spent = addCost(spent, value)
           const projectId = entry.projectId ?? 0
           byProject.set(projectId, addCost(byProject.get(projectId) ?? ZERO, value))
+          rawItems.push({
+            item: {
+              kind: 'expense',
+              operationId: operation.operationId,
+              occurredOn: operation.occurredOn,
+              projectId: entry.projectId,
+              categoryId: entry.categoryId,
+              currency,
+              quantity: entry.quantity,
+            },
+            cost: value,
+          })
         }
       }
     }
     if (counted) {
       spent = addCost(spent, operationResult)
       exchangeResult = addCost(exchangeResult, operationResult)
+      if (!operationResult.known || operationResult.value !== 0n) {
+        rawItems.push({
+          item: {
+            kind: 'exchangeResult',
+            operationId: operation.operationId,
+            occurredOn: operation.occurredOn,
+            currency: B,
+            quantity: operationResult.known ? operationResult.value : 0n,
+          },
+          cost: operationResult,
+        })
+      }
     }
   }
 
@@ -412,10 +552,15 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
   for (const holding of holdingPools.values()) cash = addCost(cash, holding.cost)
   let owed: Cost = knownCost(owedB)
   let owedProvisional = false
+  /** EARS-719 — the operations whose open lot still carries a provisional value. */
+  const provisionalOperations = new Set<number>()
   for (const lots of owedLots.values()) {
     for (const lot of lots) {
       owed = addCost(owed, lot.cost)
-      if (lot.quantity !== 0n) owedProvisional = true
+      if (lot.quantity !== 0n) {
+        owedProvisional = true
+        provisionalOperations.add(lot.operationId)
+      }
     }
   }
 
@@ -424,6 +569,36 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
   spent = withOpaque(spent)
   const remaining = addCost(knownCost(budget.limitAmount), negate(spent))
   const firstOperation = [...input.operations].map((o) => o.occurredOn).sort()[0]
+  const occurredOnOf = new Map(input.operations.map((o) => [o.operationId, o.occurredOn]))
+  const items = rawItems.map(
+    ({ item, cost }) =>
+      ({
+        ...item,
+        value: figure(withOpaque(cost)),
+        provisional: item.kind === 'expense' && provisionalOperations.has(item.operationId),
+      }) as BudgetItem,
+  )
+  let provisionalAmount: Cost = ZERO
+  let provisionalCount = 0
+  for (const item of items) {
+    if (!item.provisional) continue
+    provisionalAmount = addCost(
+      provisionalAmount,
+      item.value.status === 'known'
+        ? knownCost(item.value.amount)
+        : unknownCost(...item.value.currencies),
+    )
+  }
+  for (const lots of owedLots.values()) {
+    for (const lot of lots) {
+      if (
+        lot.quantity !== 0n &&
+        rawItems.some(({ item }) => item.operationId === lot.operationId && item.kind === 'expense')
+      ) {
+        provisionalCount += 1
+      }
+    }
+  }
 
   return {
     currency: B,
@@ -443,6 +618,33 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
       exchangeResult: figure(withOpaque(exchangeResult)),
     },
     reconciles: firstOperation === undefined || budget.startsOn <= firstOperation,
+    firstOperationOn: firstOperation ?? null,
+    items,
+    owedParts: [
+      ...[...owedLotsB.values()]
+        .flat()
+        .map((lot) => ({ ...lot, currency: B, value: knownCost(lot.quantity) })),
+      ...[...owedLots.entries()].flatMap(([key, lots]) =>
+        lots.map((lot) => ({
+          operationId: lot.operationId,
+          currency: key.slice(key.indexOf(String.fromCharCode(0)) + 1),
+          quantity: lot.quantity,
+          value: lot.cost,
+        })),
+      ),
+    ]
+      .filter((part) => part.quantity > 0n)
+      .map((part) => ({
+        operationId: part.operationId,
+        occurredOn: occurredOnOf.get(part.operationId) ?? budget.startsOn,
+        currency: part.currency,
+        quantity: part.quantity,
+        value: figure(withOpaque(part.value)),
+      })),
+    provisional:
+      provisionalCount === 0
+        ? null
+        : { count: provisionalCount, amount: figure(provisionalAmount) },
   }
 }
 
