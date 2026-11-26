@@ -132,9 +132,16 @@ deploy still goes red — a minute later.
 
 **A deploy cannot hang silently.** Every ssh channel carries keepalives (a dead
 half-open connection exits loudly in ~60s) and each streamed step runs under a
-no-output watchdog (10 min for build-class steps, 2 min elsewhere). A tripped
-watchdog is a **channel** verdict, not a box verdict — the remote work may well
-have completed. Check reality before deciding anything:
+no-output watchdog (10 min for build-class steps, 2 min elsewhere). **Ship** is
+watched by bytes, not lines: it prints `[ship] X of Y MiB sent` every 15 s, and
+2 min without a byte handed to the ssh stdin pipe (or a line from the box) kills the transfer
+with `STALLED: ship`. The workstation→box path moves only ~40 KB/s per
+connection, so Ship is slow by nature; the archive stays small because
+`docs/evidence/**` is `export-ignore` in `.gitattributes` (#623) — a new heavy,
+non-runtime path belongs there too. A stalled ship that had not sent the whole
+archive left the live tree untouched: re-run. Any other tripped watchdog is a
+**channel** verdict, not a box verdict — the remote work may well have
+completed. Check reality before deciding anything:
 
 ```bash
 pnpm deploy:smoke            # liveness + what sha is actually live
