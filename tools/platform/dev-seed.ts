@@ -99,6 +99,7 @@ import {
   type DevSeedMember,
   type DevSeedRequest,
 } from './dev-seed-plan'
+import { seedBudgetDashboard, type BudgetSeedSummary } from './budget-dashboard-seed'
 import { seedFinanceAcceptance } from './finance-acceptance-seed'
 import { loadPlatformToolEnv } from './load-env.mjs'
 
@@ -131,6 +132,7 @@ export type DevSeedSummary = {
   requests: { created: number; reused: number; repaired: number }
   intakeItems: { created: number; reused: number }
   documents: { uploaded: number }
+  budget: BudgetSeedSummary
 }
 
 const emailOf = (slug: string): string => {
@@ -555,6 +557,7 @@ export async function seedDevData(options: DevSeedOptions = {}): Promise<DevSeed
   const refs = await resolveFinanceRefs()
   const { requests, documents } = await seedRequests(approver, refs)
   const intakeItems = await seedIntakeItems(approver, refs)
+  const budget = await seedBudgetDashboard(approver)
 
   return {
     database: target.database,
@@ -565,6 +568,7 @@ export async function seedDevData(options: DevSeedOptions = {}): Promise<DevSeed
     requests,
     intakeItems,
     documents,
+    budget,
   }
 }
 
@@ -579,6 +583,7 @@ export function summaryLines(summary: DevSeedSummary): string[] {
     `  requests          created ${summary.requests.created} · reused ${summary.requests.reused} · repaired ${summary.requests.repaired}`,
     `  intake lines      created ${summary.intakeItems.created} · reused ${summary.intakeItems.reused}`,
     `  documents         uploaded ${summary.documents.uploaded}`,
+    `  budget dashboard  ops created ${summary.budget.operationsCreated} · budget ${summary.budget.budgetCreated ? 'created' : 'kept'}`,
   ]
 }
 
