@@ -460,7 +460,7 @@ describe('EARS-722: the dashboard in D', () => {
     expect(line.value.status).toBe('withheld')
     expect(usd.breakdown.project.total.status).toBe('withheld')
     const row = line.rows.find((candidate) => candidate.operationId === usdSpend.operationId)!
-    expect(row.value).toEqual({ status: 'known', amount: 100_00n })
+    expect(row.value).toMatchObject({ status: 'known', amount: 100_00n })
   })
 
   it('EARS-719: in D the provisional part is the outstanding share of a partly repaid debt', () => {

@@ -238,6 +238,18 @@ export type BudgetDashboard = {
 
 const ZERO: BudgetFigure = { status: 'known', amount: 0n }
 
+/**
+ * EARS-720 — the start of every aggregate: zero, or withheld while the replay met a posting
+ * it does not model. In `B` every item is then withheld already; in `D` an item on its own
+ * chain still converts, so its drill-down row shows, but no sum it enters may (lead
+ * decision, 2026-11-26: the converted view withholds what the `B` view withholds).
+ */
+function aggregateStart(reading: BudgetReading): BudgetFigure {
+  return reading.opaque.length === 0
+    ? ZERO
+    : { status: 'withheld', currencies: [...reading.opaque] }
+}
+
 function mergeMarks(a: CbrMark | undefined, b: CbrMark | undefined): CbrMark | undefined {
   if (a === undefined) return b
   if (b === undefined) return a
@@ -328,6 +340,7 @@ const isSpend = (item: BudgetItem) => item.kind === 'expense' || item.kind === '
 function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 'display'> {
   const { reading, today, names } = input
   const { startsOn } = reading
+  const AGG = aggregateStart(reading)
   // EARS-710 — every item the replay counted, a future-dated one included: spent sums them all,
   // so the months must too, each item in its own month.
   const { items } = reading
@@ -344,10 +357,10 @@ function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 
   )
   const months: BudgetMonth[] = monthKeys.map((month) => {
     const inMonth = items.filter((item) => monthOf(item.occurredOn) === month)
-    const gross = inMonth.filter(isSpend).reduce((sum, item) => add(sum, item.value), ZERO)
+    const gross = inMonth.filter(isSpend).reduce((sum, item) => add(sum, item.value), AGG)
     const income = inMonth
       .filter((item) => item.kind === 'income')
-      .reduce((sum, item) => add(sum, item.value), ZERO)
+      .reduce((sum, item) => add(sum, item.value), AGG)
     const partial =
       month === currentMonth
         ? 'current'
@@ -416,7 +429,7 @@ function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 
           monthOf(item.occurredOn) === month.month &&
           item.occurredOn <= end,
       )
-      .reduce((sum, item) => add(sum, item.value), ZERO)
+      .reduce((sum, item) => add(sum, item.value), AGG)
     cumulativeNet = add(cumulativeNet, negate(month.net))
     cumulativeContributed = add(cumulativeContributed, contributions)
     incomeSoFar = add(incomeSoFar, month.income)
@@ -548,7 +561,7 @@ function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 
     return {
       key,
       name,
-      value: ordered.reduce((sum, row) => add(sum, row.value), ZERO),
+      value: ordered.reduce((sum, row) => add(sum, row.value), AGG),
       share: null,
       provisional: ordered.some((row) => row.provisional),
       exchange,
@@ -702,8 +715,13 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
     return { status: 'known', amount: display.latest.convert(figure.amount) }
   }
   const spentItems = items.filter(isSpend).map((item) => item.value)
-  const spent = sumOf(spentItems)
-  const provisionalAmount = sumOf(items.filter((item) => item.provisional).map((i) => i.value))
+  const AGG = aggregateStart(reading)
+  const aggregate = (figures: readonly BudgetFigure[]) => figures.reduce(add, AGG)
+  const spent = aggregate(spentItems)
+  // EARS-719 — the outstanding share of each open foreign debt, at its own operation.
+  const provisionalAmount = aggregate(
+    reading.owedParts.filter((part) => part.provisional).map((part) => convert(part)),
+  )
   const converted = buildInOneCurrency({
     ...input,
     reading: {
@@ -711,8 +729,8 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
       items,
       spent,
       remaining: stock(reading.remaining),
-      contributed: sumOf(items.filter((i) => i.kind === 'contribution').map((i) => i.value)),
-      income: sumOf(items.filter((i) => i.kind === 'income').map((i) => i.value)),
+      contributed: aggregate(items.filter((i) => i.kind === 'contribution').map((i) => i.value)),
+      income: aggregate(items.filter((i) => i.kind === 'income').map((i) => i.value)),
       owed: stock(reading.owed),
       cashAtCost: stock(reading.cashAtCost),
       provisional:
@@ -727,7 +745,7 @@ export function buildBudgetDashboard(input: BudgetDashboardInput): BudgetDashboa
   // EARS-722 item 1 — «paid out» is spent's items less the part still owed, each at its own operation.
   let paidOut: BudgetFigure | null = null
   if (reading.reconciles) {
-    paidOut = sumOf([...spentItems, ...reading.owedParts.map((part) => negate(convert(part)))])
+    paidOut = aggregate([...spentItems, ...reading.owedParts.map((part) => negate(convert(part)))])
   }
 
   // EARS-729 item 2 — «по курсу ЦБ: N из M операций периода».

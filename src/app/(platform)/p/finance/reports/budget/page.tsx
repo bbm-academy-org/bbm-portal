@@ -334,7 +334,8 @@ function moscowDate(): string {
 }
 
 function periodCaption(dashboard: BudgetDashboard): string {
-  if (dashboard.period.key === 'all') return `С начала бюджета, ${longDate(dashboard.startsOn)}`
+  if (dashboard.period.key === 'all')
+    return `С начала бюджета, ${longDate(dashboard.startsOn)} — по ${longDate(dashboard.period.to)}`
   return `${longDate(dashboard.period.from)} — ${longDate(dashboard.period.to)}`
 }
 

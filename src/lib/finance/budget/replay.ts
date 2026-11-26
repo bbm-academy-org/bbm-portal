@@ -127,7 +127,14 @@ export type BudgetReading = {
     currency: string
     quantity: bigint
     value: BudgetFigure
+    /** EARS-719 — the outstanding share of an open foreign debt the provisional part counts. */
+    provisional: boolean
   }[]
+  /**
+   * EARS-720 — the currencies of postings the replay does not model; while any exists every
+   * `B` aggregate is withheld, and so is every aggregate a display currency shows.
+   */
+  opaque: string[]
 }
 
 export type BudgetItem =
@@ -587,25 +594,18 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
           (provisionalCurrencies.get(item.operationId)?.has(item.currency) ?? false),
       }) as BudgetItem,
   )
+  // EARS-719 — the provisional part is what is still owed of each open foreign debt behind an
+  // expense: a partly repaid lot counts its outstanding share only, the repaid share is settled.
+  const countsAsProvisional = (lot: Lot) =>
+    lot.quantity !== 0n &&
+    rawItems.some(({ item }) => item.operationId === lot.operationId && item.kind === 'expense')
   let provisionalAmount: Cost = ZERO
   let provisionalCount = 0
-  for (const item of items) {
-    if (!item.provisional) continue
-    provisionalAmount = addCost(
-      provisionalAmount,
-      item.value.status === 'known'
-        ? knownCost(item.value.amount)
-        : unknownCost(...item.value.currencies),
-    )
-  }
   for (const lots of owedLots.values()) {
     for (const lot of lots) {
-      if (
-        lot.quantity !== 0n &&
-        rawItems.some(({ item }) => item.operationId === lot.operationId && item.kind === 'expense')
-      ) {
-        provisionalCount += 1
-      }
+      if (!countsAsProvisional(lot)) continue
+      provisionalCount += 1
+      provisionalAmount = addCost(provisionalAmount, withOpaque(lot.cost))
     }
   }
 
@@ -630,15 +630,19 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
     firstOperationOn: firstOperation ?? null,
     items,
     owedParts: [
-      ...[...owedLotsB.values()]
-        .flat()
-        .map((lot) => ({ ...lot, currency: B, value: knownCost(lot.quantity) })),
+      ...[...owedLotsB.values()].flat().map((lot) => ({
+        ...lot,
+        currency: B,
+        value: knownCost(lot.quantity),
+        provisional: false,
+      })),
       ...[...owedLots.entries()].flatMap(([key, lots]) =>
         lots.map((lot) => ({
           operationId: lot.operationId,
           currency: key.slice(key.indexOf(String.fromCharCode(0)) + 1),
           quantity: lot.quantity,
           value: lot.cost,
+          provisional: countsAsProvisional(lot),
         })),
       ),
     ]
@@ -649,11 +653,13 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
         currency: part.currency,
         quantity: part.quantity,
         value: figure(withOpaque(part.value)),
+        provisional: part.provisional,
       })),
     provisional:
       provisionalCount === 0
         ? null
         : { count: provisionalCount, amount: figure(provisionalAmount) },
+    opaque: [...opaque].sort(),
   }
 }
 
