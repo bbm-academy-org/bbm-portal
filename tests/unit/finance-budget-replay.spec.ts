@@ -141,6 +141,8 @@ function personalExpense(
 }
 
 const NO_RATE = () => null
+/** A reading date after every fixture's operations, so none is skipped as planned. */
+const AS_OF = '2099-12-31'
 
 function read(
   operations: BudgetOperationFact[],
@@ -158,6 +160,7 @@ function read(
     },
     operations,
     provisionalValue: options.provisional ?? NO_RATE,
+    asOf: AS_OF,
   })
 }
 

@@ -348,7 +348,10 @@ months available)`, months with no spend counted as zero, each rounded once
   burn chart, the waterline's visible range — whose values stay cumulative
   from `starts_on` and never reset at the period start — and the breakdown; it
   shall not change the glass, the money tier, the trailing averages or the
-  runway, and those blocks shall say «с \<starts_on\>».
+  runway, and those blocks shall say «с \<starts_on\>». An operation dated
+  after today is planned, not spent: every figure of the dashboard — spent,
+  remaining, the money tier, the months, the averages, the runway, the
+  waterline and the breakdown — shall be read as of today and leave it out.
 
 ### E. Where the money went
 

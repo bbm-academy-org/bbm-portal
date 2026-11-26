@@ -56,6 +56,7 @@ export async function getBudgetReading(actor: FinanceActor): Promise<BudgetReadi
     },
     operations,
     provisionalValue,
+    asOf: moscowToday(),
   })
 }
 
@@ -226,13 +227,15 @@ export async function getBudgetDisplayReading(
     budget: { currency: B, limitAmount: budget.limitAmount, startsOn: budget.startsOn },
     operations,
     provisionalValue,
+    asOf: today,
   })
 
   const operationStepsMap = new Map(operations.map((o) => [o.operationId, operationSteps(o)]))
   const onChains = new Set<string>()
   for (const item of reading.items) onChains.add(marketQuoteCurrency(item.currency))
-  for (const steps of operationStepsMap.values()) {
-    for (const step of steps) {
+  for (const operation of operations) {
+    if (operation.occurredOn > today) continue
+    for (const step of operationStepsMap.get(operation.operationId) ?? []) {
       onChains.add(marketQuoteCurrency(step.fromCurrency))
       onChains.add(marketQuoteCurrency(step.toCurrency))
     }

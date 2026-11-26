@@ -315,6 +315,7 @@ function view(operations: BudgetOperationFact[], d?: BudgetDisplayInput): Budget
     budget: { currency: 'RUB', limitAmount: 1_000_000_00n, startsOn: '2026-01-10' },
     operations,
     provisionalValue: (_currency, _date, quantity) => quantity * 90n,
+    asOf: TODAY,
   })
   return buildBudgetDashboard({
     reading,

@@ -62,6 +62,11 @@ export type BudgetReplayInput = {
   budget: { currency: string; limitAmount: bigint; startsOn: string }
   operations: readonly BudgetOperationFact[]
   provisionalValue: ProvisionalValuer
+  /**
+   * The reading's date (spec 584 EARS-715, Moscow today in the loader): an operation dated
+   * after it is planned, not spent, so the replay skips it as if it were not recorded yet.
+   */
+  asOf: string
 }
 
 // ── output ───────────────────────────────────────────────────────────────────
@@ -261,6 +266,7 @@ type Use =
 export function replayBudget(input: BudgetReplayInput): BudgetReading {
   const { budget, provisionalValue } = input
   const B = budget.currency
+  const recorded = input.operations.filter((operation) => operation.occurredOn <= input.asOf)
   const inWindow = (occurredOn: string) => occurredOn >= budget.startsOn
 
   /** Company money in `B` — a balance, it needs no cost. */
@@ -317,7 +323,7 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
     return found
   }
 
-  for (const operation of activeOperations(input.operations)) {
+  for (const operation of activeOperations(recorded)) {
     const counted = inWindow(operation.occurredOn)
     const supplies = new Map<string, Holding>()
     const uses = new Map<string, Use[]>()
@@ -582,8 +588,8 @@ export function replayBudget(input: BudgetReplayInput): BudgetReading {
     opaque.size === 0 ? cost : addCost(cost, unknownCost(...opaque))
   spent = withOpaque(spent)
   const remaining = addCost(knownCost(budget.limitAmount), negate(spent))
-  const firstOperation = [...input.operations].map((o) => o.occurredOn).sort()[0]
-  const occurredOnOf = new Map(input.operations.map((o) => [o.operationId, o.occurredOn]))
+  const firstOperation = recorded.map((o) => o.occurredOn).sort()[0]
+  const occurredOnOf = new Map(recorded.map((o) => [o.operationId, o.occurredOn]))
   const items = rawItems.map(
     ({ item, cost }) =>
       ({

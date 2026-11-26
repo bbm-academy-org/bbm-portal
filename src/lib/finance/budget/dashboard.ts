@@ -341,19 +341,15 @@ function buildInOneCurrency(input: BudgetDashboardInput): Omit<BudgetDashboard, 
   const { reading, today, names } = input
   const { startsOn } = reading
   const AGG = aggregateStart(reading)
-  // EARS-710 — every item the replay counted, a future-dated one included: spent sums them all,
-  // so the months must too, each item in its own month.
+  // EARS-715 — the replay read the ledger as of today, so no item lies past today's month.
   const { items } = reading
   const bounds = budgetPeriodBounds(input.period, startsOn, today)
   const currentMonth = monthOf(today)
 
   // EARS-710 / 711
-  const lastMonth = items
-    .map((item) => monthOf(item.occurredOn))
-    .reduce((last, month) => (month > last ? month : last), currentMonth)
   const monthKeys = monthsFrom(
     monthOf(startsOn),
-    lastMonth > monthOf(startsOn) ? lastMonth : monthOf(startsOn),
+    currentMonth > monthOf(startsOn) ? currentMonth : monthOf(startsOn),
   )
   const months: BudgetMonth[] = monthKeys.map((month) => {
     const inMonth = items.filter((item) => monthOf(item.occurredOn) === month)

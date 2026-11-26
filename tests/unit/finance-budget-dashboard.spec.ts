@@ -139,6 +139,7 @@ function dashboard(
     },
     operations,
     provisionalValue: (_currency, _date, quantity) => quantity * 90n,
+    asOf: options.today ?? TODAY,
   })
   return buildBudgetDashboard({
     reading,
@@ -366,14 +367,14 @@ describe('budget dashboard (spec 584)', () => {
   })
 
   it('EARS-715: an operation dated after today is planned, not spent: it changes no figure', () => {
-    const ledger = () => [
+    const ledger = [
       contribute('2026-01-10', 500_000_00n),
       spend('2026-03-05', 10_000_00n, FUND, TEAM),
       earn('2026-04-02', 1_000_00n),
     ]
-    const base = dashboard(ledger())
+    const base = dashboard(ledger)
     const tomorrow = dashboard([
-      ...ledger(),
+      ...ledger,
       spend('2026-06-16', 4_000_00n, FUND, TEAM),
       contribute('2026-06-16', 50_000_00n),
       earn('2026-07-02', 2_000_00n),
