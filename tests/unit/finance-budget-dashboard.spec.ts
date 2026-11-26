@@ -365,19 +365,29 @@ describe('budget dashboard (spec 584)', () => {
     expect(view.waterlineNote).toBeNull()
   })
 
-  it('EARS-710: a future-dated operation enters its own month, so the months still sum to spent', () => {
-    const view = dashboard([
+  it('EARS-715: an operation dated after today is planned, not spent: it changes no figure', () => {
+    const ledger = () => [
       contribute('2026-01-10', 500_000_00n),
       spend('2026-03-05', 10_000_00n, FUND, TEAM),
-      spend('2026-07-02', 4_000_00n, FUND, TEAM),
+      earn('2026-04-02', 1_000_00n),
+    ]
+    const base = dashboard(ledger())
+    const tomorrow = dashboard([
+      ...ledger(),
+      spend('2026-06-16', 4_000_00n, FUND, TEAM),
+      contribute('2026-06-16', 50_000_00n),
+      earn('2026-07-02', 2_000_00n),
     ])
-    expect(known(view.glass.spent)).toBe(14_000_00n)
-    expect(view.months.at(-1)!.month).toBe('2026-07')
-    expect(view.months.at(-1)!.gross).toEqual({ status: 'known', amount: 4_000_00n })
-    // a month after today's is not complete, so it never enters the trailing averages
-    expect(view.runway.averagedMonths).toEqual(['2026-03', '2026-04', '2026-05'])
-    expect(known(view.waterline.at(-1)!.net)).toBe(-14_000_00n)
-    expectSums(view)
+    expect(known(tomorrow.glass.spent)).toBe(10_000_00n)
+    expect(known(tomorrow.glass.remaining)).toBe(990_000_00n)
+    expect(tomorrow.months.at(-1)!.month).toBe('2026-06')
+    expect(tomorrow.months.at(-1)!.gross).toEqual({ status: 'known', amount: 0n })
+    expect(tomorrow.runway).toEqual(base.runway)
+    expect(tomorrow.money).toEqual(base.money)
+    expect(tomorrow.waterline).toEqual(base.waterline)
+    expect(tomorrow.breakdown).toEqual(base.breakdown)
+    expect(tomorrow.glass).toEqual(base.glass)
+    expectSums(tomorrow)
   })
 
   it('EARS-719: marks only the postings the open foreign debt values, not the rest of its operation', () => {
