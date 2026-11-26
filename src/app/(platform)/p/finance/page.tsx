@@ -55,6 +55,9 @@ export default async function FinancePage({
             until F3 (#340) gives the reports their own navigation. */}
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
+            <Link href="/p/finance/reports/budget">Бюджет BBM</Link>
+          </Button>
+          <Button asChild variant="outline">
             <Link href="/p/finance/reports/market-rate">Курс против рынка</Link>
           </Button>
           <Button asChild variant="outline">

@@ -399,4 +399,18 @@ export type {
 } from './budget/budgets'
 export { getBudgetReading } from './budget/reading'
 export type { BudgetFigure, BudgetReading } from './budget/replay'
+export { getBudgetDashboard, getFirstOperationOn } from './budget/dashboard-loader'
+export type { BudgetDashboardView } from './budget/dashboard-loader'
+export type { BudgetDisplayCandidate } from './budget/display-currency'
+export type { CbrMark } from './budget/replay'
+export { BUDGET_PERIODS, parseBudgetPeriod } from './budget/dashboard'
+export type {
+  BudgetDashboard,
+  BudgetDrillRow,
+  BudgetGrouping,
+  BudgetLine,
+  BudgetMonth,
+  BudgetPeriodKey,
+  BudgetWaterlinePoint,
+} from './budget/dashboard'
 export type { MarketChainFact, MarketChainLeg, MarketIntakeFact } from './market-facts'

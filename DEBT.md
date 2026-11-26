@@ -960,6 +960,18 @@ Entry format:
 
 <!-- debt-entry-end: 2026-11-25-585-research-in-design-source -->
 
+- [ ] 2026-11-26 Budget dashboard (#586, PR #624): the shared chart palette in `src/ui/theme.css` was repointed for its first consumer — `--chart-1..5` went from the stock greys to the research's blue/amber steps, and `--chart-6..11`, `--chart-ink-*` and `--mark-provisional*` were added — instead of budget-scoped tokens. Nothing else reads `--chart-*` today, so the change is invisible elsewhere, and a shared chart palette is the intended home. Return condition: a second surface renders a chart (it then uses these tokens as they are, or the palette is split by an explicit decision in that PR), or the chart/KPI whitelist row lands, whichever comes first.
+
+<!-- debt-entry-end: 2026-11-26-586-shared-chart-palette -->
+
+- [ ] 2026-11-26 Budget dashboard (#586, PR #624): treemap tile label ink is fixed per colour slot (light on slots 0–1, dark on amber and neutral) rather than computed from the tile colour, because the research's re-stepped palette makes the per-slot value the measured contrast result. Return condition: any change to `--chart-*` values or the slot order — the per-slot ink is then re-measured, or replaced by a computed contrast choice, in that PR.
+
+<!-- debt-entry-end: 2026-11-26-586-tile-ink-per-slot -->
+
+- [ ] 2026-11-26 Budget dashboard (#586, PR #624): the monthly-burn and waterline charts render two server-side SVG geometries (510 units at md and up, 360 below) switched by CSS, because the charts take no client measurement; every chart ships twice in the markup. Return condition: a chart on the page gains client interactivity or a third breakpoint is needed — the charts then move to one responsive geometry (client measurement or `viewBox` scaling) in that PR.
+
+<!-- debt-entry-end: 2026-11-26-586-two-chart-geometries -->
+
 - [ ] 2026-11-26 Deploy Ship (#623, PR #625): the workstation→`portal-prod-tw` link carries only ~40 KB/s per connection (RTT 278 ms, while the same workstation uploads 3.4 MB/s to Cloudflare), and the cause was not investigated; #623 removed the symptom by shrinking the archive (~77 MiB → ~3 MiB, Ship ~1.5 min) instead of fixing the path. Recorded rather than filed because nothing is lost at the current archive size and no deliverable waits on it. Return condition: a Ship of the lean archive takes longer than 5 min, or a deploy needs to move a payload larger than ~10 MiB, or the next change to `tools/deploy/prod.mjs` Ship transport — at that point the path is measured (per-hop RTT/loss, a parallel or multiplexed transfer, the box's TCP window) and fixed or explicitly accepted.
 
 <!-- debt-entry-end: 2026-11-26-623-slow-link-to-prod -->

@@ -190,7 +190,22 @@ const DEFERRALS_BY_ISSUE = {
       'spec 338 §D (budget and funding: the equity kind, the contribution operation, the budget record and the budget cost-basis reading), spec 339 §K (the contribution intake kind) and spec 339 EARS-568 (the cross-currency reimbursement through a payment agent), added by the #581 amendment (PR #591). The list is EMPTY because #593 landed: EARS-335…345/567/568 are asserted in tests/unit/finance-budget-replay.spec.ts, finance-equity-contribution.spec.ts, finance-contribution-intake.spec.ts, finance-intake-account-placement.spec.ts and tests/int/platform/finance-budget.int.spec.ts, finance-budget-reading.int.spec.ts and finance-payment-queue.int.spec.ts.',
   },
   586: {
-    ids: Array.from({ length: 29 }, (_, i) => `EARS-${701 + i}`),
+    ids: [
+      'EARS-701',
+      'EARS-702',
+      'EARS-703',
+      'EARS-704',
+      'EARS-706',
+      'EARS-708',
+      'EARS-709',
+      'EARS-714',
+      'EARS-718',
+      'EARS-723',
+      'EARS-724',
+      'EARS-725',
+      'EARS-726',
+      'EARS-727',
+    ],
     reason:
       'spec 584 (the BBM budget dashboard on /p/finance/reports/budget: the widget-to-§D-figure mapping, monthly burn, trailing average, runway, waterline, the three breakdowns with drill-down, provisional/withheld states, the reporting-currency switch and the budget-limit form) — EARS-701…729 (EARS-728 the actual-rate conversion, EARS-729 its labelled Bank of Russia fallback), written before any code, like spec 338 §D. #586 builds the screen on the #593 read model and the #585 chart element, with tests named after these ids, and drops them from this list.',
   },

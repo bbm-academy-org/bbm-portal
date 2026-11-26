@@ -23,10 +23,17 @@ import { sql } from 'drizzle-orm'
 import { getPlatformDb } from '@/lib/platform/db/client'
 
 import { assertFinancePlatformMember, type FinanceActor } from '../core/actor'
-import { marketQuoteCurrency } from '../fx/market'
-import { convertAtRubRates, pickRateOn, type FxRate } from '../fx/rates'
-import { rateSeries } from '../fx/store'
+import { marketQuoteCurrency, pickMarketRate } from '../fx/market'
+import { convertAtRubRates, moscowToday, pickRateOn, type FxRate } from '../fx/rates'
+import { latestRateDate, rateSeries } from '../fx/store'
 import { getLiveBudget } from './budgets'
+import type { BudgetDisplayInput } from './dashboard'
+import {
+  budgetDisplayCandidates,
+  operationSteps,
+  parseBudgetDisplayCurrency,
+  type BudgetDisplayCandidate,
+} from './display-currency'
 import {
   replayBudget,
   type BudgetOperationFact,
@@ -49,6 +56,7 @@ export async function getBudgetReading(actor: FinanceActor): Promise<BudgetReadi
     },
     operations,
     provisionalValue,
+    asOf: moscowToday(),
   })
 }
 
@@ -68,7 +76,7 @@ async function budgetOperationFacts(): Promise<BudgetOperationFact[]> {
     `),
     db.execute(sql`
       select p.id, p.operation_id, p.account_id, a.kind as account_kind, a.is_system,
-             p.currency, p.amount::text as amount, p.project_id, p.member_id,
+             p.currency, p.amount::text as amount, p.project_id, p.member_id, p.category_id,
              cs.step_no as conversion_step_no
         from core.finance_posting p
         join core.finance_account a on a.id = p.account_id
@@ -108,6 +116,7 @@ async function budgetOperationFacts(): Promise<BudgetOperationFact[]> {
       amount: BigInt(String(row.amount)),
       projectId: nullableNumber(row.project_id),
       memberId: nullableNumber(row.member_id),
+      categoryId: nullableNumber(row.category_id),
       conversionStepNo: nullableNumber(row.conversion_step_no),
     })
   }
@@ -171,6 +180,112 @@ async function currencyPrecisions(codes: readonly string[]): Promise<Map<string,
        sql`, `,
      )})
   `)
+  return new Map(
+    (result.rows as { code: string; precision: number }[]).map((row) => [
+      row.code,
+      Number(row.precision),
+    ]),
+  )
+}
+
+// ── spec 584 §G — the dashboard's reporting currency ─────────────────────────
+
+export type BudgetDisplayReading = {
+  reading: BudgetReading
+  /** Moscow today — the date every rate rule of §G is applied to. */
+  today: string
+  /** EARS-721 — the switch's candidates, the chosen `D`, and what converts it. */
+  candidates: BudgetDisplayCandidate[]
+  display: BudgetDisplayInput
+}
+
+/**
+ * Spec 584 §G — the budget reading with what its reporting currency needs: each
+ * operation's steps with their recorded amounts (EARS-728), and the Bank of
+ * Russia rates as two injected conversions — of an operation's date (EARS-729)
+ * and the latest (EARS-722 item 2), both under EARS-558's rule (the stored
+ * rate on the date or the nearest previous one at most 14 days older, USDT and
+ * USDC as USD, through RUB). Display only: nothing here is stored (EARS-553 note).
+ */
+export async function getBudgetDisplayReading(
+  actor: FinanceActor,
+  requested: string | null | undefined,
+): Promise<BudgetDisplayReading | null> {
+  assertFinancePlatformMember(actor)
+  const budget = await getLiveBudget(actor)
+  if (budget === null) return null
+  const today = moscowToday()
+  const B = budget.currency
+  const operations = await budgetOperationFacts()
+  const [provisionalValue, series, precisions, newest] = await Promise.all([
+    provisionalValuer(B, operations),
+    rateSeries([...new Set(['USD', 'EUR', marketQuoteCurrency(B)])], '0001-01-01', today),
+    allCurrencyPrecisions(),
+    latestRateDate(),
+  ])
+  const reading = replayBudget({
+    budget: { currency: B, limitAmount: budget.limitAmount, startsOn: budget.startsOn },
+    operations,
+    provisionalValue,
+    asOf: today,
+  })
+
+  const operationStepsMap = new Map(operations.map((o) => [o.operationId, operationSteps(o)]))
+  const onChains = new Set<string>()
+  for (const item of reading.items) onChains.add(marketQuoteCurrency(item.currency))
+  for (const operation of operations) {
+    if (operation.occurredOn > today) continue
+    for (const step of operationStepsMap.get(operation.operationId) ?? []) {
+      onChains.add(marketQuoteCurrency(step.fromCurrency))
+      onChains.add(marketQuoteCurrency(step.toCurrency))
+    }
+  }
+  const rated = (D: string) =>
+    (D === 'RUB' || series.some((rate) => rate.currency === marketQuoteCurrency(D))) &&
+    (B === 'RUB' || series.some((rate) => rate.currency === marketQuoteCurrency(B)))
+  const candidates = budgetDisplayCandidates(B, (D) => onChains.has(D) || rated(D))
+  const D = parseBudgetDisplayCurrency(requested, candidates, B)
+
+  const at = (amountB: bigint, date: string) => {
+    const from = pickMarketRate(series, B, date)
+    const to = pickMarketRate(series, D, date)
+    const precisionFrom = precisions.get(B)
+    const precisionTo = precisions.get(D)
+    if (from === null || to === null || precisionFrom === undefined || precisionTo === undefined) {
+      return null
+    }
+    const rateDate = D === 'RUB' ? from.rateDate : to.rateDate
+    return {
+      amount: convertAtRubRates(amountB, from, to, precisionFrom, precisionTo).amount,
+      rateDate,
+    }
+  }
+  const latestProbe = at(0n, today)
+  return {
+    reading,
+    today,
+    candidates,
+    display: {
+      currency: D,
+      operationSteps: operationStepsMap,
+      precisions,
+      fallback: at,
+      latest:
+        latestProbe === null
+          ? null
+          : {
+              rateDate: latestProbe.rateDate,
+              convert: (amountB) => at(amountB, today)?.amount ?? 0n,
+            },
+      newestRateOn: newest,
+    },
+  }
+}
+
+async function allCurrencyPrecisions(): Promise<Map<string, number>> {
+  const result = await getPlatformDb().execute(
+    sql`select code, precision from core.finance_currency`,
+  )
   return new Map(
     (result.rows as { code: string; precision: number }[]).map((row) => [
       row.code,

@@ -1,0 +1,72 @@
+/** Display helpers of the budget dashboard (spec 584, #586) — formatting and the limit input. */
+import { describe, expect, it } from 'vitest'
+
+import {
+  budgetHref,
+  differenceText,
+  figureText,
+  formatMoney,
+  limitText,
+  parseLimitAmount,
+  segmentLabel,
+} from '@/app/(platform)/p/finance/reports/budget/budget-view'
+
+describe('budget dashboard display helpers', () => {
+  it('writes minor units as grouped money, kopecks only on request', () => {
+    expect(formatMoney(123456789n, 'RUB', 2)).toBe('1 234 567 ₽')
+    expect(formatMoney(-123456789n, 'RUB', 2, { cents: true })).toBe('−1 234 567,89 ₽')
+    expect(formatMoney(500n, 'THB', 2, { cents: true })).toBe('5 THB')
+  })
+
+  it('names the currencies of a withheld figure instead of a number (EARS-720)', () => {
+    expect(figureText({ status: 'withheld', currencies: ['THB', 'USDT'] }, 'RUB', 2)).toEqual({
+      text: 'не посчитано: THB, USDT',
+      withheld: true,
+    })
+  })
+
+  it('says which date had no Bank of Russia rate instead of a number (EARS-729 item 3)', () => {
+    expect(
+      figureText({ status: 'withheld', currencies: [], noRateOn: ['2026-03-05'] }, 'USD', 2),
+    ).toEqual({ text: 'нет курса ЦБ на 5 марта 2026', withheld: true })
+    expect(
+      figureText(
+        {
+          status: 'withheld',
+          currencies: [],
+          noRateOn: ['2026-03-05', '2026-04-05', '2026-05-05'],
+        },
+        'USD',
+        2,
+      ),
+    ).toEqual({ text: 'нет курса ЦБ на 5 марта 2026 и ещё 2 даты', withheld: true })
+  })
+
+  it('writes a relation difference with its sign (EARS-722 item 4)', () => {
+    expect(differenceText(1_000_00n, 'USD', 2)).toBe('+1 000 $')
+    expect(differenceText(-5_50n, 'USD', 2)).toBe('−5,50 $')
+  })
+
+  it('reads the typed limit into minor units, refusing finer-than-precision input', () => {
+    expect(parseLimitAmount('1 000 000', 2)).toBe(100000000n)
+    expect(parseLimitAmount('1000,5', 2)).toBe(100050n)
+    expect(parseLimitAmount('1,005', 2)).toBeNull()
+    expect(parseLimitAmount('0', 2)).toBeNull()
+    expect(parseLimitAmount('abc', 2)).toBeNull()
+    expect(limitText(100050n, 2)).toBe('1000,50')
+    expect(limitText(100000000n, 2)).toBe('1000000')
+  })
+
+  it('keeps the period and the reporting currency in the URL, each omitted at the value read when absent (EARS-721)', () => {
+    expect(budgetHref('all', 'RUB')).toBe('?')
+    expect(budgetHref('year', 'RUB')).toBe('?period=year')
+    expect(budgetHref('all', 'USD')).toBe('?currency=USD')
+    expect(budgetHref('quarter', 'EUR')).toBe('?period=quarter&currency=EUR')
+  })
+
+  it('labels a currency segment with its sign and code, the code alone without a sign', () => {
+    expect(segmentLabel('RUB')).toBe('₽ RUB')
+    expect(segmentLabel('USD')).toBe('$ USD')
+    expect(segmentLabel('THB')).toBe('THB')
+  })
+})
