@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { PassThrough, Readable, Writable } from 'node:stream'
 
 import { afterAll, describe, expect, it, vi } from 'vitest'
 
@@ -42,6 +44,7 @@ import {
   resolveMode,
   createStallWatchdog,
   formatStallMessage,
+  streamShipArchive,
   runDeploy,
   runRollback,
   verifyVerdict,
@@ -1478,3 +1481,165 @@ describe('formatHoldNotice — the compose verbs allowed while held', () => {
     expect(notice).toContain('exec -T postgres')
   })
 })
+
+// ── ship transfer: the archive stream runs under a byte-progress watchdog (#623) ──
+
+describe('streamShipArchive — a stalled ship fails loudly instead of hanging', () => {
+  type FakeChild = EventEmitter & {
+    stdin: Writable
+    stdout: PassThrough
+    stderr: PassThrough
+    killed: boolean
+    kill: () => void
+  }
+
+  /** A fake ssh child. `acceptBytes` caps what its stdin ever acknowledges:
+   *  past it, writes are never called back — exactly what a live-but-stuck
+   *  ssh channel looks like from Node (backpressure, no error, no close). */
+  function fakeChild({ acceptBytes = Infinity }: { acceptBytes?: number } = {}) {
+    const received: Buffer[] = []
+    let total = 0
+    const child = new EventEmitter() as FakeChild
+    child.stdin = new Writable({
+      highWaterMark: 1024,
+      write(chunk: Buffer, _enc, cb) {
+        if (total >= acceptBytes) return // never call back: the channel is stuck
+        total += chunk.length
+        received.push(chunk)
+        cb()
+      },
+    })
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.killed = false
+    child.kill = () => {
+      child.killed = true
+      setImmediate(() => child.emit('close', null))
+    }
+    return { child, received: () => Buffer.concat(received) }
+  }
+
+  const payload = Buffer.alloc(256 * 1024, 7)
+
+  it('resolves when the whole archive reached the box and the box exited 0', async () => {
+    const { child, received } = fakeChild()
+    child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)))
+    await expect(
+      streamShipArchive({
+        child,
+        source: Readable.from([payload]),
+        totalBytes: payload.length,
+        host: 'portal-prod-tw',
+        budgetMs: 1000,
+      }),
+    ).resolves.toBeUndefined()
+    expect(received().length).toBe(payload.length)
+  })
+
+  it('a stream that stops moving trips the watchdog, kills ssh and names the bytes sent', async () => {
+    const { child } = fakeChild({ acceptBytes: 64 * 1024 })
+    const err = await streamShipArchive({
+      child,
+      source: Readable.from(chunks(payload, 8 * 1024)),
+      totalBytes: payload.length,
+      host: 'portal-prod-tw',
+      budgetMs: 80,
+    }).catch((e: Error) => e)
+    expect(err).toBeInstanceOf(Error)
+    const msg = (err as Error).message
+    expect(msg).toMatch(/STALLED: ship/)
+    expect(msg).toMatch(/of 262144 bytes/)
+    // The box state the operator must know: the live tree was never touched.
+    expect(msg).toMatch(/live ~\/bbm-portal is untouched/)
+    expect(msg).toMatch(/pnpm deploy:prod/)
+    expect(child.killed).toBe(true)
+  })
+
+  it('remote output after the upload keeps it alive — a talking box is not a stall', async () => {
+    const { child } = fakeChild()
+    child.stdin.on('finish', () => {
+      let n = 0
+      const t = setInterval(() => {
+        child.stderr.write('[ship] working\n')
+        if (++n === 5) {
+          clearInterval(t)
+          child.emit('close', 0)
+        }
+      }, 40)
+    })
+    const errSink: string[] = []
+    await expect(
+      streamShipArchive({
+        child,
+        source: Readable.from([payload]),
+        totalBytes: payload.length,
+        host: 'h',
+        budgetMs: 100,
+        stderr: { write: (d: string | Uint8Array) => (errSink.push(String(d)), true) },
+      }),
+    ).resolves.toBeUndefined()
+    expect(errSink.join('')).toContain('[ship] working')
+  })
+
+  it('a slow upload prints its progress, so a long ship never looks like a hang', async () => {
+    const { child } = fakeChild()
+    const source = new PassThrough()
+    const outSink: string[] = []
+    const done = streamShipArchive({
+      child,
+      source,
+      totalBytes: 3 * 1024 * 1024,
+      host: 'h',
+      budgetMs: 1000,
+      progressEveryMs: 20,
+      stdout: { write: (d: string | Uint8Array) => (outSink.push(String(d)), true) },
+    })
+    source.write(Buffer.alloc(1024 * 1024))
+    await new Promise((r) => setTimeout(r, 60))
+    source.end(Buffer.alloc(2 * 1024 * 1024))
+    child.stdin.on('finish', () => setImmediate(() => child.emit('close', 0)))
+    await done
+    const out = outSink.join('')
+    expect(out).toMatch(/\[ship\] 1\.0 of 3\.0 MiB sent/)
+  })
+
+  it('the deploy archive leaves out the evidence screenshots the box never reads', () => {
+    // 96% of the shipped bytes were docs/evidence PNGs (#623): at the box's
+    // ~40 KB/s per-connection rate that alone made Ship a ~35-minute silence.
+    const r = spawnSync('git', ['check-attr', 'export-ignore', 'docs/evidence/434/x.png'], {
+      encoding: 'utf8',
+    })
+    expect(r.stdout).toMatch(/export-ignore: set/)
+    const runtime = spawnSync(
+      'git',
+      ['check-attr', 'export-ignore', 'src/app/layout.tsx', 'docs/runbooks/x.md'],
+      {
+        encoding: 'utf8',
+      },
+    )
+    expect(runtime.stdout).not.toMatch(/set/)
+  })
+
+  it('a non-zero box exit is reported with its code, and an EPIPE does not crash the process', async () => {
+    const { child } = fakeChild()
+    setImmediate(() => {
+      child.stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+      child.emit('close', 1)
+    })
+    await expect(
+      streamShipArchive({
+        child,
+        source: Readable.from([payload]),
+        totalBytes: payload.length,
+        host: 'h',
+        budgetMs: 1000,
+      }),
+    ).rejects.toThrow(/tar extract on the box exited 1/)
+  })
+})
+
+function chunks(buf: Buffer, size: number): Buffer[] {
+  const out: Buffer[] = []
+  for (let i = 0; i < buf.length; i += size) out.push(buf.subarray(i, i + size))
+  return out
+}
