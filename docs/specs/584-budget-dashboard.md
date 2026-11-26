@@ -1,7 +1,7 @@
 ---
-status: Draft
+status: In dev
 issue: 584
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # Finance — BBM budget dashboard: burn, runway, waterline — spec (issue #584)
@@ -11,6 +11,8 @@ updated: 2026-11-25
   class for the whitelist — the visual language) and #586 (the build). #586 is
   also blocked by #583 (real posted data) and depends on #593, which builds the
   spec 338 §D read model this screen renders.
+- **Go:** Anton, in chat on 2026-11-26, chose «Да, параллельно» — build #586
+  on synthetic data before #583 lands; the spec itself was settled in PR #600.
 - **Product source:** `docs/product/finance/340-product.md` → «BBM's budget» and
   «Budget dashboard (#584)» (US-21…US-30). The owner's requirements of
   2026-11-24 (session, relayed on #584/#587) are the input; #581's comments
@@ -388,8 +390,10 @@ months available)`, months with no spend counted as zero, each rounded once
   remaining or an averaged month is provisional), the trailing averages that
   average its month, its month in the burn chart, every waterline point from
   that month on, its breakdown line and its drill-down row. The glass shall name
-  the provisional part: the sum of those values and the number of open debts.
-  WHEN such a debt is reimbursed, its value and its exchange result are what
+  the provisional part: the number of open debts and the part of their values
+  still owed — a debt partly repaid (a pair-level backfill reimbursement, spec
+  338 EARS-340 item 2) counts its outstanding share only, the repaid share
+  being settled (lead decision, 2026-11-26). WHEN such a debt is reimbursed, its value and its exchange result are what
   the replay then produces, and the mark shall disappear from every figure no
   other open debt keeps provisional.
 - **EARS-720.** IF a figure sums an unknown cost (spec 338 EARS-340 item 7),
@@ -401,7 +405,11 @@ months available)`, months with no spend counted as zero, each rounded once
   averaged month is withheld; a breakdown line and the grouping's total; and,
   WHILE contributed is withheld, the cumulative-contributed series from the
   month of the contribution that caused it on. Figures that sum no unknown
-  cost stay shown. WHILE any line is withheld, the grouping shall not claim
+  cost stay shown. WHILE the replay meets a posting it does not model (spec
+  338 EARS-340 item 3), which withholds every `B` figure, every sum shown in
+  a display currency other than `B` is withheld the same way; only a
+  drill-down row whose item converts along its own chain (EARS-728) keeps its
+  number (lead decision, 2026-11-26). WHILE any line is withheld, the grouping shall not claim
   that its lines add up; WHILE contributed is withheld, the reconciliation of
   EARS-709 shall not be shown.
 
@@ -772,8 +780,8 @@ On synthetic ledgers built from spec 338's §D fixtures (no real amounts):
   owed to members line carries the signed difference of EARS-722 item 4 under
   the same show/hide rules; with a `starts_on` later than BBM's first
   operation and an open member debt from before it, neither «paid out» nor
-  that line is shown (EARS-708). The provisional part's amount is a sum of
-  converted items and its count is the `B` one; on a ledger whose open
+  that line is shown (EARS-708). The provisional part's amount is the sum of
+  the open debts' outstanding shares, each converted at its own operation, and its count is the `B` one; on a ledger whose open
   foreign debt is converted at a rate that differs from the latest one, the
   provisional-part-vs-owed line carries the signed difference of item 4,
   either sign included, under the same show/hide rules. With zero income in
